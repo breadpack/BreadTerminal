@@ -71,6 +71,16 @@ static uint8_t modsFromEvent(NSEvent* event) {
 #pragma mark - Keyboard
 
 - (void)keyDown:(NSEvent*)event {
+    // Debug screenshot: Cmd+Shift+S
+    if ((event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) ==
+        (NSEventModifierFlagCommand | NSEventModifierFlagShift)) {
+        NSString* chars = event.charactersIgnoringModifiers;
+        if ([chars isEqualToString:@"s"] || [chars isEqualToString:@"S"]) {
+            [self captureScreenshot];
+            return;
+        }
+    }
+
     // If search field is active and Escape is pressed, close search.
     if (_searchActive && event.keyCode == 53) {
         [self closeSearch];
@@ -124,6 +134,13 @@ static uint8_t modsFromEvent(NSEvent* event) {
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent*)event {
+    // Debug screenshot: Cmd+Shift+S (keyCode 1 = 's')
+    if ((event.modifierFlags & NSEventModifierFlagCommand) &&
+        (event.modifierFlags & NSEventModifierFlagShift) &&
+        event.keyCode == 1) {
+        [self captureScreenshot];
+        return YES;
+    }
     // Let keybinding manager handle Cmd+key combos.
     if (event.modifierFlags & NSEventModifierFlagCommand) {
         uint32_t keycode = keycodeFromEvent(event);
@@ -178,6 +195,137 @@ static uint8_t modsFromEvent(NSEvent* event) {
         break;
     default:
         break;
+    }
+}
+
+#pragma mark - Debug Screenshot
+
+- (void)captureScreenshot {
+    // Write debug log to file (NSLog may not appear in system log)
+    FILE* logFile = fopen("/tmp/BreadTerminal_debug.log", "w");
+    if (logFile) fprintf(logFile, "captureScreenshot called\n");
+
+    @autoreleasepool {
+        CGSize size = _metalLayer.drawableSize;
+        if (size.width <= 0 || size.height <= 0) {
+            NSLog(@"BreadTerminal: screenshot failed - no drawable size");
+            return;
+        }
+
+        // Capture Metal layer content by reading back from GPU
+        id<CAMetalDrawable> drawable = [_metalLayer nextDrawable];
+        if (!drawable) {
+            fprintf(logFile, "no drawable for screenshot\n");
+            fclose(logFile);
+            return;
+        }
+        id<MTLTexture> tex = drawable.texture;
+        int w = (int)tex.width;
+        int h = (int)tex.height;
+        std::vector<uint8_t> pixels(w * h * 4);
+        [tex getBytes:pixels.data() bytesPerRow:w*4
+               fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
+        // Convert to NSImage
+        NSBitmapImageRep* rep = [[NSBitmapImageRep alloc]
+            initWithBitmapDataPlanes:NULL pixelsWide:w pixelsHigh:h
+            bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+            colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:w*4 bitsPerPixel:32];
+        memcpy(rep.bitmapData, pixels.data(), pixels.size());
+        NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+
+        NSString* path = [NSString stringWithFormat:@"/tmp/BreadTerminal_debug_%ld.png",
+                          (long)[[NSDate date] timeIntervalSince1970]];
+        [png writeToFile:path atomically:YES];
+        NSLog(@"BreadTerminal: screenshot saved to %@", path);
+
+        // Also dump detailed render state
+        NSLog(@"BreadTerminal: === DEBUG STATE ===");
+        NSLog(@"BreadTerminal: view bounds=%.0fx%.0f", self.bounds.size.width, self.bounds.size.height);
+        NSLog(@"BreadTerminal: drawable=%.0fx%.0f scale=%.1f",
+              _metalLayer.drawableSize.width, _metalLayer.drawableSize.height,
+              _metalLayer.contentsScale);
+        NSLog(@"BreadTerminal: cellW=%.1f cellH=%.1f rows=%d cols=%d",
+              _cellWidth, _cellHeight, self.termRows, self.termCols);
+
+        if (_impl->screen) {
+            int glyphCells = 0;
+            for (int r = 0; r < _impl->screen->rows(); r++)
+                for (int c = 0; c < _impl->screen->cols(); c++)
+                    if (_impl->screen->cellAt(r, c).codepoint != ' ' &&
+                        _impl->screen->cellAt(r, c).codepoint != 0) glyphCells++;
+            NSLog(@"BreadTerminal: screen has %d non-empty cells", glyphCells);
+
+            // First row content
+            NSString* line0 = [NSString stringWithUTF8String:
+                               _impl->screen->getLineText(0).c_str()];
+            NSLog(@"BreadTerminal: line[0] = '%@'", line0);
+        }
+
+        if (_impl->atlas) {
+            auto* page = _impl->atlas->getPage(termcore::AtlasFormat::R8);
+            NSLog(@"BreadTerminal: atlas R8 page=%p", (void*)page);
+            if (page) {
+                NSLog(@"BreadTerminal: atlas R8 size=%dx%d dirty=%d",
+                      page->width(), page->height(), page->isDirty());
+                // Save atlas to PNG for visual inspection
+                NSBitmapImageRep* atlasRep = [[NSBitmapImageRep alloc]
+                    initWithBitmapDataPlanes:NULL
+                    pixelsWide:page->width()
+                    pixelsHigh:page->height()
+                    bitsPerSample:8 samplesPerPixel:1
+                    hasAlpha:NO isPlanar:NO
+                    colorSpaceName:NSCalibratedWhiteColorSpace
+                    bytesPerRow:page->width()
+                    bitsPerPixel:8];
+                memcpy(atlasRep.bitmapData, page->data(), page->width() * page->height());
+                NSData* atlasPng = [atlasRep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                NSString* atlasPath = [NSString stringWithFormat:@"/tmp/BreadTerminal_atlas_%ld.png",
+                                       (long)[[NSDate date] timeIntervalSince1970]];
+                [atlasPng writeToFile:atlasPath atomically:YES];
+                NSLog(@"BreadTerminal: atlas saved to %@", atlasPath);
+            }
+        }
+        // Dump first few cell instances UV data
+        if (_impl->renderer) {
+            // Access renderer's cell instances isn't possible from here,
+            // so dump screen cell + glyph info manually
+            auto& fc = *_impl->fontCollection;
+            auto& gc = *_impl->cache;
+            auto& ga = *_impl->atlas;
+            auto* rast = _impl->rasterizer.get();
+            float fontSize = fc.fontSize();
+
+            for (int col = 0; col < std::min(10, _impl->screen->cols()); col++) {
+                auto& cell = _impl->screen->cellAt(0, col);
+                if (cell.codepoint == ' ' || cell.codepoint == 0) continue;
+                auto faceId = fc.resolveFace(cell.codepoint);
+                auto rastFace = fc.rasterizerFaceId(faceId);
+                uint32_t gi = rast->getGlyphIndex(rastFace, cell.codepoint);
+                if (gi == 0) continue;
+                termcore::GlyphKey key{rastFace, gi, {0,0}};
+                auto info = gc.get(key);
+                if (info) {
+                    fprintf(logFile, "cell[0,%d] cp=U+%04X uv=(%d,%d) size=(%d,%d) bearing=(%d,%d)\n",
+                            col, cell.codepoint,
+                            info->region.x, info->region.y,
+                            info->region.width, info->region.height,
+                            info->region.bearing_x, info->region.bearing_y);
+                }
+            }
+
+            auto* r8Page = ga.getPage(termcore::AtlasFormat::R8);
+            if (r8Page) {
+                fprintf(logFile, "atlas: %dx%d\n", r8Page->width(), r8Page->height());
+            }
+
+            auto metrics = fc.primaryMetrics();
+            fprintf(logFile, "viewport: %.0fx%.0f cellSize: %.1fx%.1f\n",
+                    _metalLayer.drawableSize.width, _metalLayer.drawableSize.height,
+                    metrics.cell_width, metrics.cell_height);
+        }
+
+        NSLog(@"BreadTerminal: === END DEBUG ===");
+        if (logFile) { fprintf(logFile, "done\n"); fclose(logFile); }
     }
 }
 

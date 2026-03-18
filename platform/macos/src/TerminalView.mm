@@ -45,7 +45,10 @@
     _impl->shaper     = std::make_unique<termcore::FontShaper>();
     _impl->fontCollection = std::make_unique<termcore::FontCollection>(
         *_impl->rasterizer, *_impl->discovery, *_impl->shaper);
-    _impl->fontCollection->setPrimaryFont("Menlo", 14.0f);
+    bool fontOk = _impl->fontCollection->setPrimaryFont("Menlo", 14.0f);
+    NSLog(@"BreadTerminal: setPrimaryFont Menlo = %d", fontOk);
+    auto fm = _impl->fontCollection->primaryMetrics();
+    NSLog(@"BreadTerminal: metrics cellW=%.1f cellH=%.1f ascent=%.1f", fm.cell_width, fm.cell_height, fm.ascent);
     _impl->atlas = std::make_unique<termcore::GlyphAtlas>();
     _impl->cache = std::make_unique<termcore::GlyphCache>();
 
@@ -77,6 +80,12 @@
     // URL detector
     _impl->urlDetector = std::make_unique<termcore::UrlDetector>();
     _searchActive = NO;
+
+    // Set initial drawable size (pixels) and viewport (points)
+    CGFloat scale = 2.0;  // Retina default
+    _metalLayer.drawableSize = NSMakeSize(frame.size.width * scale, frame.size.height * scale);
+    _impl->renderer->resize(frame.size.width, frame.size.height);
+    _impl->needsRender = true;
 
     // Render timer (60 fps)
     __weak TerminalView* weakSelf = self;
@@ -170,8 +179,9 @@
     _termCols = cols;
     _impl->screen->resize(rows, cols);
     if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
-    float w = self.bounds.size.width  * _metalLayer.contentsScale;
-    float h = self.bounds.size.height * _metalLayer.contentsScale;
+    // Use points (not pixels) for viewport — cell positions are in points
+    float w = self.bounds.size.width;
+    float h = self.bounds.size.height;
     _impl->renderer->resize(w, h);
     _impl->needsRender = true;
 }
@@ -237,6 +247,17 @@
 - (void)renderFrame {
     if (!_impl->needsRender) return;
     _impl->needsRender = false;
+
+    // Ensure drawable size is valid
+    if (_metalLayer.drawableSize.width <= 0 || _metalLayer.drawableSize.height <= 0) {
+        CGFloat scale = self.window.backingScaleFactor ?: 2.0;
+        NSSize sz = self.bounds.size;
+        if (sz.width > 0 && sz.height > 0) {
+            _metalLayer.drawableSize = NSMakeSize(sz.width * scale, sz.height * scale);
+            _impl->renderer->resize(sz.width * scale, sz.height * scale);
+        }
+    }
+
     _impl->renderer->render(*_impl->screen);
 }
 

@@ -33,10 +33,28 @@ struct MetalTextRenderer::Impl {
     // Reusable buffers
     std::vector<CellInstance> cellInstances;
 
+    id<MTLTexture> dummyR8;
+    id<MTLTexture> dummyBGRA;
+
     Impl(id<MTLDevice> dev, CAMetalLayer* metalLayer)
         : device(dev), layer(metalLayer) {
         commandQueue = [device newCommandQueue];
         atlasUploader = std::make_unique<MetalAtlasUploader>(device);
+
+        // Create 1x1 dummy textures for when atlas pages don't exist yet
+        MTLTextureDescriptor* r8Desc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm width:1 height:1 mipmapped:NO];
+        r8Desc.usage = MTLTextureUsageShaderRead;
+        dummyR8 = [device newTextureWithDescriptor:r8Desc];
+        uint8_t zero = 0;
+        [dummyR8 replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 withBytes:&zero bytesPerRow:1];
+
+        MTLTextureDescriptor* bgraDesc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB width:1 height:1 mipmapped:NO];
+        bgraDesc.usage = MTLTextureUsageShaderRead;
+        dummyBGRA = [device newTextureWithDescriptor:bgraDesc];
+        uint32_t zeroPixel = 0;
+        [dummyBGRA replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 withBytes:&zeroPixel bytesPerRow:4];
     }
 
     bool buildPipeline(id<MTLLibrary> library) {
@@ -121,7 +139,7 @@ struct VertexOut {
     float2 texCoord;
     float4 fg_color;
     float4 bg_color;
-    uint flags;
+    uint flags [[flat]];
 };
 
 struct Uniforms {
@@ -142,10 +160,15 @@ vertex VertexOut cell_vertex(
     };
     CellInstance cell = cells[instance_id];
     float2 corner = corners[vertex_id];
+
+    // Cell quad position
     float2 pixel_pos = cell.position + corner * uniforms.cell_size;
     float2 ndc = (pixel_pos / uniforms.viewport_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;
-    float2 tex_coord = (cell.atlas_uv + corner * cell.atlas_size) / uniforms.atlas_size;
+
+    // Texture coordinate: map glyph region from atlas onto cell
+    float2 atlas_sz = max(uniforms.atlas_size, float2(1.0, 1.0));
+    float2 tex_coord = (cell.atlas_uv + corner * cell.atlas_size) / atlas_sz;
     VertexOut out;
     out.position = float4(ndc, 0, 1);
     out.texCoord = tex_coord;
@@ -194,8 +217,11 @@ fragment float4 cell_fragment(
         out[3] = 1.0f;
     }
 
+    int debugFrameCount = 0;
+
     void buildCellBuffer(const Screen& screen) {
         if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
+            if (debugFrameCount++ < 3) NSLog(@"BreadTerminal: buildCellBuffer - missing font stack (fc=%p gc=%p ga=%p r=%p)", fontCollection, glyphCache, glyphAtlas, rasterizer);
             return;
         }
 
@@ -203,6 +229,10 @@ fragment float4 cell_fragment(
         float cellW = metrics.cell_width;
         float cellH = metrics.cell_height;
         float fontSize = fontCollection->fontSize();
+
+        if (debugFrameCount < 3) {
+            NSLog(@"BreadTerminal: buildCellBuffer cellW=%.1f cellH=%.1f fontSize=%.1f rows=%d cols=%d", cellW, cellH, fontSize, screen.rows(), screen.cols());
+        }
 
         int rows = screen.rows();
         int cols = screen.cols();
@@ -234,15 +264,29 @@ fragment float4 cell_fragment(
                 // Only look up glyph for non-space characters
                 if (cell.codepoint != ' ' && cell.codepoint != 0) {
                     CollectionFaceId faceId = fontCollection->resolveFace(cell.codepoint);
+                    if (debugFrameCount < 3 && row == 0 && col < 5) {
+                        NSLog(@"BreadTerminal: cell[%d,%d] cp=U+%04X faceId=%u", row, col, cell.codepoint, faceId);
+                    }
                     if (faceId != kInvalidCollectionFace) {
                         FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
                         uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
 
                         if (glyphIdx != 0) {
                             GlyphKey key{rastFace, glyphIdx, {0, 0}};
+
+                            // DEBUG: rasterize directly to check bitmap
+                            if (debugFrameCount < 5 && row == 0 && col < 6) {
+                                auto rawGlyph = rasterizer->rasterize(rastFace, glyphIdx, fontSize, {0,0});
+                                int nonZero = 0;
+                                for (auto b : rawGlyph.bitmap) if (b > 0) nonZero++;
+                                NSLog(@"BreadTerminal: RAW glyph[%d,%d] w=%d h=%d bx=%d by=%d fmt=%d bytes=%zu nonZero=%d",
+                                      row, col, rawGlyph.width, rawGlyph.height,
+                                      rawGlyph.bearing_x, rawGlyph.bearing_y,
+                                      (int)rawGlyph.format, rawGlyph.bitmap.size(), nonZero);
+                            }
+
                             auto info = glyphCache->getOrRasterize(
                                 key, fontSize, *rasterizer, *glyphAtlas);
-
                             if (info) {
                                 inst.flags |= 1; // has_glyph
                                 if (info->is_color) {
@@ -262,6 +306,7 @@ fragment float4 cell_fragment(
                 cellInstances.push_back(inst);
             }
         }
+        debugFrameCount++;
     }
 };
 
@@ -296,6 +341,18 @@ void MetalTextRenderer::render(const Screen& screen) {
     // Upload dirty atlas textures
     if (impl_->glyphAtlas) {
         impl_->atlasUploader->upload(*impl_->glyphAtlas);
+
+        if (impl_->debugFrameCount < 5) {
+            const AtlasPage* page = impl_->glyphAtlas->getPage(AtlasFormat::R8);
+            if (page && page->width() > 0) {
+                int nonZero = 0;
+                const uint8_t* data = page->data();
+                int total = page->width() * page->height();
+                for (int i = 0; i < total; i++) if (data[i] > 0) nonZero++;
+                NSLog(@"BreadTerminal: atlas R8 %dx%d nonZeroPixels=%d/%d",
+                      page->width(), page->height(), nonZero, total);
+            }
+        }
     }
 
     // Get drawable
@@ -330,6 +387,13 @@ void MetalTextRenderer::render(const Screen& screen) {
                 uniforms.atlas_size[0] = static_cast<float>(r8Page->width());
                 uniforms.atlas_size[1] = static_cast<float>(r8Page->height());
             }
+            if (impl_->debugFrameCount < 5) {
+                NSLog(@"BreadTerminal: render viewport=%.0fx%.0f cell=%.1fx%.1f atlas=%.0fx%.0f r8page=%p instances=%zu",
+                      uniforms.viewport_size[0], uniforms.viewport_size[1],
+                      uniforms.cell_size[0], uniforms.cell_size[1],
+                      uniforms.atlas_size[0], uniforms.atlas_size[1],
+                      (void*)r8Page, impl_->cellInstances.size());
+            }
         }
 
         id<MTLBuffer> uniformBuffer = [impl_->device
@@ -352,18 +416,14 @@ void MetalTextRenderer::render(const Screen& screen) {
         [encoder setVertexBuffer:cellBuffer offset:0 atIndex:0];
         [encoder setVertexBuffer:uniformBuffer offset:0 atIndex:1];
 
-        // Bind atlas textures
+        // Bind atlas textures (always bind — use dummy if atlas not ready)
         id<MTLTexture> r8Tex =
-            impl_->atlasUploader->textureForFormat(AtlasFormat::R8);
+            impl_->atlasUploader->textureForFormat(AtlasFormat::R8) ?: impl_->dummyR8;
         id<MTLTexture> bgraTex =
-            impl_->atlasUploader->textureForFormat(AtlasFormat::BGRA);
+            impl_->atlasUploader->textureForFormat(AtlasFormat::BGRA) ?: impl_->dummyBGRA;
 
-        if (r8Tex) {
-            [encoder setFragmentTexture:r8Tex atIndex:0];
-        }
-        if (bgraTex) {
-            [encoder setFragmentTexture:bgraTex atIndex:1];
-        }
+        [encoder setFragmentTexture:r8Tex atIndex:0];
+        [encoder setFragmentTexture:bgraTex atIndex:1];
 
         // Instanced draw: 6 vertices per quad, N instances
         NSUInteger instanceCount = impl_->cellInstances.size();

@@ -16,14 +16,17 @@
 namespace termcore {
 
 /// GPU cell instance data — must match CellInstance in cell.metal.
+/// Metal aligns float4 to 16 bytes, making struct stride 80 bytes.
+/// C++ struct must match by adding explicit padding after flags.
 struct CellInstance {
-    float position[2];     // Screen position (top-left of cell, in pixels)
-    float atlas_uv[2];     // Top-left UV in atlas (in pixels)
-    float atlas_size[2];   // Size of glyph in atlas (pixels)
-    float glyph_offset[2]; // Bearing offset within cell
-    float fg_color[4];     // Foreground color (RGBA, 0-1)
-    float bg_color[4];     // Background color (RGBA, 0-1)
-    uint32_t flags;        // Bit flags: bit0=has_glyph, bit1=is_color
+    float position[2];     // offset 0,  8 bytes
+    float atlas_uv[2];     // offset 8,  8 bytes
+    float atlas_size[2];   // offset 16, 8 bytes
+    float glyph_offset[2]; // offset 24, 8 bytes
+    float fg_color[4];     // offset 32, 16 bytes
+    float bg_color[4];     // offset 48, 16 bytes
+    uint32_t flags;        // offset 64, 4 bytes
+    uint32_t _pad[3];      // offset 68, 12 bytes → total 80 bytes (matches Metal)
 };
 
 /// GPU uniform data — must match Uniforms in cell.metal.

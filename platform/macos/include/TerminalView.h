@@ -66,6 +66,9 @@ enum class Action : uint16_t;
 /// Handle a keybinding action.
 - (void)handleAction:(termcore::Action)action;
 
+/// Capture debug screenshot + state dump (Cmd+Shift+S)
+- (void)captureScreenshot;
+
 @end
 
 #endif // BREADTERMINAL_TERMINAL_VIEW_H
