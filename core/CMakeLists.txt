@@ -16,6 +16,8 @@ set(TERMCORE_SOURCES
     src/mux.cpp
     src/lua_engine.cpp
     src/notification.cpp
+    src/config.cpp
+    src/config_themes.cpp
 )
 
 if(UNIX)
