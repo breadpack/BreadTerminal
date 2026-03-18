@@ -9,6 +9,13 @@ Screen::Screen(int rows, int cols)
     : rows_(rows), cols_(cols), scroll_bottom_(rows - 1)
 {
     grid_.resize(rows_, makeRow());
+    initTabStops();
+}
+
+void Screen::initTabStops() {
+    tab_stops_.assign(cols_, false);
+    for (int i = 0; i < cols_; i += 8)
+        tab_stops_[i] = true;
 }
 
 Screen::Row Screen::makeRow() const {
@@ -70,6 +77,7 @@ void Screen::scrollDown(int top, int bottom, int count) {
 
 // --- onPrint ---
 void Screen::onPrint(char32_t codepoint) {
+    last_printed_ = codepoint;
     if (wrap_pending_) {
         wrap_pending_ = false;
         cursor_.col = 0;
@@ -110,8 +118,10 @@ void Screen::onExecute(uint8_t byte) {
         }
         break;
     case 0x09: { // HT (tab)
-        int next = ((cursor_.col / 8) + 1) * 8;
-        cursor_.col = std::min(next, cols_ - 1);
+        for (int c = cursor_.col + 1; c < cols_; ++c) {
+            if (tab_stops_[c]) { cursor_.col = c; break; }
+            if (c == cols_ - 1) { cursor_.col = c; break; }
+        }
         wrap_pending_ = false;
         break;
     }
@@ -238,6 +248,7 @@ void Screen::resize(int rows, int cols) {
     cols_ = cols;
     scroll_bottom_ = rows_ - 1;
     scroll_top_ = 0;
+    initTabStops();
     clampCursor();
     wrap_pending_ = false;
 }

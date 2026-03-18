@@ -30,12 +30,16 @@ struct TermCell {
     uint8_t width = 1;
 };
 
+/// Cursor shape for DECSCUSR.
+enum class CursorShape : uint8_t { Block, Underline, Bar };
+
 /// Cursor state.
 struct CursorState {
     int row = 0;
     int col = 0;
     bool visible = true;
     bool blink = true;
+    CursorShape shape = CursorShape::Block;
 };
 
 /// Current SGR pen attributes applied to new cells.
@@ -77,6 +81,8 @@ public:
     int cursorRow() const { return cursor_.row; }
     int cursorCol() const { return cursor_.col; }
     bool cursorVisible() const { return cursor_.visible; }
+    CursorShape cursorShape() const { return cursor_.shape; }
+    bool cursorBlink() const { return cursor_.blink; }
 
     // --- Resize ---
     void resize(int rows, int cols);
@@ -174,6 +180,12 @@ private:
     PromptState prompt_state_ = PromptState::None;
     TermNotification last_notification_;
 
+    // REP (repeat character)
+    char32_t last_printed_ = 0;
+
+    // Tab stops
+    std::vector<bool> tab_stops_;
+
     // Callbacks
     ResponseCallback response_callback_;
     NotificationCallback notification_callback_;
@@ -219,6 +231,20 @@ private:
     void handleEraseChars(const std::vector<int>& params);
     void handleAbsolutePosition(char32_t final_char,
                                 const std::vector<int>& params);
+
+    // CSI ext handlers (defined in screen_csi_ext.cpp)
+    void handleDeviceStatusReport(const std::vector<int>& params,
+                                  const std::string& intermediates);
+    void handleDeviceAttributes(const std::vector<int>& params,
+                                const std::string& intermediates);
+    void handleCursorStyle(const std::vector<int>& params);
+    void handleRepeatChar(const std::vector<int>& params);
+    void handleCursorNextPrevLine(char32_t final_char,
+                                  const std::vector<int>& params);
+    void handleTabMovement(char32_t final_char,
+                           const std::vector<int>& params);
+    void handleTabClear(const std::vector<int>& params);
+    void initTabStops();
 
     // OSC handlers (defined in screen_osc.cpp)
     void handleOscWorkingDirectory(const std::string& str);

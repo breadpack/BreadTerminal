@@ -54,6 +54,29 @@ void Screen::onCsiDispatch(char32_t final_char,
     case 'd': case 'G':
         handleAbsolutePosition(final_char, params);
         break;
+    case 'n':  // DSR - Device Status Report
+        handleDeviceStatusReport(params, intermediates);
+        break;
+    case 'c':  // DA - Device Attributes
+        handleDeviceAttributes(params, intermediates);
+        break;
+    case 'q':  // DECSCUSR - Set Cursor Style
+        handleCursorStyle(params);
+        break;
+    case 'b':  // REP - Repeat preceding character
+        handleRepeatChar(params);
+        break;
+    case 'E':  // CNL - Cursor Next Line
+    case 'F':  // CPL - Cursor Previous Line
+        handleCursorNextPrevLine(final_char, params);
+        break;
+    case 'I':  // CHT - Cursor Horizontal Tab
+    case 'Z':  // CBT - Cursor Backward Tab
+        handleTabMovement(final_char, params);
+        break;
+    case 'g':  // TBC - Tab Clear
+        handleTabClear(params);
+        break;
     default:
         break;
     }
