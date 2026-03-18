@@ -14,6 +14,7 @@ set(TERMCORE_SOURCES
     src/font/glyph_cache.cpp
     src/font/font_collection.cpp
     src/mux.cpp
+    src/lua_engine.cpp
 )
 
 if(UNIX)
@@ -29,13 +30,29 @@ find_package(ICU REQUIRED COMPONENTS uc)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HARFBUZZ REQUIRED harfbuzz)
 
+# Lua 5.4
+set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/opt/homebrew/opt/lua@5.4/lib/pkgconfig")
+pkg_check_modules(LUA REQUIRED lua5.4)
+
+# Sol3 (header-only Lua binding)
+include(FetchContent)
+FetchContent_Declare(
+    sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG develop
+)
+FetchContent_Populate(sol2)
+add_library(sol2_header_only INTERFACE)
+target_include_directories(sol2_header_only INTERFACE ${sol2_SOURCE_DIR}/include)
+
 add_library(termcore STATIC ${TERMCORE_SOURCES})
 
 target_include_directories(termcore
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${HARFBUZZ_INCLUDE_DIRS}
+        ${LUA_INCLUDE_DIRS}
 )
 
-target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES})
-target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
+target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES} sol2_header_only ${LUA_LIBRARIES})
+target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS} ${LUA_LIBRARY_DIRS})

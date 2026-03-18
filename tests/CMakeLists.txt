@@ -25,6 +25,7 @@ add_executable(termcore_tests
     test_font_collection.cpp
     test_mouse.cpp
     test_mux.cpp
+    test_lua_engine.cpp
 )
 
 target_link_libraries(termcore_tests
