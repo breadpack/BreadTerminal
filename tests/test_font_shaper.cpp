@@ -1,22 +1,40 @@
 #include <gtest/gtest.h>
 #include "termcore/font/font_shaper.h"
+#include <fstream>
 #include <string>
 
 namespace termcore {
 namespace {
 
-// System monospace font available on macOS
-static const char* kTestFontPath = "/System/Library/Fonts/Menlo.ttc";
+// Try multiple font paths for cross-platform compatibility
+static std::string findTestFont() {
+    const char* candidates[] = {
+        "/System/Library/Fonts/Menlo.ttc",            // macOS
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",  // Ubuntu/Debian
+        "/usr/share/fonts/TTF/DejaVuSansMono.ttf",   // Arch
+        "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf", // Fedora
+    };
+    for (auto* p : candidates) {
+        std::ifstream f(p);
+        if (f.good()) return p;
+    }
+    return "";
+}
+
+static const std::string kTestFontPath = findTestFont();
 static const int kTestFaceIndex = 0;
 static const float kTestFontSize = 14.0f;
 
 class FontShaperTest : public ::testing::Test {
 protected:
     FontShaper shaper;
+    void SetUp() override {
+        if (kTestFontPath.empty()) GTEST_SKIP() << "No test font found";
+    }
 };
 
 TEST_F(FontShaperTest, LoadValidFont) {
-    FontFaceId id = shaper.loadFont(kTestFontPath, kTestFaceIndex, kTestFontSize);
+    FontFaceId id = shaper.loadFont(kTestFontPath.c_str(), kTestFaceIndex, kTestFontSize);
     EXPECT_NE(id, kInvalidFontFace);
 }
 
