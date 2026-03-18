@@ -3,6 +3,10 @@
 #include "termcore/vt_parser.h"
 #include "termcore/pty.h"
 #include "termcore/mouse.h"
+#include "termcore/mux.h"
+#include "termcore/agent.h"
+#include "termcore/lua_engine.h"
+#include "termcore/notification.h"
 
 #include <algorithm>
 #include <cstring>
@@ -34,6 +38,12 @@ struct TermCore {
     std::vector<TermPane*> panes;
     tc_notify_callback notify_cb = nullptr;
     void* notify_user_data = nullptr;
+
+    // Owned subsystems
+    termcore::Mux mux;
+    termcore::AgentTracker agent_tracker;
+    termcore::LuaEngine lua_engine;
+    termcore::NotificationStore notifications;
 };
 
 // ---------- Lifecycle ----------
@@ -41,7 +51,26 @@ struct TermCore {
 extern "C" {
 
 TermCore* tc_create(void) {
-    return new TermCore();
+    auto* core = new TermCore();
+
+    // Wire Mux pane creation/destruction to real TermPane lifecycle
+    core->mux.setPaneCallbacks(
+        [core](int rows, int cols) -> termcore::PaneId {
+            TermPane* pane = tc_pane_create(core, rows, cols);
+            if (!pane) return termcore::kInvalidPane;
+            // PaneId is index+1 (0 is kInvalidPane)
+            return static_cast<termcore::PaneId>(core->panes.size());
+        },
+        [core](termcore::PaneId id) {
+            if (id == termcore::kInvalidPane) return;
+            size_t idx = static_cast<size_t>(id) - 1;
+            if (idx < core->panes.size() && core->panes[idx]) {
+                tc_pane_destroy(core->panes[idx]);
+            }
+        }
+    );
+
+    return core;
 }
 
 void tc_destroy(TermCore* core) {
@@ -60,6 +89,25 @@ TermPane* tc_pane_create(TermCore* core, int rows, int cols) {
     if (!core) return nullptr;
     auto* pane = new TermPane(core, rows, cols);
     core->panes.push_back(pane);
+
+    // Wire Screen notification callback -> NotificationStore -> C API callback
+    auto* pane_ptr = pane;
+    auto* core_ptr = core;
+    pane->screen->setNotificationCallback(
+        [core_ptr, pane_ptr](const termcore::TermNotification& notif) {
+            // Add to notification store
+            core_ptr->notifications.add(
+                0, termcore::NotificationSource::OSC9,
+                termcore::NotificationUrgency::Normal,
+                notif.title, notif.body);
+            // Fire C API callback
+            if (core_ptr->notify_cb) {
+                std::string msg = notif.title + ": " + notif.body;
+                core_ptr->notify_cb(pane_ptr, notif.type, msg.c_str(),
+                                    core_ptr->notify_user_data);
+            }
+        });
+
     return pane;
 }
 
@@ -240,6 +288,154 @@ int tc_pane_encode_mouse(TermPane* pane, int type, int button,
     if (seq.empty() || seq.size() > buf_size) return 0;
     memcpy(buf, seq.data(), seq.size());
     return static_cast<int>(seq.size());
+}
+
+// ---------- Mux operations ----------
+
+int tc_workspace_create(TermCore* core, const char* name) {
+    if (!core) return 0;
+    return static_cast<int>(core->mux.createWorkspace(name ? name : ""));
+}
+
+int tc_workspace_active(TermCore* core) {
+    if (!core) return 0;
+    return static_cast<int>(core->mux.activeWorkspaceId());
+}
+
+void tc_workspace_set_active(TermCore* core, int workspace_id) {
+    if (!core) return;
+    core->mux.setActiveWorkspace(static_cast<termcore::WorkspaceId>(workspace_id));
+}
+
+int tc_workspace_count(TermCore* core) {
+    if (!core) return 0;
+    return static_cast<int>(core->mux.workspaceCount());
+}
+
+int tc_tab_create(TermCore* core, int workspace_id) {
+    if (!core) return 0;
+    return static_cast<int>(
+        core->mux.createTab(static_cast<termcore::WorkspaceId>(workspace_id)));
+}
+
+int tc_tab_active(TermCore* core, int workspace_id) {
+    if (!core) return 0;
+    auto* tab = core->mux.activeTab(
+        static_cast<termcore::WorkspaceId>(workspace_id));
+    return tab ? static_cast<int>(tab->id) : 0;
+}
+
+int tc_split_pane(TermCore* core, int workspace_id, int tab_id,
+                   int pane_id, int direction) {
+    if (!core) return 0;
+    auto dir = direction == 0 ? termcore::SplitDirection::Horizontal
+                              : termcore::SplitDirection::Vertical;
+    return static_cast<int>(core->mux.splitPane(
+        static_cast<termcore::WorkspaceId>(workspace_id),
+        static_cast<termcore::TabId>(tab_id),
+        static_cast<termcore::PaneId>(pane_id), dir));
+}
+
+void tc_close_pane_in_tab(TermCore* core, int workspace_id, int tab_id,
+                           int pane_id) {
+    if (!core) return;
+    core->mux.closePane(static_cast<termcore::WorkspaceId>(workspace_id),
+                        static_cast<termcore::TabId>(tab_id),
+                        static_cast<termcore::PaneId>(pane_id));
+}
+
+int tc_pane_active_in_tab(TermCore* core, int workspace_id, int tab_id) {
+    if (!core) return 0;
+    return static_cast<int>(core->mux.activePaneId(
+        static_cast<termcore::WorkspaceId>(workspace_id),
+        static_cast<termcore::TabId>(tab_id)));
+}
+
+// ---------- Agent tracking ----------
+
+int tc_agent_detect(TermCore* core, const char* process_name) {
+    if (!core || !process_name) return 0;
+    return static_cast<int>(core->agent_tracker.detectAgent(process_name));
+}
+
+void tc_agent_report_state(TermCore* core, int pane_id, int agent_type,
+                            int state, const char* message) {
+    if (!core) return;
+    core->agent_tracker.reportState(
+        static_cast<uint32_t>(pane_id),
+        static_cast<termcore::AgentType>(agent_type),
+        static_cast<termcore::AgentState>(state),
+        message ? message : "");
+}
+
+void tc_agent_report_start(TermCore* core, int pane_id, int agent_type,
+                            int pid) {
+    if (!core) return;
+    core->agent_tracker.reportStart(
+        static_cast<uint32_t>(pane_id),
+        static_cast<termcore::AgentType>(agent_type), pid);
+}
+
+void tc_agent_report_exit(TermCore* core, int pane_id) {
+    if (!core) return;
+    core->agent_tracker.reportExit(static_cast<uint32_t>(pane_id));
+}
+
+int tc_agent_get_state(TermCore* core, int pane_id) {
+    if (!core) return 0;
+    const auto* info = core->agent_tracker.getAgent(
+        static_cast<uint32_t>(pane_id));
+    return info ? static_cast<int>(info->state) : 0;
+}
+
+int tc_agent_any_needs_input(TermCore* core) {
+    if (!core) return 0;
+    return core->agent_tracker.anyNeedsInput() ? 1 : 0;
+}
+
+void tc_agent_sweep_stale(TermCore* core) {
+    if (!core) return;
+    core->agent_tracker.sweepStale();
+}
+
+// ---------- Lua plugin system ----------
+
+int tc_lua_load_plugin(TermCore* core, const char* plugin_path) {
+    if (!core || !plugin_path) return -1;
+    return core->lua_engine.loadPlugin(plugin_path) ? 0 : -1;
+}
+
+int tc_lua_load_string(TermCore* core, const char* code) {
+    if (!core || !code) return -1;
+    return core->lua_engine.loadString(code) ? 0 : -1;
+}
+
+void tc_lua_fire_event(TermCore* core, int event_type, const char* data) {
+    if (!core) return;
+    core->lua_engine.fireEvent(static_cast<termcore::LuaEvent>(event_type),
+                               data ? data : "");
+}
+
+// ---------- Notifications ----------
+
+int tc_notification_count(TermCore* core) {
+    if (!core) return 0;
+    return static_cast<int>(core->notifications.count());
+}
+
+int tc_notification_unread_count(TermCore* core) {
+    if (!core) return 0;
+    return static_cast<int>(core->notifications.unreadCount());
+}
+
+void tc_notification_mark_all_read(TermCore* core) {
+    if (!core) return;
+    core->notifications.markAllRead();
+}
+
+void tc_notification_clear(TermCore* core) {
+    if (!core) return;
+    core->notifications.clear();
 }
 
 // ---------- Version ----------

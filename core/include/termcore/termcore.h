@@ -102,6 +102,38 @@ int tc_pane_encode_mouse(TermPane* pane, int type, int button,
                           int col, int row, int mods,
                           char* buf, size_t buf_size);
 
+// ---------- Mux operations ----------
+int tc_workspace_create(TermCore* core, const char* name);
+int tc_workspace_active(TermCore* core);
+void tc_workspace_set_active(TermCore* core, int workspace_id);
+int tc_workspace_count(TermCore* core);
+int tc_tab_create(TermCore* core, int workspace_id);
+int tc_tab_active(TermCore* core, int workspace_id);
+int tc_split_pane(TermCore* core, int workspace_id, int tab_id,
+                   int pane_id, int direction);
+void tc_close_pane_in_tab(TermCore* core, int workspace_id, int tab_id, int pane_id);
+int tc_pane_active_in_tab(TermCore* core, int workspace_id, int tab_id);
+
+// ---------- Agent tracking ----------
+int tc_agent_detect(TermCore* core, const char* process_name);
+void tc_agent_report_state(TermCore* core, int pane_id, int agent_type, int state, const char* message);
+void tc_agent_report_start(TermCore* core, int pane_id, int agent_type, int pid);
+void tc_agent_report_exit(TermCore* core, int pane_id);
+int tc_agent_get_state(TermCore* core, int pane_id);
+int tc_agent_any_needs_input(TermCore* core);
+void tc_agent_sweep_stale(TermCore* core);
+
+// ---------- Lua plugin system ----------
+int tc_lua_load_plugin(TermCore* core, const char* plugin_path);
+int tc_lua_load_string(TermCore* core, const char* code);
+void tc_lua_fire_event(TermCore* core, int event_type, const char* data);
+
+// ---------- Notifications ----------
+int tc_notification_count(TermCore* core);
+int tc_notification_unread_count(TermCore* core);
+void tc_notification_mark_all_read(TermCore* core);
+void tc_notification_clear(TermCore* core);
+
 // ---------- Version ----------
 const char* termcore_version(void);
 
