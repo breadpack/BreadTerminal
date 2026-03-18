@@ -34,6 +34,7 @@ add_executable(termcore_tests
     test_url_detector.cpp
     test_kitty_keyboard.cpp
     test_sixel.cpp
+    test_kitty_graphics.cpp
     test_shell_integration.cpp
 )
 
