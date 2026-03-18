@@ -22,7 +22,7 @@ jobs:
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
             -DICU_ROOT="$(brew --prefix icu4c@77)"
 
       - name: Build
@@ -41,7 +41,7 @@ jobs:
           hdiutil create -volname "BreadTerminal" \
             -srcfolder dmg_staging \
             -ov -format UDZO \
-            "BreadTerminal-${{ github.ref_name }}-macos-universal.dmg"
+            "BreadTerminal-${{ github.ref_name }}-macos-arm64.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -185,7 +185,7 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | macOS (Universal) | `BreadTerminal-${{ github.ref_name }}-macos-universal.dmg` |
+            | macOS (Apple Silicon) | `BreadTerminal-${{ github.ref_name }}-macos-arm64.dmg` |
             | Linux (x86_64) | `BreadTerminal-${{ github.ref_name }}-linux-x86_64.tar.gz` |
             | Linux (Debian/Ubuntu) | `BreadTerminal-${{ github.ref_name }}-linux-amd64.deb` |
             | Windows (x64 Installer) | `BreadTerminal-${{ github.ref_name }}-windows-x64.msi` |
