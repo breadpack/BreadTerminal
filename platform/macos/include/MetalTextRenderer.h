@@ -15,28 +15,32 @@
 
 namespace termcore {
 
-/// GPU cell instance data — must match CellInstance in cell.metal.
-/// Metal aligns float4 to 16 bytes, making struct stride 80 bytes.
-/// C++ struct must match by adding explicit padding after flags.
-struct CellInstance {
-    float position[2];     // offset 0,  8 bytes
-    float atlas_uv[2];     // offset 8,  8 bytes
-    float atlas_size[2];   // offset 16, 8 bytes
-    float glyph_offset[2]; // offset 24, 8 bytes
-    float fg_color[4];     // offset 32, 16 bytes
-    float bg_color[4];     // offset 48, 16 bytes
-    uint32_t flags;        // offset 64, 4 bytes
-    uint32_t _pad[3];      // offset 68, 12 bytes → total 80 bytes (matches Metal)
+/// GPU cell instance data -- Ghostty-style compact layout (32 bytes).
+/// Must match CellInstance in cell.metal exactly.
+struct alignas(16) CellInstance {
+    uint16_t grid_col;      // Terminal column (0-based)
+    uint16_t grid_row;      // Terminal row (0-based)
+    uint16_t glyph_x;       // Atlas X position (pixels)
+    uint16_t glyph_y;       // Atlas Y position (pixels)
+    uint16_t glyph_width;   // Glyph width in atlas (pixels)
+    uint16_t glyph_height;  // Glyph height in atlas (pixels)
+    int16_t  offset_x;      // Bearing X offset from cell origin (signed pixels)
+    int16_t  offset_y;      // Bearing Y offset: ascent - bearing_y (signed pixels)
+    uint8_t  fg_r, fg_g, fg_b, fg_a;  // Foreground color
+    uint8_t  bg_r, bg_g, bg_b, bg_a;  // Background color
+    uint8_t  flags;          // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass
+    uint8_t  _pad[3];        // Pad to 32 bytes
 };
+static_assert(sizeof(CellInstance) == 32, "CellInstance must be exactly 32 bytes");
 
-/// GPU uniform data — must match Uniforms in cell.metal.
+/// GPU uniform data -- must match Uniforms in cell.metal.
 struct CellUniforms {
-    float viewport_size[2];  // pixels (drawableSize)
-    float cell_size[2];      // pixels
-    float atlas_size[2];     // pixels (atlas texture dimensions)
-    float ascent;            // pixels — for baseline positioning
-    float _pad;
+    float viewport_size[2];   // Physical pixels (drawableSize)
+    float cell_size[2];       // Physical pixels (cell_width_px, cell_height_px)
+    float atlas_size[2];      // Atlas texture dimensions (pixels)
+    float grid_padding[2];    // Top-left padding offset (pixels), can be 0
 };
+static_assert(sizeof(CellUniforms) == 32, "CellUniforms must be exactly 32 bytes");
 
 /// Metal-based terminal text renderer.
 /// Reads Screen data and renders cells using instanced draw calls.
