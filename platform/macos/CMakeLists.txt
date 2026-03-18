@@ -73,3 +73,59 @@ if(METAL_COMPILER_RESULT EQUAL 0)
 else()
     message(STATUS "Metal compiler not found; shaders will be compiled at runtime")
 endif()
+
+# ---------------------------------------------------------------------------
+# Application executable
+# ---------------------------------------------------------------------------
+add_executable(BreadTerminal MACOSX_BUNDLE
+    src/main.mm
+    src/AppDelegate.mm
+    src/TerminalView.mm
+)
+
+target_include_directories(BreadTerminal PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(BreadTerminal PRIVATE
+    termcore_macos
+)
+
+target_link_libraries(BreadTerminal PRIVATE
+    "-framework Cocoa"
+    "-framework Metal"
+    "-framework QuartzCore"
+    "-framework CoreText"
+    "-framework CoreGraphics"
+)
+
+# Enable Objective-C++ with ARC for app source files
+set_source_files_properties(
+    src/main.mm
+    src/AppDelegate.mm
+    src/TerminalView.mm
+    PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
+)
+
+# Set bundle properties
+set_target_properties(BreadTerminal PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.breadterminal.app"
+    MACOSX_BUNDLE_BUNDLE_NAME "BreadTerminal"
+    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1"
+)
+
+# Copy default.metallib into the bundle Resources if available
+if(METAL_COMPILER_RESULT EQUAL 0)
+    add_dependencies(BreadTerminal metal_shaders)
+    add_custom_command(TARGET BreadTerminal POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${METAL_LIB}
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources/default.metallib"
+        COMMENT "Copying default.metallib into BreadTerminal.app bundle"
+    )
+endif()
