@@ -26,6 +26,7 @@ add_executable(termcore_tests
     test_mouse.cpp
     test_mux.cpp
     test_lua_engine.cpp
+    test_notification.cpp
 )
 
 target_link_libraries(termcore_tests

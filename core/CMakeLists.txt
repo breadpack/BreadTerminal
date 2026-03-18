@@ -15,10 +15,15 @@ set(TERMCORE_SOURCES
     src/font/font_collection.cpp
     src/mux.cpp
     src/lua_engine.cpp
+    src/notification.cpp
 )
 
 if(UNIX)
     list(APPEND TERMCORE_SOURCES src/pty_unix.cpp)
+endif()
+
+if(WIN32)
+    list(APPEND TERMCORE_SOURCES src/pty_windows.cpp)
 endif()
 
 # ICU for Unicode properties
