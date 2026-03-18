@@ -18,6 +18,7 @@ set(TERMCORE_SOURCES
     src/notification.cpp
     src/config.cpp
     src/config_themes.cpp
+    src/agent.cpp
 )
 
 if(UNIX)
