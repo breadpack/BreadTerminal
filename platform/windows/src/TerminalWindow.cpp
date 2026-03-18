@@ -377,7 +377,7 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
-    wc.hCursor = LoadCursorW(nullptr, IDC_IBEAM);
+    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32513)); // IDC_IBEAM
     wc.lpszClassName = kWindowClassName;
     wc.hbrBackground = reinterpret_cast<HBRUSH>(
         GetStockObject(BLACK_BRUSH));
