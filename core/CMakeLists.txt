@@ -27,6 +27,7 @@ set(TERMCORE_SOURCES
     src/sixel.cpp
     src/kitty_graphics.cpp
     src/shell_integration.cpp
+    src/webview_stub.cpp
 )
 
 if(UNIX)
