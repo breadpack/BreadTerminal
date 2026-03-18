@@ -1,6 +1,7 @@
 #ifndef TERMCORE_SCREEN_H
 #define TERMCORE_SCREEN_H
 
+#include "termcore/kitty_keyboard.h"
 #include "termcore/vt_parser.h"
 #include <cstdint>
 #include <deque>
@@ -99,6 +100,7 @@ public:
     MouseEncoding mouseEncoding() const { return mouse_encoding_; }
     bool focusEvents() const { return focus_events_; }
     bool syncUpdate() const { return sync_update_; }
+    KittyKeyboardState& kittyKeyboard() { return kitty_keyboard_; }
 
     // --- OSC state accessors ---
     const std::string& title() const { return title_; }
@@ -176,6 +178,9 @@ private:
     // Mouse mode
     MouseMode mouse_mode_ = MouseMode::None;
     MouseEncoding mouse_encoding_ = MouseEncoding::Default;
+
+    // Kitty keyboard protocol
+    KittyKeyboardState kitty_keyboard_;
 
     // OSC state
     std::string title_;

@@ -77,6 +77,18 @@ void Screen::onCsiDispatch(char32_t final_char,
     case 'g':  // TBC - Tab Clear
         handleTabClear(params);
         break;
+    case 'u':  // Kitty keyboard protocol
+        if (intermediates == ">") {
+            kitty_keyboard_.pushMode(paramOr(params, 0, 0));
+        } else if (intermediates == "<") {
+            kitty_keyboard_.popMode(paramOr(params, 0, 1));
+        } else if (intermediates == "?") {
+            if (response_callback_) {
+                response_callback_("\033[?" +
+                    std::to_string(kitty_keyboard_.currentFlags()) + "u");
+            }
+        }
+        break;
     default:
         break;
     }
