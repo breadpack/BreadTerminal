@@ -44,6 +44,7 @@ void tc_pane_get_cell(TermPane* pane, int row, int col, TermCellData* out);
 void tc_pane_get_cursor(TermPane* pane, TermCursorData* out);
 int tc_pane_rows(TermPane* pane);
 int tc_pane_cols(TermPane* pane);
+/// Returns text of a line. Pointer valid until next call on same pane.
 const char* tc_pane_get_line_text(TermPane* pane, int row);
 
 // ---------- PTY I/O ----------

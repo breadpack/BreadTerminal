@@ -1,15 +1,8 @@
 #include "termcore/screen.h"
+#include "screen_colors.h"
 #include <algorithm>
 
 namespace termcore {
-
-// --- Standard 8-color + bright 8-color palette (same as screen.cpp) ---
-static constexpr uint32_t kColorTable[16] = {
-    0x000000, 0xAA0000, 0x00AA00, 0xAA5500,
-    0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA,
-    0x555555, 0xFF5555, 0x55FF55, 0xFFFF55,
-    0x5555FF, 0xFF55FF, 0x55FFFF, 0xFFFFFF,
-};
 
 static int paramOr(const std::vector<int>& params, size_t idx, int def) {
     if (idx < params.size() && params[idx] > 0)
@@ -21,7 +14,10 @@ static int paramOr(const std::vector<int>& params, size_t idx, int def) {
 void Screen::onCsiDispatch(char32_t final_char,
                            const std::vector<int>& params,
                            const std::string& intermediates) {
-    wrap_pending_ = false;
+    // SGR and mode changes should not clear wrap_pending state
+    if (final_char != 'm' && final_char != 'h' && final_char != 'l') {
+        wrap_pending_ = false;
+    }
 
     switch (final_char) {
     case 'A': case 'B': case 'C': case 'D':
@@ -200,7 +196,7 @@ void Screen::handleSGR(const std::vector<int>& params) {
                     else if (idx >= 16 && idx < 232) {
                         int c = idx - 16;
                         int r = c / 36, g = (c / 6) % 6, b = c % 6;
-                        pen_.fg_color = ((r * 51) << 16) | ((g * 51) << 8) | (b * 51);
+                        pen_.fg_color = (kCubeValues[r] << 16) | (kCubeValues[g] << 8) | kCubeValues[b];
                     } else if (idx >= 232 && idx < 256) {
                         int gray = 8 + (idx - 232) * 10;
                         pen_.fg_color = (gray << 16) | (gray << 8) | gray;
@@ -227,7 +223,7 @@ void Screen::handleSGR(const std::vector<int>& params) {
                     else if (idx >= 16 && idx < 232) {
                         int c = idx - 16;
                         int r = c / 36, g = (c / 6) % 6, b = c % 6;
-                        pen_.bg_color = ((r * 51) << 16) | ((g * 51) << 8) | (b * 51);
+                        pen_.bg_color = (kCubeValues[r] << 16) | (kCubeValues[g] << 8) | kCubeValues[b];
                     } else if (idx >= 232 && idx < 256) {
                         int gray = 8 + (idx - 232) * 10;
                         pen_.bg_color = (gray << 16) | (gray << 8) | gray;

@@ -9,7 +9,11 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if defined(__APPLE__)
 #include <util.h>       // macOS forkpty
+#elif defined(__linux__)
+#include <pty.h>        // Linux forkpty
+#endif
 #include <csignal>
 
 namespace termcore {
@@ -114,12 +118,11 @@ public:
         }
         if (result == child_pid_) {
             // Reaped — cache the result
-            auto* self = const_cast<UnixPty*>(this);
-            self->exited_ = true;
+            exited_ = true;
             if (WIFEXITED(status)) {
-                self->exit_code_ = WEXITSTATUS(status);
+                exit_code_ = WEXITSTATUS(status);
             } else if (WIFSIGNALED(status)) {
-                self->exit_code_ = 128 + WTERMSIG(status);
+                exit_code_ = 128 + WTERMSIG(status);
             }
             return false;
         }
@@ -164,8 +167,8 @@ public:
 private:
     int master_fd_ = -1;
     pid_t child_pid_ = -1;
-    bool exited_ = false;
-    int exit_code_ = -1;
+    mutable bool exited_ = false;
+    mutable int exit_code_ = -1;
 
     void cleanup() {
         if (child_pid_ > 0 && !exited_) {

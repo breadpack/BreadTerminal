@@ -1,16 +1,9 @@
 #include "termcore/screen.h"
+#include "screen_colors.h"
 #include <algorithm>
 #include <cassert>
 
 namespace termcore {
-
-// --- Standard 8-color + bright 8-color palette ---
-static constexpr uint32_t kColorTable[16] = {
-    0x000000, 0xAA0000, 0x00AA00, 0xAA5500,
-    0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA,
-    0x555555, 0xFF5555, 0x55FF55, 0xFFFF55,
-    0x5555FF, 0xFF55FF, 0x55FFFF, 0xFFFFFF,
-};
 
 Screen::Screen(int rows, int cols)
     : rows_(rows), cols_(cols), scroll_bottom_(rows - 1)
@@ -30,6 +23,7 @@ const TermCell& Screen::cellAt(int row, int col) const {
 }
 
 TermCell& Screen::mutableCellAt(int row, int col) {
+    assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
     return grid_[row][col];
 }
 
