@@ -22,6 +22,9 @@ set(TERMCORE_SOURCES
     src/keybinding.cpp
     src/search.cpp
     src/url_detector.cpp
+    src/kitty_keyboard.cpp
+    src/sixel.cpp
+    src/shell_integration.cpp
 )
 
 if(UNIX)
