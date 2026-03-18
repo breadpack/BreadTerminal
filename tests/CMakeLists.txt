@@ -32,8 +32,13 @@ if(APPLE)
     target_sources(termcore_tests PRIVATE
         test_coretext_rasterizer.cpp
         test_coretext_discovery.cpp
+        test_metal_renderer.mm
     )
     target_link_libraries(termcore_tests PRIVATE termcore_macos)
+    set_source_files_properties(
+        test_metal_renderer.mm
+        PROPERTIES COMPILE_FLAGS "-x objective-c++"
+    )
 endif()
 
 include(GoogleTest)
