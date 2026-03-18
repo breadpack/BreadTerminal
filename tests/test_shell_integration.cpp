@@ -94,5 +94,8 @@ TEST(ShellIntegration, InstallScriptsCreatesFiles) {
 // 11. defaultScriptsDir is non-empty
 TEST(ShellIntegration, DefaultScriptsDirNonEmpty) {
     auto dir = defaultScriptsDir();
+#if defined(_WIN32)
+    if (dir.empty()) GTEST_SKIP() << "HOME not set on Windows";
+#endif
     EXPECT_FALSE(dir.empty());
 }

@@ -6,6 +6,11 @@
 #include <string>
 #include <thread>
 
+#if defined(_WIN32)
+// PTY tests use Unix commands (echo, cat, true, false) — skip on Windows
+TEST(PtyTest, SkippedOnWindows) { GTEST_SKIP() << "Unix PTY tests not applicable on Windows"; }
+#else
+
 using namespace termcore;
 
 namespace {
@@ -148,3 +153,5 @@ TEST(PtyTest, FdIsValid) {
 
     EXPECT_GE(pty->fd(), 0);
 }
+
+#endif // !_WIN32
