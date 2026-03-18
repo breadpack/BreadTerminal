@@ -214,7 +214,7 @@ public:
         // Cell width: use advance of space glyph
         UINT16 spaceIdx = 0;
         UINT32 codepoint = ' ';
-        entry.fontFace->GetGlyphIndicesW(&codepoint, 1, &spaceIdx);
+        entry.fontFace->GetGlyphIndices(&codepoint, 1, &spaceIdx);
 
         if (spaceIdx != 0) {
             DWRITE_GLYPH_METRICS glyphMetrics;
@@ -272,7 +272,7 @@ public:
 
         UINT16 glyphIndex = 0;
         UINT32 cp = static_cast<UINT32>(codepoint);
-        it->second.fontFace->GetGlyphIndicesW(&cp, 1, &glyphIndex);
+        it->second.fontFace->GetGlyphIndices(&cp, 1, &glyphIndex);
         return static_cast<uint32_t>(glyphIndex);
     }
 

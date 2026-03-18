@@ -1,9 +1,12 @@
 #include "termcore/config.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <gtest/gtest.h>
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 
 using namespace termcore;
 
@@ -79,11 +82,8 @@ TEST(ConfigTest, ParseMultiValueFontFeatures) {
 }
 
 TEST(ConfigTest, ParseConfigFileWithTempFile) {
-    char tmpl[] = "/tmp/breadterm_test_XXXXXX";
-    int fd = mkstemp(tmpl);
-    ASSERT_NE(fd, -1);
-    std::string path(tmpl);
-    close(fd);
+    std::string path = std::tmpnam(nullptr);
+    if (path.empty()) GTEST_SKIP() << "tmpnam failed";
     {
         std::ofstream f(path);
         f << "font-family = Monaco\n"
@@ -94,7 +94,7 @@ TEST(ConfigTest, ParseConfigFileWithTempFile) {
     EXPECT_EQ(config.font_family, "Monaco");
     EXPECT_FLOAT_EQ(config.font_size, 12.0f);
     EXPECT_EQ(config.background, 0x000000u);
-    unlink(path.c_str());
+    std::remove(path.c_str());
 }
 
 TEST(ConfigTest, ParseConfigFileNonexistentReturnsDefault) {

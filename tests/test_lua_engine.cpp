@@ -7,10 +7,10 @@ TEST(LuaEngineTest, Disabled) { GTEST_SKIP() << "Lua not available"; }
 
 #include <termcore/lua_engine.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <string>
-#include <unistd.h>
 
 using termcore::LuaEngine;
 using termcore::LuaEvent;
@@ -141,11 +141,7 @@ TEST(LuaEngine, LoadPluginTempFile) {
         });
 
     // Create a temporary file
-    char tmp_template[] = "/tmp/lua_test_XXXXXX";
-    int fd = mkstemp(tmp_template);
-    close(fd);
-    std::string tmp_path = std::string(tmp_template) + ".lua";
-    std::rename(tmp_template, tmp_path.c_str());
+    std::string tmp_path = std::string(std::tmpnam(nullptr)) + ".lua";
     {
         std::ofstream f(tmp_path);
         f << R"(
