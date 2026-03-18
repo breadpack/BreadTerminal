@@ -23,4 +23,8 @@ if(UNIX AND NOT APPLE)
     add_subdirectory(platform/linux)
 endif()
 
+if(WIN32)
+    add_subdirectory(platform/windows)
+endif()
+
 add_subdirectory(tests)
