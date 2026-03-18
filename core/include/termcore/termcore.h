@@ -1,31 +1,64 @@
 #ifndef TERMCORE_TERMCORE_H
 #define TERMCORE_TERMCORE_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// ---------- Opaque handle ----------
-// typedef struct TermSession TermSession;
+// ---------- Opaque handles ----------
+typedef struct TermCore TermCore;
+typedef struct TermPane TermPane;
+
+// ---------- Cell data for rendering ----------
+typedef struct {
+    uint32_t codepoint;
+    uint32_t fg_color;
+    uint32_t bg_color;
+    uint16_t attributes;
+    uint8_t width;
+} TermCellData;
+
+typedef struct {
+    int row;
+    int col;
+    int visible;
+} TermCursorData;
 
 // ---------- Lifecycle ----------
-// TermSession* term_session_create(int rows, int cols);
-// void         term_session_destroy(TermSession* session);
+TermCore* tc_create(void);
+void tc_destroy(TermCore* core);
 
-// ---------- I/O ----------
-// void term_session_feed(TermSession* session, const char* data, int len);
-// const char* term_session_read(TermSession* session, int* out_len);
+// ---------- Pane management ----------
+TermPane* tc_pane_create(TermCore* core, int rows, int cols);
+void tc_pane_destroy(TermPane* pane);
+void tc_pane_resize(TermPane* pane, int rows, int cols);
+
+// ---------- Feed data from PTY output into the pane (parser -> screen) ----------
+void tc_pane_feed(TermPane* pane, const char* data, size_t len);
 
 // ---------- Screen query ----------
-// const char* term_screen_get_text(TermSession* session, int row);
-// int term_screen_rows(TermSession* session);
-// int term_screen_cols(TermSession* session);
+void tc_pane_get_cell(TermPane* pane, int row, int col, TermCellData* out);
+void tc_pane_get_cursor(TermPane* pane, TermCursorData* out);
+int tc_pane_rows(TermPane* pane);
+int tc_pane_cols(TermPane* pane);
+const char* tc_pane_get_line_text(TermPane* pane, int row);
+
+// ---------- PTY I/O ----------
+int tc_pane_spawn(TermPane* pane, const char* command);
+int tc_pane_read_pty(TermPane* pane, char* buf, size_t buf_size);
+int tc_pane_write_pty(TermPane* pane, const char* data, size_t len);
+int tc_pane_is_alive(TermPane* pane);
 
 // ---------- Notification callback ----------
-// typedef void (*TermNotifyCallback)(int event_type, const char* payload, void* user_data);
-// void term_session_set_notify(TermSession* session, TermNotifyCallback cb, void* user_data);
+typedef void (*tc_notify_callback)(TermPane* pane, int type,
+                                   const char* msg, void* user_data);
+void tc_set_notify_callback(TermCore* core, tc_notify_callback cb,
+                            void* user_data);
 
-/// Returns the library version string.
+// ---------- Version ----------
 const char* termcore_version(void);
 
 #ifdef __cplusplus
