@@ -318,6 +318,9 @@ void Screen::handleMode(char32_t final_char,
         case 1003: // Mouse: any event tracking
             mouse_mode_ = set ? MouseMode::AnyEvent : MouseMode::None;
             break;
+        case 1004: // Focus events
+            focus_events_ = set;
+            break;
         case 1006: // Mouse: SGR extended encoding
             mouse_encoding_ = set ? MouseEncoding::SGR : MouseEncoding::Default;
             break;
@@ -335,6 +338,9 @@ void Screen::handleMode(char32_t final_char,
             break;
         case 2004: // Bracketed paste mode
             bracketed_paste_ = set;
+            break;
+        case 2026: // Synchronized output
+            sync_update_ = set;
             break;
         default:
             break;

@@ -198,5 +198,50 @@ TEST_F(ScreenModesTest, MouseModeAnyEvent) {
     EXPECT_EQ(screen.mouseMode(), MouseMode::None);
 }
 
+// ===== Focus Events ?1004 Tests =====
+
+TEST_F(ScreenModesTest, FocusEventsSet) {
+    EXPECT_FALSE(screen.focusEvents());
+    feed("\x1B[?1004h");
+    EXPECT_TRUE(screen.focusEvents());
+}
+
+TEST_F(ScreenModesTest, FocusEventsReset) {
+    feed("\x1B[?1004h");
+    EXPECT_TRUE(screen.focusEvents());
+    feed("\x1B[?1004l");
+    EXPECT_FALSE(screen.focusEvents());
+}
+
+// ===== Synchronized Output ?2026 Tests =====
+
+TEST_F(ScreenModesTest, SyncUpdateSet) {
+    EXPECT_FALSE(screen.syncUpdate());
+    feed("\x1B[?2026h");
+    EXPECT_TRUE(screen.syncUpdate());
+}
+
+TEST_F(ScreenModesTest, SyncUpdateReset) {
+    feed("\x1B[?2026h");
+    EXPECT_TRUE(screen.syncUpdate());
+    feed("\x1B[?2026l");
+    EXPECT_FALSE(screen.syncUpdate());
+}
+
+// Multiple modes including new ones
+TEST_F(ScreenModesTest, MultipleModesWithNewModes) {
+    feed("\x1B[?1;1004;2004;2026h");
+    EXPECT_TRUE(screen.appCursorKeys());
+    EXPECT_TRUE(screen.focusEvents());
+    EXPECT_TRUE(screen.bracketedPaste());
+    EXPECT_TRUE(screen.syncUpdate());
+
+    feed("\x1B[?1;1004;2004;2026l");
+    EXPECT_FALSE(screen.appCursorKeys());
+    EXPECT_FALSE(screen.focusEvents());
+    EXPECT_FALSE(screen.bracketedPaste());
+    EXPECT_FALSE(screen.syncUpdate());
+}
+
 } // namespace
 } // namespace termcore

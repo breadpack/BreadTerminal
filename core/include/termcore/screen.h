@@ -97,6 +97,8 @@ public:
     bool altScreenActive() const { return alt_screen_active_; }
     MouseMode mouseMode() const { return mouse_mode_; }
     MouseEncoding mouseEncoding() const { return mouse_encoding_; }
+    bool focusEvents() const { return focus_events_; }
+    bool syncUpdate() const { return sync_update_; }
 
     // --- OSC state accessors ---
     const std::string& title() const { return title_; }
@@ -167,6 +169,8 @@ private:
     // Mode flags
     bool app_cursor_keys_ = false;   // DECCKM ?1
     bool bracketed_paste_ = false;   // ?2004
+    bool focus_events_ = false;      // ?1004
+    bool sync_update_ = false;       // ?2026
     bool alt_screen_active_ = false;
 
     // Mouse mode
