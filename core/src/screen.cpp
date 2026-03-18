@@ -43,8 +43,8 @@ void Screen::clampCursor() {
 void Screen::scrollUp(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
     for (int i = 0; i < count; ++i) {
-        // If scrolling the whole screen, save to scrollback
-        if (top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
+        // If scrolling the whole screen, save to scrollback (not on alt screen)
+        if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
             scrollback_.push_back(std::move(grid_[top]));
             if (scrollback_.size() > max_scrollback_) {
                 scrollback_.pop_front();
@@ -239,6 +239,59 @@ std::string Screen::getLineText(int row) const {
         result.clear();
     }
     return result;
+}
+
+// --- Alt screen ---
+void Screen::switchToAltScreen(bool save_cursor) {
+    if (alt_screen_active_) return;
+
+    // Save primary state
+    saved_primary_.grid = std::move(grid_);
+    saved_primary_.cursor = cursor_;
+    saved_primary_.pen = pen_;
+    saved_primary_.scroll_top = scroll_top_;
+    saved_primary_.scroll_bottom = scroll_bottom_;
+    saved_primary_.autowrap = autowrap_;
+    saved_primary_.wrap_pending = wrap_pending_;
+
+    // Create fresh alt screen
+    grid_.clear();
+    grid_.resize(rows_, makeRow());
+    if (save_cursor) {
+        saved_cursor_ = cursor_;
+        saved_pen_ = pen_;
+    }
+    cursor_ = CursorState{};
+    scroll_top_ = 0;
+    scroll_bottom_ = rows_ - 1;
+    wrap_pending_ = false;
+    alt_screen_active_ = true;
+}
+
+void Screen::switchToPrimaryScreen(bool restore_cursor) {
+    if (!alt_screen_active_) return;
+
+    // Restore primary state
+    grid_ = std::move(saved_primary_.grid);
+    cursor_ = saved_primary_.cursor;
+    pen_ = saved_primary_.pen;
+    scroll_top_ = saved_primary_.scroll_top;
+    scroll_bottom_ = saved_primary_.scroll_bottom;
+    autowrap_ = saved_primary_.autowrap;
+    wrap_pending_ = saved_primary_.wrap_pending;
+
+    if (restore_cursor) {
+        cursor_ = saved_cursor_;
+        pen_ = saved_pen_;
+    }
+    alt_screen_active_ = false;
+    clampCursor();
+}
+
+void Screen::clearScreen() {
+    for (int r = 0; r < rows_; ++r)
+        for (int c = 0; c < cols_; ++c)
+            eraseCell(mutableCellAt(r, c));
 }
 
 } // namespace termcore

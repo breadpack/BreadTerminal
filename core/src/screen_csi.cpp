@@ -267,8 +267,54 @@ void Screen::handleMode(char32_t final_char,
     bool is_private = (intermediates.find('?') != std::string::npos);
 
     for (int p : params) {
-        if (is_private && p == 25) {
+        if (!is_private) continue;
+
+        switch (p) {
+        case 1:    // DECCKM - Application cursor keys
+            app_cursor_keys_ = set;
+            break;
+        case 7:    // DECAWM - Auto-wrap mode
+            autowrap_ = set;
+            break;
+        case 12:   // Cursor blink
+            cursor_.blink = set;
+            break;
+        case 25:   // DECTCEM - Cursor visible
             cursor_.visible = set;
+            break;
+        case 47:   // Alternate screen (no save/restore cursor)
+            if (set && !alt_screen_active_) switchToAltScreen(false);
+            else if (!set && alt_screen_active_) switchToPrimaryScreen(false);
+            break;
+        case 1000: // Mouse: X10 basic click
+            mouse_mode_ = set ? MouseMode::X10 : MouseMode::None;
+            break;
+        case 1002: // Mouse: button event tracking
+            mouse_mode_ = set ? MouseMode::ButtonEvent : MouseMode::None;
+            break;
+        case 1003: // Mouse: any event tracking
+            mouse_mode_ = set ? MouseMode::AnyEvent : MouseMode::None;
+            break;
+        case 1006: // Mouse: SGR extended encoding
+            mouse_encoding_ = set ? MouseEncoding::SGR : MouseEncoding::Default;
+            break;
+        case 1047: // Alternate screen (clear on enter)
+            if (set && !alt_screen_active_) {
+                switchToAltScreen(false);
+                clearScreen();
+            } else if (!set && alt_screen_active_) {
+                switchToPrimaryScreen(false);
+            }
+            break;
+        case 1049: // Alternate screen + save/restore cursor
+            if (set && !alt_screen_active_) switchToAltScreen(true);
+            else if (!set && alt_screen_active_) switchToPrimaryScreen(true);
+            break;
+        case 2004: // Bracketed paste mode
+            bracketed_paste_ = set;
+            break;
+        default:
+            break;
         }
     }
 }

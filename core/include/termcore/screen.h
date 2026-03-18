@@ -44,6 +44,12 @@ struct Pen {
     uint16_t attributes = 0;
 };
 
+/// Mouse tracking mode.
+enum class MouseMode : uint8_t { None, X10, ButtonEvent, AnyEvent };
+
+/// Mouse encoding format.
+enum class MouseEncoding : uint8_t { Default, SGR };
+
 /// Terminal screen model: cell grid, cursor, scrollback.
 /// Implements VtParserHandler so it can be connected to VtParser.
 class Screen : public VtParserHandler {
@@ -67,6 +73,13 @@ public:
     // --- Scrollback ---
     size_t scrollbackSize() const { return scrollback_.size(); }
     void setMaxScrollback(size_t max) { max_scrollback_ = max; }
+
+    // --- Mode accessors ---
+    bool appCursorKeys() const { return app_cursor_keys_; }
+    bool bracketedPaste() const { return bracketed_paste_; }
+    bool altScreenActive() const { return alt_screen_active_; }
+    MouseMode mouseMode() const { return mouse_mode_; }
+    MouseEncoding mouseEncoding() const { return mouse_encoding_; }
 
     // --- Utility ---
     std::string getLineText(int row) const;
@@ -108,6 +121,27 @@ private:
     bool autowrap_ = true;
     bool wrap_pending_ = false;
 
+    // Mode flags
+    bool app_cursor_keys_ = false;   // DECCKM ?1
+    bool bracketed_paste_ = false;   // ?2004
+    bool alt_screen_active_ = false;
+
+    // Mouse mode
+    MouseMode mouse_mode_ = MouseMode::None;
+    MouseEncoding mouse_encoding_ = MouseEncoding::Default;
+
+    // Alternate screen buffer
+    struct ScreenState {
+        std::vector<Row> grid;
+        CursorState cursor;
+        Pen pen;
+        int scroll_top = 0;
+        int scroll_bottom = 0;
+        bool autowrap = true;
+        bool wrap_pending = false;
+    };
+    ScreenState saved_primary_;
+
     // --- Internal helpers ---
     Row makeRow() const;
     void scrollUp(int top, int bottom, int count = 1);
@@ -136,6 +170,11 @@ private:
     void handleEraseChars(const std::vector<int>& params);
     void handleAbsolutePosition(char32_t final_char,
                                 const std::vector<int>& params);
+
+    // Alt screen helpers
+    void switchToAltScreen(bool save_cursor);
+    void switchToPrimaryScreen(bool restore_cursor);
+    void clearScreen();
 };
 
 } // namespace termcore
