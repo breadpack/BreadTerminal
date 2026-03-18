@@ -45,10 +45,7 @@
     _impl->shaper     = std::make_unique<termcore::FontShaper>();
     _impl->fontCollection = std::make_unique<termcore::FontCollection>(
         *_impl->rasterizer, *_impl->discovery, *_impl->shaper);
-    bool fontOk = _impl->fontCollection->setPrimaryFont("Menlo", 14.0f);
-    NSLog(@"BreadTerminal: setPrimaryFont Menlo = %d", fontOk);
-    auto fm = _impl->fontCollection->primaryMetrics();
-    NSLog(@"BreadTerminal: metrics cellW=%.1f cellH=%.1f ascent=%.1f", fm.cell_width, fm.cell_height, fm.ascent);
+    _impl->fontCollection->setPrimaryFont("Menlo", 14.0f);
     _impl->atlas = std::make_unique<termcore::GlyphAtlas>();
     _impl->cache = std::make_unique<termcore::GlyphCache>();
 
@@ -58,10 +55,10 @@
         _impl->fontCollection.get(), _impl->cache.get(),
         _impl->atlas.get(), _impl->rasterizer.get());
 
-    // Cell dimensions from font metrics
+    // Cell dimensions from font metrics (already in physical pixels)
     auto metrics = _impl->fontCollection->primaryMetrics();
-    _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 8.0f;
-    _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
+    _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 16.0f;
+    _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 32.0f;
 
     // Screen + Parser
     auto [rows, cols] = [self calculateGridSize];
@@ -81,10 +78,10 @@
     _impl->urlDetector = std::make_unique<termcore::UrlDetector>();
     _searchActive = NO;
 
-    // Set initial drawable size (pixels) and viewport (points)
+    // Set initial drawable size and viewport — both in physical pixels
     CGFloat scale = 2.0;  // Retina default
     _metalLayer.drawableSize = NSMakeSize(frame.size.width * scale, frame.size.height * scale);
-    _impl->renderer->resize(frame.size.width, frame.size.height);
+    _impl->renderer->resize(frame.size.width * scale, frame.size.height * scale);
     _impl->needsRender = true;
 
     // Render timer (60 fps)
@@ -110,8 +107,8 @@
     if (!config.font_family.empty()) {
         _impl->fontCollection->setPrimaryFont(config.font_family, config.font_size);
         auto metrics = _impl->fontCollection->primaryMetrics();
-        _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 8.0f;
-        _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
+        _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 16.0f;
+        _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 32.0f;
     }
 
     // Keybindings from config
@@ -165,10 +162,14 @@
 #pragma mark - Grid helpers
 
 - (std::pair<int,int>)calculateGridSize {
-    float cw = _cellWidth  > 0 ? _cellWidth  : 8;
-    float ch = _cellHeight > 0 ? _cellHeight : 16;
-    int cols = std::max(1, (int)(self.bounds.size.width  / cw));
-    int rows = std::max(1, (int)(self.bounds.size.height / ch));
+    // Cell dimensions are in physical pixels; convert view bounds to pixels
+    float cw = _cellWidth  > 0 ? _cellWidth  : 16;
+    float ch = _cellHeight > 0 ? _cellHeight : 32;
+    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    float viewWidthPx  = self.bounds.size.width  * scale;
+    float viewHeightPx = self.bounds.size.height * scale;
+    int cols = std::max(1, (int)(viewWidthPx  / cw));
+    int rows = std::max(1, (int)(viewHeightPx / ch));
     return {rows, cols};
 }
 
@@ -179,9 +180,10 @@
     _termCols = cols;
     _impl->screen->resize(rows, cols);
     if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
-    // Use points (not pixels) for viewport — cell positions are in points
-    float w = self.bounds.size.width;
-    float h = self.bounds.size.height;
+    // Viewport in physical pixels (matches drawableSize)
+    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    float w = self.bounds.size.width * scale;
+    float h = self.bounds.size.height * scale;
     _impl->renderer->resize(w, h);
     _impl->needsRender = true;
 }
@@ -253,8 +255,10 @@
         CGFloat scale = self.window.backingScaleFactor ?: 2.0;
         NSSize sz = self.bounds.size;
         if (sz.width > 0 && sz.height > 0) {
-            _metalLayer.drawableSize = NSMakeSize(sz.width * scale, sz.height * scale);
-            _impl->renderer->resize(sz.width * scale, sz.height * scale);
+            float pxW = sz.width * scale;
+            float pxH = sz.height * scale;
+            _metalLayer.drawableSize = NSMakeSize(pxW, pxH);
+            _impl->renderer->resize(pxW, pxH);
         }
     }
 

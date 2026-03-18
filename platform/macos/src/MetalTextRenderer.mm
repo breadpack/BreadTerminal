@@ -125,13 +125,13 @@ struct MetalTextRenderer::Impl {
 using namespace metal;
 
 struct CellInstance {
-    float2 position;
-    float2 atlas_uv;
-    float2 atlas_size;
-    float2 glyph_offset;
+    float2 position;       // Cell top-left in pixels
+    float2 atlas_uv;       // Glyph top-left in atlas (pixels)
+    float2 atlas_size;     // Glyph size in atlas (pixels)
+    float2 glyph_offset;   // bearing_x, bearing_y (pixels)
     float4 fg_color;
     float4 bg_color;
-    uint flags;
+    uint flags;            // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass
 };
 
 struct VertexOut {
@@ -143,9 +143,11 @@ struct VertexOut {
 };
 
 struct Uniforms {
-    float2 viewport_size;
-    float2 cell_size;
-    float2 atlas_size;
+    float2 viewport_size;  // In pixels (drawableSize)
+    float2 cell_size;      // In pixels
+    float2 atlas_size;     // In pixels (atlas texture dimensions)
+    float ascent;          // In pixels — for baseline positioning
+    float _pad;
 };
 
 vertex VertexOut cell_vertex(
@@ -160,15 +162,30 @@ vertex VertexOut cell_vertex(
     };
     CellInstance cell = cells[instance_id];
     float2 corner = corners[vertex_id];
+    bool is_bg = (cell.flags & 4) != 0;
 
-    // Cell quad position
-    float2 pixel_pos = cell.position + corner * uniforms.cell_size;
+    float2 pixel_pos;
+    float2 tex_coord;
+
+    if (is_bg) {
+        // Background pass: full cell-sized quad in pixels
+        pixel_pos = cell.position + corner * uniforms.cell_size;
+        tex_coord = float2(0, 0);
+    } else {
+        // Glyph pass: all coordinates in physical pixels
+        // bearing_y = distance from baseline to glyph top (in pixels)
+        // ascent = distance from cell top to baseline (in pixels)
+        float glyph_x = cell.position.x + cell.glyph_offset.x;
+        float glyph_y = cell.position.y + (uniforms.ascent - cell.glyph_offset.y);
+        pixel_pos = float2(glyph_x, glyph_y) + corner * cell.atlas_size;
+        float2 atlas_sz = max(uniforms.atlas_size, float2(1.0, 1.0));
+        tex_coord = (cell.atlas_uv + corner * cell.atlas_size) / atlas_sz;
+    }
+
+    // NDC conversion (viewport in pixels)
     float2 ndc = (pixel_pos / uniforms.viewport_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;
 
-    // Texture coordinate: map glyph region from atlas onto cell
-    float2 atlas_sz = max(uniforms.atlas_size, float2(1.0, 1.0));
-    float2 tex_coord = (cell.atlas_uv + corner * cell.atlas_size) / atlas_sz;
     VertexOut out;
     out.position = float4(ndc, 0, 1);
     out.texCoord = tex_coord;
@@ -183,20 +200,22 @@ fragment float4 cell_fragment(
     texture2d<float> atlas_r8 [[texture(0)]],
     texture2d<float> atlas_bgra [[texture(1)]]
 ) {
-    constexpr sampler s(mag_filter::nearest, min_filter::nearest);
-    float4 color = in.bg_color;
-    bool has_glyph = (in.flags & 1) != 0;
-    bool is_color = (in.flags & 2) != 0;
-    if (has_glyph) {
-        if (is_color) {
-            float4 glyph_color = atlas_bgra.sample(s, in.texCoord);
-            color = mix(color, glyph_color, glyph_color.a);
-        } else {
-            float alpha = atlas_r8.sample(s, in.texCoord).r;
-            color = mix(color, in.fg_color, alpha);
-        }
+    constexpr sampler s(mag_filter::linear, min_filter::linear);
+    bool is_bg = (in.flags & 4) != 0;
+
+    if (is_bg) {
+        return in.bg_color;
     }
-    return color;
+
+    // Glyph pass: blend glyph over transparent
+    bool is_color = (in.flags & 2) != 0;
+    if (is_color) {
+        float4 glyph_color = atlas_bgra.sample(s, in.texCoord);
+        return float4(glyph_color.rgb, glyph_color.a);
+    } else {
+        float alpha = atlas_r8.sample(s, in.texCoord).r;
+        return float4(in.fg_color.rgb, alpha);
+    }
 }
 )";
         MTLCompileOptions* opts = [[MTLCompileOptions alloc] init];
@@ -217,96 +236,77 @@ fragment float4 cell_fragment(
         out[3] = 1.0f;
     }
 
-    int debugFrameCount = 0;
-
     void buildCellBuffer(const Screen& screen) {
-        if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
-            if (debugFrameCount++ < 3) NSLog(@"BreadTerminal: buildCellBuffer - missing font stack (fc=%p gc=%p ga=%p r=%p)", fontCollection, glyphCache, glyphAtlas, rasterizer);
-            return;
-        }
+        if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) return;
 
         FontMetrics metrics = fontCollection->primaryMetrics();
         float cellW = metrics.cell_width;
         float cellH = metrics.cell_height;
         float fontSize = fontCollection->fontSize();
-
-        if (debugFrameCount < 3) {
-            NSLog(@"BreadTerminal: buildCellBuffer cellW=%.1f cellH=%.1f fontSize=%.1f rows=%d cols=%d", cellW, cellH, fontSize, screen.rows(), screen.cols());
-        }
-
         int rows = screen.rows();
         int cols = screen.cols();
 
         cellInstances.clear();
-        cellInstances.reserve(rows * cols);
+        cellInstances.reserve(rows * cols * 2);
 
+        // Pass 1: Background quads (full cell size, flag bit2 = bg_pass)
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const TermCell& cell = screen.cellAt(row, col);
-
                 CellInstance inst = {};
                 inst.position[0] = col * cellW;
                 inst.position[1] = row * cellH;
-
                 colorFromRGBA(cell.fg_color, inst.fg_color);
                 colorFromRGBA(cell.bg_color, inst.bg_color);
-
-                // Handle inverse attribute
                 if (cell.attributes & AttrInverse) {
                     std::swap(inst.fg_color[0], inst.bg_color[0]);
                     std::swap(inst.fg_color[1], inst.bg_color[1]);
                     std::swap(inst.fg_color[2], inst.bg_color[2]);
                     std::swap(inst.fg_color[3], inst.bg_color[3]);
                 }
-
-                inst.flags = 0;
-
-                // Only look up glyph for non-space characters
-                if (cell.codepoint != ' ' && cell.codepoint != 0) {
-                    CollectionFaceId faceId = fontCollection->resolveFace(cell.codepoint);
-                    if (debugFrameCount < 3 && row == 0 && col < 5) {
-                        NSLog(@"BreadTerminal: cell[%d,%d] cp=U+%04X faceId=%u", row, col, cell.codepoint, faceId);
-                    }
-                    if (faceId != kInvalidCollectionFace) {
-                        FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
-                        uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
-
-                        if (glyphIdx != 0) {
-                            GlyphKey key{rastFace, glyphIdx, {0, 0}};
-
-                            // DEBUG: rasterize directly to check bitmap
-                            if (debugFrameCount < 5 && row == 0 && col < 6) {
-                                auto rawGlyph = rasterizer->rasterize(rastFace, glyphIdx, fontSize, {0,0});
-                                int nonZero = 0;
-                                for (auto b : rawGlyph.bitmap) if (b > 0) nonZero++;
-                                NSLog(@"BreadTerminal: RAW glyph[%d,%d] w=%d h=%d bx=%d by=%d fmt=%d bytes=%zu nonZero=%d",
-                                      row, col, rawGlyph.width, rawGlyph.height,
-                                      rawGlyph.bearing_x, rawGlyph.bearing_y,
-                                      (int)rawGlyph.format, rawGlyph.bitmap.size(), nonZero);
-                            }
-
-                            auto info = glyphCache->getOrRasterize(
-                                key, fontSize, *rasterizer, *glyphAtlas);
-                            if (info) {
-                                inst.flags |= 1; // has_glyph
-                                if (info->is_color) {
-                                    inst.flags |= 2; // is_color
-                                }
-                                inst.atlas_uv[0] = static_cast<float>(info->region.x);
-                                inst.atlas_uv[1] = static_cast<float>(info->region.y);
-                                inst.atlas_size[0] = static_cast<float>(info->region.width);
-                                inst.atlas_size[1] = static_cast<float>(info->region.height);
-                                inst.glyph_offset[0] = static_cast<float>(info->region.bearing_x);
-                                inst.glyph_offset[1] = static_cast<float>(info->region.bearing_y);
-                            }
-                        }
-                    }
-                }
-
+                inst.flags = 4; // bg pass
                 cellInstances.push_back(inst);
             }
         }
-        debugFrameCount++;
+
+        // Pass 2: Glyph quads (actual glyph size + bearing offset)
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const TermCell& cell = screen.cellAt(row, col);
+                if (cell.codepoint == ' ' || cell.codepoint == 0) continue;
+
+                CollectionFaceId faceId = fontCollection->resolveFace(cell.codepoint);
+                if (faceId == kInvalidCollectionFace) continue;
+                FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
+                uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+                if (glyphIdx == 0) continue;
+
+                GlyphKey key{rastFace, glyphIdx, {0, 0}};
+                auto info = glyphCache->getOrRasterize(key, fontSize, *rasterizer, *glyphAtlas);
+                if (!info) continue;
+
+                CellInstance inst = {};
+                inst.position[0] = col * cellW;
+                inst.position[1] = row * cellH;
+                colorFromRGBA(cell.fg_color, inst.fg_color);
+                colorFromRGBA(cell.bg_color, inst.bg_color);
+                if (cell.attributes & AttrInverse) {
+                    std::swap(inst.fg_color[0], inst.bg_color[0]);
+                    std::swap(inst.fg_color[1], inst.bg_color[1]);
+                    std::swap(inst.fg_color[2], inst.bg_color[2]);
+                    std::swap(inst.fg_color[3], inst.bg_color[3]);
+                }
+                inst.flags = 1; // has_glyph
+                if (info->is_color) inst.flags |= 2;
+                inst.atlas_uv[0] = static_cast<float>(info->region.x);
+                inst.atlas_uv[1] = static_cast<float>(info->region.y);
+                inst.atlas_size[0] = static_cast<float>(info->region.width);
+                inst.atlas_size[1] = static_cast<float>(info->region.height);
+                inst.glyph_offset[0] = static_cast<float>(info->region.bearing_x);
+                inst.glyph_offset[1] = static_cast<float>(info->region.bearing_y);
+                cellInstances.push_back(inst);
+            }
+        }
     }
 };
 
@@ -341,18 +341,6 @@ void MetalTextRenderer::render(const Screen& screen) {
     // Upload dirty atlas textures
     if (impl_->glyphAtlas) {
         impl_->atlasUploader->upload(*impl_->glyphAtlas);
-
-        if (impl_->debugFrameCount < 5) {
-            const AtlasPage* page = impl_->glyphAtlas->getPage(AtlasFormat::R8);
-            if (page && page->width() > 0) {
-                int nonZero = 0;
-                const uint8_t* data = page->data();
-                int total = page->width() * page->height();
-                for (int i = 0; i < total; i++) if (data[i] > 0) nonZero++;
-                NSLog(@"BreadTerminal: atlas R8 %dx%d nonZeroPixels=%d/%d",
-                      page->width(), page->height(), nonZero, total);
-            }
-        }
     }
 
     // Get drawable
@@ -376,8 +364,9 @@ void MetalTextRenderer::render(const Screen& screen) {
 
         if (impl_->fontCollection) {
             FontMetrics m = impl_->fontCollection->primaryMetrics();
-            uniforms.cell_size[0] = m.cell_width;
-            uniforms.cell_size[1] = m.cell_height;
+            uniforms.cell_size[0] = m.cell_width;   // already in pixels
+            uniforms.cell_size[1] = m.cell_height;   // already in pixels
+            uniforms.ascent = m.ascent;               // in pixels for baseline
         }
 
         // Atlas size (use R8 page as reference; BGRA may differ)
@@ -386,13 +375,6 @@ void MetalTextRenderer::render(const Screen& screen) {
             if (r8Page) {
                 uniforms.atlas_size[0] = static_cast<float>(r8Page->width());
                 uniforms.atlas_size[1] = static_cast<float>(r8Page->height());
-            }
-            if (impl_->debugFrameCount < 5) {
-                NSLog(@"BreadTerminal: render viewport=%.0fx%.0f cell=%.1fx%.1f atlas=%.0fx%.0f r8page=%p instances=%zu",
-                      uniforms.viewport_size[0], uniforms.viewport_size[1],
-                      uniforms.cell_size[0], uniforms.cell_size[1],
-                      uniforms.atlas_size[0], uniforms.atlas_size[1],
-                      (void*)r8Page, impl_->cellInstances.size());
             }
         }
 

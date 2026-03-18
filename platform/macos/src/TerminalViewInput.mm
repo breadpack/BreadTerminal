@@ -319,9 +319,10 @@ static uint8_t modsFromEvent(NSEvent* event) {
             }
 
             auto metrics = fc.primaryMetrics();
-            fprintf(logFile, "viewport: %.0fx%.0f cellSize: %.1fx%.1f\n",
+            fprintf(logFile, "viewport: %.0fx%.0f cellSize: %.1fx%.1f ascent: %.1f descent: %.1f\n",
                     _metalLayer.drawableSize.width, _metalLayer.drawableSize.height,
-                    metrics.cell_width, metrics.cell_height);
+                    metrics.cell_width, metrics.cell_height,
+                    metrics.ascent, metrics.descent);
         }
 
         NSLog(@"BreadTerminal: === END DEBUG ===");

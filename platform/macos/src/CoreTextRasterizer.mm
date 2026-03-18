@@ -169,16 +169,29 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
     CGRect bbox;
     CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationDefault, &glyphId, &bbox, 1);
 
+    float scale = 2.0f; // Retina scale factor
+
     float subX = static_cast<float>(offset.x) * 0.25f;
     float subY = static_cast<float>(offset.y) * 0.25f;
 
-    int32_t w = static_cast<int32_t>(std::ceil(bbox.size.width + std::abs(bbox.origin.x) + 2));
-    int32_t h = static_cast<int32_t>(std::ceil(bbox.size.height + std::abs(bbox.origin.y) + 2));
+    // Bitmap dimensions in physical pixels
+    // Must include the full bounding box (origin can be negative for descenders)
+    // +2px padding for texture sampling safety
+    float bboxLeft = bbox.origin.x;                    // Can be negative
+    float bboxBottom = bbox.origin.y;                  // Negative for descenders
+    float bboxRight = bbox.origin.x + bbox.size.width;
+    float bboxTop = bbox.origin.y + bbox.size.height;
+
+    int32_t w = static_cast<int32_t>(std::ceil((bboxRight - std::min(bboxLeft, 0.0f)) * scale)) + 2;
+    int32_t h = static_cast<int32_t>(std::ceil((bboxTop - std::min(bboxBottom, 0.0f)) * scale)) + 2;
     w = std::max(w, 1);
     h = std::max(h, 1);
 
-    result.bearing_x = static_cast<int32_t>(std::floor(bbox.origin.x));
-    result.bearing_y = static_cast<int32_t>(std::ceil(bbox.origin.y + bbox.size.height));
+    // Bearings in physical pixels (consistent with draw position)
+    // bearing_x: pen origin to glyph left edge (can be negative for overhangs)
+    result.bearing_x = static_cast<int32_t>(std::round(bboxLeft * scale));
+    // bearing_y: baseline to glyph TOP edge (always positive for above-baseline)
+    result.bearing_y = static_cast<int32_t>(std::round(bboxTop * scale));
 
     if (color) {
         result.format = PixelFormat::BGRA;
@@ -192,7 +205,12 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
         if (!ctx) return RasterizedGlyph{};
 
         setupContext(ctx.get());
-        CGPoint position = CGPointMake(-bbox.origin.x + subX, -bbox.origin.y + subY);
+        // Scale CTM so CoreText draws at 2x into the pixel-sized bitmap
+        CGContextScaleCTM(ctx.get(), scale, scale);
+        // Draw position: offset so glyph fits in bitmap (points, CTM scales to pixels)
+        float drawX = -std::min(bboxLeft, 0.0f) + subX;
+        float drawY = -std::min(bboxBottom, 0.0f) + subY;
+        CGPoint position = CGPointMake(drawX, drawY);
         CTFontDrawGlyphs(font, &glyphId, &position, 1, ctx.get());
     } else {
         result.format = PixelFormat::Grayscale;
@@ -207,8 +225,12 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
 
         setupContext(ctx.get());
         CGContextSetRGBFillColor(ctx.get(), 1.0, 1.0, 1.0, 1.0);
-
-        CGPoint position = CGPointMake(-bbox.origin.x + subX, -bbox.origin.y + subY);
+        // Scale CTM so CoreText draws at 2x into the pixel-sized bitmap
+        CGContextScaleCTM(ctx.get(), scale, scale);
+        // Draw position: offset so glyph fits in bitmap (points, CTM scales to pixels)
+        float drawX = -std::min(bboxLeft, 0.0f) + subX;
+        float drawY = -std::min(bboxBottom, 0.0f) + subY;
+        CGPoint position = CGPointMake(drawX, drawY);
         CTFontDrawGlyphs(font, &glyphId, &position, 1, ctx.get());
 
         // Extract alpha channel as grayscale
@@ -235,9 +257,12 @@ FontMetrics CoreTextRasterizerImpl::getMetrics(FontFaceId face, float size) {
     CTFontRef font = fontPtr.get();
     if (!font) return metrics;
 
-    metrics.ascent = static_cast<float>(CTFontGetAscent(font));
-    metrics.descent = static_cast<float>(CTFontGetDescent(font));
-    float leading = static_cast<float>(CTFontGetLeading(font));
+    float scale = 2.0f; // Retina scale factor
+
+    // All metrics in physical pixels
+    metrics.ascent = static_cast<float>(CTFontGetAscent(font)) * scale;
+    metrics.descent = static_cast<float>(CTFontGetDescent(font)) * scale;
+    float leading = static_cast<float>(CTFontGetLeading(font)) * scale;
     metrics.cell_height = std::ceil(metrics.ascent + metrics.descent + leading);
 
     UniChar spaceChar = ' ';
@@ -245,19 +270,19 @@ FontMetrics CoreTextRasterizerImpl::getMetrics(FontFaceId face, float size) {
     if (CTFontGetGlyphsForCharacters(font, &spaceChar, &spaceGlyph, 1)) {
         CGSize advance;
         CTFontGetAdvancesForGlyphs(font, kCTFontOrientationDefault, &spaceGlyph, &advance, 1);
-        metrics.cell_width = static_cast<float>(advance.width);
+        metrics.cell_width = static_cast<float>(advance.width) * scale;
     } else {
         UniChar mChar = 'M';
         CGGlyph mGlyph;
         if (CTFontGetGlyphsForCharacters(font, &mChar, &mGlyph, 1)) {
             CGSize advance;
             CTFontGetAdvancesForGlyphs(font, kCTFontOrientationDefault, &mGlyph, &advance, 1);
-            metrics.cell_width = static_cast<float>(advance.width);
+            metrics.cell_width = static_cast<float>(advance.width) * scale;
         }
     }
 
-    metrics.underline_position = static_cast<float>(CTFontGetUnderlinePosition(font));
-    metrics.underline_thickness = static_cast<float>(CTFontGetUnderlineThickness(font));
+    metrics.underline_position = static_cast<float>(CTFontGetUnderlinePosition(font)) * scale;
+    metrics.underline_thickness = static_cast<float>(CTFontGetUnderlineThickness(font)) * scale;
     metrics.strikethrough_position = metrics.ascent * 0.3f;
     metrics.strikethrough_thickness = metrics.underline_thickness;
 

@@ -31,9 +31,11 @@ struct CellInstance {
 
 /// GPU uniform data — must match Uniforms in cell.metal.
 struct CellUniforms {
-    float viewport_size[2];
-    float cell_size[2];
-    float atlas_size[2];
+    float viewport_size[2];  // pixels (drawableSize)
+    float cell_size[2];      // pixels
+    float atlas_size[2];     // pixels (atlas texture dimensions)
+    float ascent;            // pixels — for baseline positioning
+    float _pad;
 };
 
 /// Metal-based terminal text renderer.
