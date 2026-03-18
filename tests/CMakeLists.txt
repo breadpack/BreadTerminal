@@ -13,6 +13,7 @@ add_executable(termcore_tests
     test_vt_parser.cpp
     test_screen.cpp
     test_screen_modes.cpp
+    test_screen_osc.cpp
     test_pty.cpp
     test_capi.cpp
     test_unicode_width.cpp

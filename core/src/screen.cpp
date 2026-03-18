@@ -177,9 +177,43 @@ void Screen::onEscDispatch(char32_t final_char,
 }
 
 // --- onOscDispatch ---
-void Screen::onOscDispatch(int /*osc_number*/,
-                           const std::string& /*osc_string*/) {
-    // TODO: handle title changes, etc.
+void Screen::onOscDispatch(int osc_number,
+                           const std::string& osc_string) {
+    switch (osc_number) {
+    case 0:  // Set icon name and window title
+        title_ = osc_string;
+        icon_name_ = osc_string;
+        break;
+    case 1:  // Set icon name
+        icon_name_ = osc_string;
+        break;
+    case 2:  // Set window title
+        title_ = osc_string;
+        break;
+    case 7:  // Set working directory (file:// URL)
+        handleOscWorkingDirectory(osc_string);
+        break;
+    case 8:  // Hyperlink
+        handleOscHyperlink(osc_string);
+        break;
+    case 9:  // Desktop notification (ConEmu style)
+        handleOscNotification(9, osc_string);
+        break;
+    case 52: // Clipboard
+        handleOscClipboard(osc_string);
+        break;
+    case 99: // Kitty notification
+        handleOscNotification(99, osc_string);
+        break;
+    case 133: // Shell integration prompt marker
+        handleOscShellIntegration(osc_string);
+        break;
+    case 777: // Desktop notification (rxvt-unicode style)
+        handleOscNotification(777, osc_string);
+        break;
+    default:
+        break;
+    }
 }
 
 // --- resize ---

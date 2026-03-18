@@ -4,6 +4,7 @@
 #include "termcore/vt_parser.h"
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,16 @@ enum class MouseMode : uint8_t { None, X10, ButtonEvent, AnyEvent };
 /// Mouse encoding format.
 enum class MouseEncoding : uint8_t { Default, SGR };
 
+/// Shell integration prompt state (OSC 133).
+enum class PromptState : uint8_t { None, Prompt, Input, Output };
+
+/// Notification from the terminal (OSC 9/99/777).
+struct TermNotification {
+    int type = 0;         // OSC number (9, 99, 777)
+    std::string title;
+    std::string body;
+};
+
 /// Terminal screen model: cell grid, cursor, scrollback.
 /// Implements VtParserHandler so it can be connected to VtParser.
 class Screen : public VtParserHandler {
@@ -80,6 +91,31 @@ public:
     bool altScreenActive() const { return alt_screen_active_; }
     MouseMode mouseMode() const { return mouse_mode_; }
     MouseEncoding mouseEncoding() const { return mouse_encoding_; }
+
+    // --- OSC state accessors ---
+    const std::string& title() const { return title_; }
+    const std::string& iconName() const { return icon_name_; }
+    const std::string& workingDirectory() const { return working_directory_; }
+    const std::string& currentHyperlink() const { return current_hyperlink_; }
+    PromptState promptState() const { return prompt_state_; }
+    const TermNotification& lastNotification() const { return last_notification_; }
+
+    // --- Response callback (for writing back to PTY) ---
+    using ResponseCallback = std::function<void(const std::string&)>;
+    void setResponseCallback(ResponseCallback cb) { response_callback_ = std::move(cb); }
+
+    // --- Notification callback ---
+    using NotificationCallback = std::function<void(const TermNotification&)>;
+    void setNotificationCallback(NotificationCallback cb) { notification_callback_ = std::move(cb); }
+
+    // --- Clipboard event callback ---
+    struct ClipboardEvent {
+        char selection = 'c';  // 'c' for clipboard, 'p' for primary
+        bool is_read = false;  // true = query, false = write
+        std::string data;      // base64-decoded data for write
+    };
+    using ClipboardCallback = std::function<void(const ClipboardEvent&)>;
+    void setClipboardCallback(ClipboardCallback cb) { clipboard_callback_ = std::move(cb); }
 
     // --- Utility ---
     std::string getLineText(int row) const;
@@ -130,6 +166,19 @@ private:
     MouseMode mouse_mode_ = MouseMode::None;
     MouseEncoding mouse_encoding_ = MouseEncoding::Default;
 
+    // OSC state
+    std::string title_;
+    std::string icon_name_;
+    std::string working_directory_;
+    std::string current_hyperlink_;
+    PromptState prompt_state_ = PromptState::None;
+    TermNotification last_notification_;
+
+    // Callbacks
+    ResponseCallback response_callback_;
+    NotificationCallback notification_callback_;
+    ClipboardCallback clipboard_callback_;
+
     // Alternate screen buffer
     struct ScreenState {
         std::vector<Row> grid;
@@ -170,6 +219,13 @@ private:
     void handleEraseChars(const std::vector<int>& params);
     void handleAbsolutePosition(char32_t final_char,
                                 const std::vector<int>& params);
+
+    // OSC handlers (defined in screen_osc.cpp)
+    void handleOscWorkingDirectory(const std::string& str);
+    void handleOscHyperlink(const std::string& str);
+    void handleOscClipboard(const std::string& str);
+    void handleOscNotification(int type, const std::string& str);
+    void handleOscShellIntegration(const std::string& str);
 
     // Alt screen helpers
     void switchToAltScreen(bool save_cursor);

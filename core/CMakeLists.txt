@@ -3,6 +3,7 @@ set(TERMCORE_SOURCES
     src/vt_parser.cpp
     src/screen.cpp
     src/screen_csi.cpp
+    src/screen_osc.cpp
     src/font/unicode_width.cpp
     src/font/box_drawing.cpp
     src/font/box_drawing_lines.cpp
