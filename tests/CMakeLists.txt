@@ -29,7 +29,10 @@ target_link_libraries(termcore_tests
 )
 
 if(APPLE)
-    target_sources(termcore_tests PRIVATE test_coretext_rasterizer.cpp)
+    target_sources(termcore_tests PRIVATE
+        test_coretext_rasterizer.cpp
+        test_coretext_discovery.cpp
+    )
     target_link_libraries(termcore_tests PRIVATE termcore_macos)
 endif()
 

@@ -4,6 +4,7 @@ endif()
 
 add_library(termcore_macos STATIC
     src/CoreTextRasterizer.mm
+    src/CoreTextDiscovery.mm
 )
 
 target_include_directories(termcore_macos
@@ -25,6 +26,8 @@ target_link_libraries(termcore_macos
 )
 
 # Enable Objective-C++ for .mm files
-set_source_files_properties(src/CoreTextRasterizer.mm
+set_source_files_properties(
+    src/CoreTextRasterizer.mm
+    src/CoreTextDiscovery.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++"
 )
