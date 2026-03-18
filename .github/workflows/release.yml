@@ -131,7 +131,10 @@ jobs:
       - name: Run tests
         run: cd build && ctest --output-on-failure -C Release
 
-      - name: Package
+      - name: Install WiX Toolset
+        run: dotnet tool install --global wix
+
+      - name: Package (ZIP)
         run: |
           mkdir package
           mkdir package\shell
@@ -141,11 +144,22 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" package\
           Compress-Archive -Path package\* -DestinationPath "BreadTerminal-${{ github.ref_name }}-windows-x64.zip"
 
+      - name: Package (MSI)
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          wix build platform\windows\installer\BreadTerminal.wxs `
+            -d PackageDir=package `
+            -d ProductVersion=$version `
+            -arch x64 `
+            -o "BreadTerminal-${{ github.ref_name }}-windows-x64.msi"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-package
-          path: "*.zip"
+          path: |
+            *.zip
+            *.msi
 
   release:
     needs: [build-macos, build-linux, build-windows]
@@ -174,7 +188,8 @@ jobs:
             | macOS (Universal) | `BreadTerminal-${{ github.ref_name }}-macos-universal.dmg` |
             | Linux (x86_64) | `BreadTerminal-${{ github.ref_name }}-linux-x86_64.tar.gz` |
             | Linux (Debian/Ubuntu) | `BreadTerminal-${{ github.ref_name }}-linux-amd64.deb` |
-            | Windows (x64) | `BreadTerminal-${{ github.ref_name }}-windows-x64.zip` |
+            | Windows (x64 Installer) | `BreadTerminal-${{ github.ref_name }}-windows-x64.msi` |
+            | Windows (x64 Portable) | `BreadTerminal-${{ github.ref_name }}-windows-x64.zip` |
 
             ### What's included
             - VT100/VT220/xterm terminal emulation with 516 tests

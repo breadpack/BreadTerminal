@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="BreadTerminal"
+           Manufacturer="BreadTerminal Team"
+           Version="!(bind.FileVersion.BreadTerminalExe)"
+           UpgradeCode="E8A1B2C3-D4E5-6F7A-8B9C-0D1E2F3A4B5C">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of BreadTerminal is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="BreadTerminal">
+        <Directory Id="ShellDir" Name="shell" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D">
+        <File Id="BreadTerminalExe" Source="$(var.PackageDir)\BreadTerminal.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
+        <File Source="$(var.PackageDir)\*.dll" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ShellScripts" Directory="ShellDir">
+      <Component Id="BashIntegration" Guid="C3D4E5F6-A7B8-9C0D-1E2F-3A4B5C6D7E8F">
+        <File Source="$(var.PackageDir)\shell\bash-integration.sh" KeyPath="yes" />
+      </Component>
+      <Component Id="ZshIntegration" Guid="D4E5F6A7-B8C9-0D1E-2F3A-4B5C6D7E8F90">
+        <File Source="$(var.PackageDir)\shell\zsh-integration.zsh" KeyPath="yes" />
+      </Component>
+      <Component Id="FishIntegration" Guid="E5F6A7B8-C9D0-1E2F-3A4B-5C6D7E8F9001">
+        <File Source="$(var.PackageDir)\shell\fish-integration.fish" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Add to PATH -->
+    <ComponentGroup Id="EnvironmentPath" Directory="INSTALLFOLDER">
+      <Component Id="PathEntry" Guid="F6A7B8C9-D0E1-2F3A-4B5C-6D7E8F900112">
+        <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]"
+                     Permanent="no" Part="last" Action="set" System="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Start Menu shortcut -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="BreadTerminal" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Shortcuts" Directory="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="A7B8C9D0-E1F2-3A4B-5C6D-7E8F90011223">
+        <Shortcut Id="AppShortcut" Name="BreadTerminal" Target="[INSTALLFOLDER]BreadTerminal.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="CleanUpShortCut" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\BreadTerminal" Name="installed"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="BreadTerminal" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ShellScripts" />
+      <ComponentGroupRef Id="EnvironmentPath" />
+      <ComponentGroupRef Id="Shortcuts" />
+    </Feature>
+  </Package>
+</Wix>
