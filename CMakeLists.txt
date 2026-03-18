@@ -19,4 +19,8 @@ if(APPLE)
     add_subdirectory(platform/macos)
 endif()
 
+if(UNIX AND NOT APPLE)
+    add_subdirectory(platform/linux)
+endif()
+
 add_subdirectory(tests)
