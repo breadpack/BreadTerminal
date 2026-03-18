@@ -1,0 +1,229 @@
+#if !defined(_WIN32)
+
+#include "termcore/pty.h"
+
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <sys/ioctl.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <util.h>       // macOS forkpty
+#include <csignal>
+
+namespace termcore {
+
+class UnixPty : public Pty {
+public:
+    UnixPty() = default;
+
+    ~UnixPty() override {
+        cleanup();
+    }
+
+    bool spawn(const std::string& command,
+               const std::vector<std::string>& args,
+               const std::string& working_dir,
+               int rows, int cols) override {
+        if (master_fd_ >= 0) {
+            // Already spawned
+            return false;
+        }
+
+        struct winsize ws {};
+        ws.ws_row = static_cast<unsigned short>(rows);
+        ws.ws_col = static_cast<unsigned short>(cols);
+
+        pid_t child = forkpty(&master_fd_, nullptr, nullptr, &ws);
+        if (child < 0) {
+            master_fd_ = -1;
+            return false;
+        }
+
+        if (child == 0) {
+            // --- Child process ---
+            setupChild(command, args, working_dir);
+            // setupChild calls execvp; if we reach here, exec failed.
+            _exit(127);
+        }
+
+        // --- Parent process ---
+        child_pid_ = child;
+
+        // Set non-blocking on master fd
+        int flags = fcntl(master_fd_, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(master_fd_, F_SETFL, flags | O_NONBLOCK);
+        }
+
+        return true;
+    }
+
+    int read(char* buf, size_t buf_size) override {
+        if (master_fd_ < 0) {
+            return -1;
+        }
+        ssize_t n = ::read(master_fd_, buf, buf_size);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            // EOF — child closed its side
+            return -1;
+        }
+        return static_cast<int>(n);
+    }
+
+    int write(const char* data, size_t len) override {
+        if (master_fd_ < 0) {
+            return -1;
+        }
+        ssize_t n = ::write(master_fd_, data, len);
+        if (n < 0) {
+            return -1;
+        }
+        return static_cast<int>(n);
+    }
+
+    void resize(int rows, int cols) override {
+        if (master_fd_ < 0) {
+            return;
+        }
+        struct winsize ws {};
+        ws.ws_row = static_cast<unsigned short>(rows);
+        ws.ws_col = static_cast<unsigned short>(cols);
+        ioctl(master_fd_, TIOCSWINSZ, &ws);
+    }
+
+    bool isAlive() const override {
+        if (child_pid_ <= 0) {
+            return false;
+        }
+        if (exited_) {
+            return false;
+        }
+        int status = 0;
+        pid_t result = waitpid(child_pid_, &status, WNOHANG);
+        if (result == 0) {
+            // Still running
+            return true;
+        }
+        if (result == child_pid_) {
+            // Reaped — cache the result
+            auto* self = const_cast<UnixPty*>(this);
+            self->exited_ = true;
+            if (WIFEXITED(status)) {
+                self->exit_code_ = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                self->exit_code_ = 128 + WTERMSIG(status);
+            }
+            return false;
+        }
+        // Error (e.g., ECHILD)
+        return false;
+    }
+
+    int pid() const override {
+        return child_pid_;
+    }
+
+    int fd() const override {
+        return master_fd_;
+    }
+
+    int waitForExit() override {
+        if (child_pid_ <= 0) {
+            return -1;
+        }
+        if (exited_) {
+            return exit_code_;
+        }
+        int status = 0;
+        pid_t result = waitpid(child_pid_, &status, 0);
+        if (result == child_pid_) {
+            exited_ = true;
+            if (WIFEXITED(status)) {
+                exit_code_ = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                exit_code_ = 128 + WTERMSIG(status);
+            }
+        }
+        return exit_code_;
+    }
+
+    void signal(int sig) override {
+        if (child_pid_ > 0 && !exited_) {
+            kill(child_pid_, sig);
+        }
+    }
+
+private:
+    int master_fd_ = -1;
+    pid_t child_pid_ = -1;
+    bool exited_ = false;
+    int exit_code_ = -1;
+
+    void cleanup() {
+        if (child_pid_ > 0 && !exited_) {
+            kill(child_pid_, SIGTERM);
+            // Give it a moment, then reap
+            int status = 0;
+            pid_t result = waitpid(child_pid_, &status, WNOHANG);
+            if (result == 0) {
+                // Still running — wait briefly then force kill
+                usleep(50000); // 50ms
+                kill(child_pid_, SIGKILL);
+                waitpid(child_pid_, &status, 0);
+            }
+            exited_ = true;
+        }
+        if (master_fd_ >= 0) {
+            close(master_fd_);
+            master_fd_ = -1;
+        }
+    }
+
+    static void setupChild(const std::string& command,
+                            const std::vector<std::string>& args,
+                            const std::string& working_dir) {
+        // Change working directory if specified
+        if (!working_dir.empty()) {
+            if (chdir(working_dir.c_str()) != 0) {
+                // Ignore error; stay in current directory
+            }
+        }
+
+        // Set TERM environment variable
+        setenv("TERM", "xterm-256color", 1);
+
+        // Determine the command to run
+        std::string cmd = command;
+        if (cmd.empty()) {
+            const char* shell = getenv("SHELL");
+            cmd = (shell && shell[0] != '\0') ? shell : "/bin/sh";
+        }
+
+        // Build argv
+        std::vector<const char*> argv;
+        argv.push_back(cmd.c_str());
+        for (const auto& arg : args) {
+            argv.push_back(arg.c_str());
+        }
+        argv.push_back(nullptr);
+
+        execvp(cmd.c_str(), const_cast<char* const*>(argv.data()));
+        // If execvp returns, it failed
+    }
+};
+
+std::unique_ptr<Pty> createPty() {
+    return std::make_unique<UnixPty>();
+}
+
+} // namespace termcore
+
+#endif // !defined(_WIN32)

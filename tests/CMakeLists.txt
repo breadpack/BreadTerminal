@@ -12,6 +12,7 @@ add_executable(termcore_tests
     test_placeholder.cpp
     test_vt_parser.cpp
     test_screen.cpp
+    test_pty.cpp
 )
 
 target_link_libraries(termcore_tests
