@@ -29,6 +29,9 @@ add_executable(termcore_tests
     test_notification.cpp
     test_config.cpp
     test_agent.cpp
+    test_keybinding.cpp
+    test_search.cpp
+    test_url_detector.cpp
 )
 
 target_link_libraries(termcore_tests

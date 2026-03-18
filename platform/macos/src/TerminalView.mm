@@ -3,7 +3,9 @@
 #include "termcore/screen.h"
 #include "termcore/vt_parser.h"
 #include "termcore/pty.h"
-#include "termcore/mouse.h"
+#include "termcore/keybinding.h"
+#include "termcore/search.h"
+#include "termcore/url_detector.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
@@ -11,39 +13,10 @@
 #include "MetalTextRenderer.h"
 #include "CoreTextRasterizer.h"
 #include "CoreTextDiscovery.h"
+#include "TerminalViewImpl.h"
 
 #include <dispatch/dispatch.h>
 #include <memory>
-
-// Private Impl — holds C++ members via a raw pointer.
-struct TerminalViewImpl {
-    std::unique_ptr<termcore::Screen> screen;
-    std::unique_ptr<termcore::VtParser> parser;
-    std::unique_ptr<termcore::Pty> pty;
-    std::unique_ptr<termcore::IFontRasterizer> rasterizer;
-    std::unique_ptr<termcore::IFontDiscovery> discovery;
-    std::unique_ptr<termcore::FontShaper> shaper;
-    std::unique_ptr<termcore::FontCollection> fontCollection;
-    std::unique_ptr<termcore::GlyphAtlas> atlas;
-    std::unique_ptr<termcore::GlyphCache> cache;
-    std::unique_ptr<termcore::MetalTextRenderer> renderer;
-    dispatch_source_t ptyReadSource = nullptr;
-    NSTimer* renderTimer = nil;
-    bool needsRender = false;
-};
-
-@interface TerminalView () {
-    TerminalViewImpl* _impl;
-    id<MTLDevice> _device;
-    CAMetalLayer* _metalLayer;
-    float _cellWidth;
-    float _cellHeight;
-    NSPoint _selectionStart;
-    NSPoint _selectionEnd;
-    BOOL _selecting;
-    int _scrollOffset;
-}
-@end
 
 @implementation TerminalView
 
@@ -95,6 +68,16 @@ struct TerminalViewImpl {
     _termCols = cols;
     _scrollOffset = 0;
 
+    // Keybinding manager (defaults are loaded in constructor)
+    _impl->keybindings = std::make_unique<termcore::KeybindingManager>();
+
+    // Search engine
+    _impl->search = std::make_unique<termcore::TerminalSearch>();
+
+    // URL detector
+    _impl->urlDetector = std::make_unique<termcore::UrlDetector>();
+    _searchActive = NO;
+
     // Render timer (60 fps)
     __weak TerminalView* weakSelf = self;
     _impl->renderTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
@@ -111,6 +94,28 @@ struct TerminalViewImpl {
     if (_impl->ptyReadSource) dispatch_source_cancel(_impl->ptyReadSource);
     [_impl->renderTimer invalidate];
     delete _impl;
+}
+
+- (void)applyConfig:(const termcore::Config&)config {
+    // Font
+    if (!config.font_family.empty()) {
+        _impl->fontCollection->setPrimaryFont(config.font_family, config.font_size);
+        auto metrics = _impl->fontCollection->primaryMetrics();
+        _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 8.0f;
+        _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
+    }
+
+    // Keybindings from config
+    if (!config.keybindings.empty()) {
+        std::vector<std::pair<std::string, std::string>> bindings;
+        for (const auto& kb : config.keybindings) {
+            bindings.emplace_back(kb.trigger, kb.action);
+        }
+        _impl->keybindings->loadFromConfig(bindings);
+    }
+
+    // Recalculate grid with potentially new font metrics
+    [self updateGridSize];
 }
 
 #pragma mark - NSView overrides
@@ -233,176 +238,6 @@ struct TerminalViewImpl {
     if (!_impl->needsRender) return;
     _impl->needsRender = false;
     _impl->renderer->render(*_impl->screen);
-}
-
-#pragma mark - Keyboard input
-
-- (void)keyDown:(NSEvent*)event {
-    if ([self handleSpecialKey:event]) return;
-    NSString* chars = event.characters;
-    if (chars.length > 0) [self sendText:chars];
-}
-
-- (BOOL)handleSpecialKey:(NSEvent*)event {
-    unsigned short kc = event.keyCode;
-    // Arrow keys — SS3 prefix when application cursor keys mode is active
-    bool appCur = _impl->screen && _impl->screen->appCursorKeys();
-    const char* pfx = appCur ? "\x1bO" : "\x1b[";
-    switch (kc) {
-        case 126: { char s[3]={pfx[0],pfx[1],'A'}; _impl->pty->write(s,3); return YES; }
-        case 125: { char s[3]={pfx[0],pfx[1],'B'}; _impl->pty->write(s,3); return YES; }
-        case 124: { char s[3]={pfx[0],pfx[1],'C'}; _impl->pty->write(s,3); return YES; }
-        case 123: { char s[3]={pfx[0],pfx[1],'D'}; _impl->pty->write(s,3); return YES; }
-        default: break;
-    }
-    if (kc == 36 || kc == 76) { [self writePty:"\r"]; return YES; }
-    if (kc == 51) { [self writePty:"\x7f"]; return YES; }
-    if (kc == 48) { [self writePty:"\t"]; return YES; }
-    if (kc == 53) { [self writePty:"\x1b"]; return YES; }
-    if (kc == 122) { [self writePty:"\x1bOP"];  return YES; } // F1
-    if (kc == 120) { [self writePty:"\x1bOQ"];  return YES; } // F2
-    if (kc == 99)  { [self writePty:"\x1bOR"];  return YES; } // F3
-    if (kc == 118) { [self writePty:"\x1bOS"];  return YES; } // F4
-    if (kc == 115) { [self writePty:"\x1b[H"]; return YES; }  // Home
-    if (kc == 119) { [self writePty:"\x1b[F"]; return YES; }  // End
-    if (kc == 116) { [self writePty:"\x1b[5~"]; return YES; } // PageUp
-    if (kc == 121) { [self writePty:"\x1b[6~"]; return YES; } // PageDown
-    if (kc == 117) { [self writePty:"\x1b[3~"]; return YES; } // Delete fwd
-    return NO;
-}
-
-- (BOOL)performKeyEquivalent:(NSEvent*)event {
-    if (event.modifierFlags & NSEventModifierFlagCommand) {
-        NSString* chars = event.charactersIgnoringModifiers;
-        if ([chars isEqualToString:@"c"]) { [self copy:nil]; return YES; }
-        if ([chars isEqualToString:@"v"]) { [self paste:nil]; return YES; }
-        return [super performKeyEquivalent:event];
-    }
-    return NO;
-}
-
-#pragma mark - Clipboard
-
-- (void)paste:(id)sender {
-    NSString* text = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
-    if (!text || !_impl->pty) return;
-    const char* utf8 = text.UTF8String;
-    size_t len = strlen(utf8);
-    bool bracketed = _impl->screen && _impl->screen->bracketedPaste();
-    if (bracketed) _impl->pty->write("\033[200~", 6);
-    _impl->pty->write(utf8, len);
-    if (bracketed) _impl->pty->write("\033[201~", 6);
-}
-
-- (void)copy:(id)sender {
-    if (!_impl->screen || !_selecting) return;
-    int sr = (int)_selectionStart.y, er = (int)_selectionEnd.y;
-    int sc = (int)_selectionStart.x, ec = (int)_selectionEnd.x;
-    if (sr > er || (sr == er && sc > ec)) { std::swap(sr, er); std::swap(sc, ec); }
-    NSMutableString* result = [NSMutableString string];
-    for (int r = sr; r <= er; r++) {
-        auto lt = _impl->screen->getLineText(r);
-        NSString* line = [NSString stringWithUTF8String:lt.c_str()];
-        if (!line) continue;
-        if (sr == er) {
-            NSRange rng = NSMakeRange(sc, std::max(0, ec - sc));
-            if (rng.location + rng.length <= line.length)
-                [result appendString:[line substringWithRange:rng]];
-        } else if (r == sr) {
-            if ((NSUInteger)sc < line.length)
-                [result appendString:[line substringFromIndex:sc]];
-        } else if (r == er) {
-            NSUInteger idx = std::min((NSUInteger)ec, line.length);
-            [result appendString:[line substringToIndex:idx]];
-        } else {
-            [result appendString:line];
-        }
-        if (r < er) [result appendString:@"\n"];
-    }
-    if (result.length > 0) {
-        NSPasteboard* pb = [NSPasteboard generalPasteboard];
-        [pb clearContents];
-        [pb setString:result forType:NSPasteboardTypeString];
-    }
-}
-
-#pragma mark - Mouse events
-
-- (NSPoint)cellPositionForEvent:(NSEvent*)event {
-    NSPoint loc = [self convertPoint:event.locationInWindow fromView:nil];
-    float flippedY = self.bounds.size.height - loc.y;
-    int col = std::max(0, std::min((int)(loc.x / _cellWidth), _termCols - 1));
-    int row = std::max(0, std::min((int)(flippedY / _cellHeight), _termRows - 1));
-    return NSMakePoint(col, row);
-}
-
-- (int)modifierBitsForEvent:(NSEvent*)event {
-    int m = 0;
-    if (event.modifierFlags & NSEventModifierFlagShift)   m |= 1;
-    if (event.modifierFlags & NSEventModifierFlagOption)  m |= 2;
-    if (event.modifierFlags & NSEventModifierFlagControl) m |= 4;
-    return m;
-}
-
-- (BOOL)sendMouseEvent:(int)type button:(int)button event:(NSEvent*)event {
-    if (!_impl->screen || !_impl->pty) return NO;
-    if (_impl->screen->mouseMode() == termcore::MouseMode::None) return NO;
-    NSPoint cell = [self cellPositionForEvent:event];
-    int mods = [self modifierBitsForEvent:event];
-    termcore::MouseEvent me;
-    me.type   = static_cast<termcore::MouseEventType>(type);
-    me.button = static_cast<termcore::MouseButton>(button);
-    me.col = (int)cell.x; me.row = (int)cell.y;
-    me.shift = (mods & 1) != 0; me.alt = (mods & 2) != 0; me.ctrl = (mods & 4) != 0;
-    auto seq = termcore::encodeMouseEvent(
-        me, _impl->screen->mouseMode(), _impl->screen->mouseEncoding());
-    if (seq.empty()) return NO;
-    _impl->pty->write(seq.data(), seq.size());
-    return YES;
-}
-
-- (void)mouseDown:(NSEvent*)event {
-    if ([self sendMouseEvent:0 button:0 event:event]) return;
-    _selectionStart = [self cellPositionForEvent:event];
-    _selectionEnd = _selectionStart;
-    _selecting = YES;
-}
-
-- (void)mouseUp:(NSEvent*)event {
-    if ([self sendMouseEvent:1 button:3 event:event]) return;
-    if (_selecting) _selectionEnd = [self cellPositionForEvent:event];
-}
-
-- (void)mouseDragged:(NSEvent*)event {
-    if ([self sendMouseEvent:2 button:0 event:event]) return;
-    if (_selecting) { _selectionEnd = [self cellPositionForEvent:event]; _impl->needsRender = true; }
-}
-
-- (void)rightMouseDown:(NSEvent*)event {
-    if ([self sendMouseEvent:0 button:2 event:event]) return;
-    [super rightMouseDown:event];
-}
-
-- (void)rightMouseUp:(NSEvent*)event {
-    if ([self sendMouseEvent:1 button:3 event:event]) return;
-    [super rightMouseUp:event];
-}
-
-- (void)scrollWheel:(NSEvent*)event {
-    if (!_impl->screen || !_impl->pty) return;
-    float dy = event.scrollingDeltaY;
-    if (event.hasPreciseScrollingDeltas) dy /= _cellHeight;
-    if (fabs(dy) < 0.1) return;
-    if (_impl->screen->mouseMode() != termcore::MouseMode::None) {
-        int lines = std::max(1, (int)fabs(dy));
-        int sType = dy > 0 ? 3 : 4, sBtn = dy > 0 ? 4 : 5;
-        for (int i = 0; i < lines; i++)
-            [self sendMouseEvent:sType button:sBtn event:event];
-        return;
-    }
-    int delta = (int)(dy > 0 ? ceil(dy) : floor(dy));
-    int maxScroll = (int)_impl->screen->scrollbackSize();
-    _scrollOffset = std::max(0, std::min(_scrollOffset + delta, maxScroll));
 }
 
 @end

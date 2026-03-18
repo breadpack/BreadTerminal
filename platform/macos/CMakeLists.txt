@@ -81,6 +81,7 @@ add_executable(BreadTerminal MACOSX_BUNDLE
     src/main.mm
     src/AppDelegate.mm
     src/TerminalView.mm
+    src/TerminalViewInput.mm
 )
 
 target_include_directories(BreadTerminal PRIVATE
@@ -105,6 +106,7 @@ set_source_files_properties(
     src/main.mm
     src/AppDelegate.mm
     src/TerminalView.mm
+    src/TerminalViewInput.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
 )
 

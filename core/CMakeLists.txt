@@ -19,6 +19,9 @@ set(TERMCORE_SOURCES
     src/config.cpp
     src/config_themes.cpp
     src/agent.cpp
+    src/keybinding.cpp
+    src/search.cpp
+    src/url_detector.cpp
 )
 
 if(UNIX)

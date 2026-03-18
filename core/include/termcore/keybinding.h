@@ -1,0 +1,112 @@
+#ifndef TERMCORE_KEYBINDING_H
+#define TERMCORE_KEYBINDING_H
+
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace termcore {
+
+/// Modifier key flags
+enum KeyMod : uint8_t {
+    ModNone  = 0,
+    ModShift = 1,
+    ModCtrl  = 2,
+    ModAlt   = 4,
+    ModSuper = 8,  // Cmd on macOS, Win on Windows
+};
+
+/// Terminal actions that keybindings can trigger
+enum class Action : uint16_t {
+    None,
+    // Tab/Pane
+    NewTab, CloseTab, NextTab, PrevTab,
+    SplitRight, SplitDown, ClosePane,
+    FocusUp, FocusDown, FocusLeft, FocusRight,
+    // Clipboard
+    Copy, Paste, SelectAll,
+    // Scroll
+    ScrollUp, ScrollDown, ScrollPageUp, ScrollPageDown, ScrollToTop, ScrollToBottom,
+    // Search
+    SearchOpen, SearchNext, SearchPrev, SearchClose,
+    // Window
+    NewWindow, CloseWindow, ToggleFullscreen,
+    // Font
+    FontIncrease, FontDecrease, FontReset,
+    // Misc
+    ResetTerminal, ClearScrollback, ShowNotifications,
+    // Custom (string-based action)
+    Custom,
+};
+
+/// A key combination (trigger)
+struct KeyCombo {
+    uint32_t keycode;  // Virtual keycode or Unicode codepoint
+    uint8_t mods;      // KeyMod flags combined
+
+    bool operator==(const KeyCombo& o) const {
+        return keycode == o.keycode && mods == o.mods;
+    }
+};
+
+/// A single keybinding
+struct Keybinding {
+    KeyCombo combo;
+    Action action;
+    std::string custom_action;  // For Action::Custom
+};
+
+/// Manages keybindings with default and user-configurable mappings
+class KeybindingManager {
+public:
+    KeybindingManager();
+    ~KeybindingManager() = default;
+
+    /// Add or override a keybinding
+    void bind(const KeyCombo& combo, Action action, const std::string& custom = "");
+
+    /// Remove a keybinding
+    void unbind(const KeyCombo& combo);
+
+    /// Look up action for a key combination. Returns Action::None if unbound.
+    Action lookup(const KeyCombo& combo) const;
+
+    /// Get custom action string (for Action::Custom)
+    std::string lookupCustom(const KeyCombo& combo) const;
+
+    /// Parse a trigger string like "cmd+t", "ctrl+shift+c" into KeyCombo
+    static KeyCombo parseCombo(const std::string& trigger);
+
+    /// Parse an action string like "new_tab", "copy" into Action
+    static Action parseAction(const std::string& action_str);
+
+    /// Load keybindings from config-style strings: "trigger=action"
+    void loadFromConfig(const std::vector<std::pair<std::string, std::string>>& bindings);
+
+    /// Get all current bindings
+    const std::vector<Keybinding>& allBindings() const { return bindings_; }
+
+    /// Reset to defaults
+    void resetDefaults();
+
+    /// Number of bindings
+    size_t count() const { return bindings_.size(); }
+
+private:
+    void initDefaults();
+    std::vector<Keybinding> bindings_;
+};
+
+} // namespace termcore
+
+// Hash for KeyCombo
+template<>
+struct std::hash<termcore::KeyCombo> {
+    size_t operator()(const termcore::KeyCombo& k) const noexcept {
+        return std::hash<uint32_t>{}(k.keycode) ^ (std::hash<uint8_t>{}(k.mods) << 16);
+    }
+};
+
+#endif
