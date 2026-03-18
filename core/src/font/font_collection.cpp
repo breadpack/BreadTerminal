@@ -131,12 +131,15 @@ void FontCollection::setFontSize(float size) {
     size_ = size;
     codepoint_cache_.clear();
 
-    // Reload all loaded fonts with new size
+    // Update size for all loaded fonts in-place (no re-loading)
     for (auto& entry : chain_) {
         if (entry.loaded) {
+            // Use setFontSize to update existing HarfBuzz font scale
+            if (entry.shaper_face_id != kInvalidFontFace) {
+                shaper_.setFontSize(entry.shaper_face_id, size);
+            }
+            // Rasterizer needs re-load (no resize API) — reuse same entry
             entry.rasterizer_face_id = rasterizer_.loadFont(
-                entry.descriptor.file_path, entry.descriptor.face_index, size);
-            entry.shaper_face_id = shaper_.loadFont(
                 entry.descriptor.file_path, entry.descriptor.face_index, size);
 
             // Recalculate scale factor (skip primary which is always index 0)
@@ -154,11 +157,11 @@ FontMetrics FontCollection::primaryMetrics() const {
     return rasterizer_.getMetrics(chain_[0].rasterizer_face_id, size_);
 }
 
-FontFaceId FontCollection::resolveFace(char32_t codepoint) {
+CollectionFaceId FontCollection::resolveFace(char32_t codepoint) {
     // Check cache first
     auto it = codepoint_cache_.find(codepoint);
     if (it != codepoint_cache_.end()) {
-        return static_cast<FontFaceId>(it->second);
+        return static_cast<CollectionFaceId>(it->second);
     }
 
     // Walk the chain
@@ -171,13 +174,13 @@ FontFaceId FontCollection::resolveFace(char32_t codepoint) {
         uint32_t glyph_index = rasterizer_.getGlyphIndex(entry.rasterizer_face_id, codepoint);
         if (glyph_index != 0) {
             codepoint_cache_[codepoint] = i;
-            return static_cast<FontFaceId>(i);
+            return static_cast<CollectionFaceId>(i);
         }
     }
 
     // Try system fallback
-    FontFaceId fallback = trySystemFallback(codepoint);
-    if (fallback != kInvalidFontFace) {
+    CollectionFaceId fallback = trySystemFallback(codepoint);
+    if (fallback != kInvalidCollectionFace) {
         return fallback;
     }
 
@@ -187,27 +190,27 @@ FontFaceId FontCollection::resolveFace(char32_t codepoint) {
         return 0;
     }
 
-    return kInvalidFontFace;
+    return kInvalidCollectionFace;
 }
 
-FontFaceId FontCollection::rasterizerFaceId(FontFaceId collection_face) const {
-    size_t idx = static_cast<size_t>(collection_face);
+FontFaceId FontCollection::rasterizerFaceId(CollectionFaceId face) const {
+    size_t idx = static_cast<size_t>(face);
     if (idx >= chain_.size()) {
         return kInvalidFontFace;
     }
     return chain_[idx].rasterizer_face_id;
 }
 
-FontFaceId FontCollection::shaperFaceId(FontFaceId collection_face) const {
-    size_t idx = static_cast<size_t>(collection_face);
+FontFaceId FontCollection::shaperFaceId(CollectionFaceId face) const {
+    size_t idx = static_cast<size_t>(face);
     if (idx >= chain_.size()) {
         return kInvalidFontFace;
     }
     return chain_[idx].shaper_face_id;
 }
 
-float FontCollection::scaleFactor(FontFaceId collection_face) const {
-    size_t idx = static_cast<size_t>(collection_face);
+float FontCollection::scaleFactor(CollectionFaceId face) const {
+    size_t idx = static_cast<size_t>(face);
     if (idx >= chain_.size()) {
         return 1.0f;
     }
@@ -261,7 +264,7 @@ float FontCollection::calculateScaleFactor(FontFaceId face_id) {
     return scale;
 }
 
-FontFaceId FontCollection::trySystemFallback(char32_t codepoint) {
+CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
     FontStyle style = FontStyle::Regular;
     if (!chain_.empty()) {
         style = chain_[0].descriptor.style;
@@ -269,17 +272,15 @@ FontFaceId FontCollection::trySystemFallback(char32_t codepoint) {
 
     FontDescriptor desc = discovery_.findFallback(codepoint, style);
     if (desc.file_path.empty()) {
-        return kInvalidFontFace;
+        return kInvalidCollectionFace;
     }
 
     // Check if we already have this font in the chain
     for (size_t i = 0; i < chain_.size(); ++i) {
         if (chain_[i].descriptor.file_path == desc.file_path &&
             chain_[i].descriptor.face_index == desc.face_index) {
-            // Already in chain, but didn't have the glyph when we checked.
-            // Cache as not found (use primary)
             codepoint_cache_[codepoint] = 0;
-            return kInvalidFontFace;
+            return kInvalidCollectionFace;
         }
     }
 
@@ -287,20 +288,20 @@ FontFaceId FontCollection::trySystemFallback(char32_t codepoint) {
     FontEntry entry;
     entry.descriptor = desc;
     if (!ensureLoaded(entry)) {
-        return kInvalidFontFace;
+        return kInvalidCollectionFace;
     }
 
     // Verify it actually has the glyph
     uint32_t glyph_index = rasterizer_.getGlyphIndex(entry.rasterizer_face_id, codepoint);
     if (glyph_index == 0) {
         codepoint_cache_[codepoint] = 0;
-        return kInvalidFontFace;
+        return kInvalidCollectionFace;
     }
 
     chain_.push_back(entry);
     size_t idx = chain_.size() - 1;
     codepoint_cache_[codepoint] = idx;
-    return static_cast<FontFaceId>(idx);
+    return static_cast<CollectionFaceId>(idx);
 }
 
 } // namespace termcore

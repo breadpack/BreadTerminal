@@ -1,6 +1,9 @@
 #include "termcore/font/box_drawing.h"
+#include "box_drawing_util.h"
 #include <algorithm>
 #include <cmath>
+
+using termcore::detail::fill_rect;
 
 namespace termcore {
 
@@ -160,17 +163,6 @@ static const BoxEdges box_edges_table[128] = {
     {0,2,0,1}, // ╿  257F (heavy up light down)
 };
 
-// Helper: fill a rectangle in the bitmap
-static void fill_rect(std::vector<uint8_t>& bmp, int bw, int bh,
-                       int x0, int y0, int x1, int y1, uint8_t val) {
-    x0 = std::max(0, x0);
-    y0 = std::max(0, y0);
-    x1 = std::min(bw, x1);
-    y1 = std::min(bh, y1);
-    for (int y = y0; y < y1; ++y)
-        for (int x = x0; x < x1; ++x)
-            bmp[y * bw + x] = val;
-}
 
 // Helper: set pixel with alpha blending (max)
 static void set_pixel_max(std::vector<uint8_t>& bmp, int bw, int bh,

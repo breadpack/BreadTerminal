@@ -21,6 +21,12 @@ struct FontEntry {
     bool loaded = false;
 };
 
+/// Opaque ID returned by FontCollection::resolveFace().
+/// This is a collection-internal index, NOT a rasterizer or shaper FontFaceId.
+/// Must only be used with FontCollection accessor methods.
+using CollectionFaceId = uint32_t;
+static constexpr CollectionFaceId kInvalidCollectionFace = UINT32_MAX;
+
 /// Manages a font fallback chain for terminal text rendering.
 /// Fallback order: primary -> bold/italic variants -> symbol fonts -> system fallback -> emoji
 class FontCollection {
@@ -31,7 +37,6 @@ public:
     ~FontCollection() = default;
 
     /// Set the primary font by family name and size.
-    /// Loads the font and sets up initial fallback chain.
     bool setPrimaryFont(const std::string& family, float size);
 
     /// Set the primary font by file path.
@@ -44,25 +49,25 @@ public:
     /// Get font size.
     float fontSize() const { return size_; }
 
-    /// Set font size (reloads all fonts).
+    /// Set font size (updates all loaded fonts in-place).
     void setFontSize(float size);
 
     /// Get metrics for the primary font.
     FontMetrics primaryMetrics() const;
 
-    /// Resolve a codepoint to the best font face.
-    /// Returns the face ID that has a glyph for this codepoint.
-    /// Walks the fallback chain. Queries system font discovery if needed.
-    FontFaceId resolveFace(char32_t codepoint);
+    /// Resolve a codepoint to the best font in the collection.
+    /// Returns a CollectionFaceId (NOT a rasterizer/shaper FontFaceId).
+    /// Use rasterizerFaceId()/shaperFaceId() to get platform-specific IDs.
+    CollectionFaceId resolveFace(char32_t codepoint);
 
     /// Get rasterizer face ID (for rasterizing glyphs)
-    FontFaceId rasterizerFaceId(FontFaceId collection_face) const;
+    FontFaceId rasterizerFaceId(CollectionFaceId face) const;
 
     /// Get shaper face ID (for HarfBuzz shaping)
-    FontFaceId shaperFaceId(FontFaceId collection_face) const;
+    FontFaceId shaperFaceId(CollectionFaceId face) const;
 
     /// Get scale factor for a face (for fallback font x-height matching)
-    float scaleFactor(FontFaceId collection_face) const;
+    float scaleFactor(CollectionFaceId face) const;
 
     /// Get the number of fonts in the chain.
     size_t chainLength() const { return chain_.size(); }
@@ -75,7 +80,7 @@ private:
     float calculateScaleFactor(FontFaceId face_id);
 
     /// Try system font discovery for a codepoint.
-    FontFaceId trySystemFallback(char32_t codepoint);
+    CollectionFaceId trySystemFallback(char32_t codepoint);
 
     IFontRasterizer& rasterizer_;
     IFontDiscovery& discovery_;

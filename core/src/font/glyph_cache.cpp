@@ -62,7 +62,9 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
     // Build GlyphInfo
     GlyphInfo info;
     info.region = region.value();
-    info.advance_x = static_cast<float>(rasterized.width + rasterized.bearing_x);
+    // TODO: advance_x should come from font metrics/shaper, not bitmap dimensions.
+    // For monospace fonts this is acceptable; fix when integrating with shaper in Phase 3.
+    info.advance_x = static_cast<float>(rasterized.bearing_x + rasterized.width);
     info.advance_y = 0.0f;
     info.is_color = rasterizer.isColorGlyph(key.face_id, key.glyph_index);
 

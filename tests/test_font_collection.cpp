@@ -179,7 +179,7 @@ TEST_F(FontCollectionTest, SetPrimaryFont_ChainHasEntries) {
 // Test 2: resolveFace for ASCII returns primary face (index 0)
 TEST_F(FontCollectionTest, ResolveFace_ASCII_ReturnsPrimary) {
     ASSERT_TRUE(collection_->setPrimaryFont("TestMono", 14.0f));
-    FontFaceId face = collection_->resolveFace(U'A');
+    CollectionFaceId face = collection_->resolveFace(U'A');
     EXPECT_EQ(face, 0u);
 }
 
@@ -187,18 +187,18 @@ TEST_F(FontCollectionTest, ResolveFace_ASCII_ReturnsPrimary) {
 TEST_F(FontCollectionTest, ResolveFace_CJK_TriesSystemFallback) {
     ASSERT_TRUE(collection_->setPrimaryFont("TestMono", 14.0f));
     size_t chain_before = collection_->chainLength();
-    FontFaceId face = collection_->resolveFace(U'\x4E2D');  // CJK char
+    CollectionFaceId face = collection_->resolveFace(U'\x4E2D');  // CJK char
     // System fallback should have added a new entry
     EXPECT_GT(collection_->chainLength(), chain_before);
-    EXPECT_NE(face, kInvalidFontFace);
+    EXPECT_NE(face, kInvalidCollectionFace);
 }
 
 // Test 4: Codepoint cache - second lookup uses cache
 TEST_F(FontCollectionTest, CodepointCache_SecondLookupCached) {
     ASSERT_TRUE(collection_->setPrimaryFont("TestMono", 14.0f));
 
-    FontFaceId face1 = collection_->resolveFace(U'A');
-    FontFaceId face2 = collection_->resolveFace(U'A');
+    CollectionFaceId face1 = collection_->resolveFace(U'A');
+    CollectionFaceId face2 = collection_->resolveFace(U'A');
     EXPECT_EQ(face1, face2);
 }
 
@@ -249,7 +249,7 @@ TEST_F(FontCollectionTest, FaceIdAccessors) {
     collection_->shaperFaceId(0);
 
     // Out of bounds should return kInvalidFontFace
-    EXPECT_EQ(collection_->rasterizerFaceId(999), kInvalidFontFace);
+    EXPECT_EQ(collection_->rasterizerFaceId(999), kInvalidFontFace);  // out of bounds
 }
 
 // Test 10: scaleFactor for primary is 1.0
@@ -285,7 +285,7 @@ TEST_F(FontCollectionTest, AddFallbackFontFromFile) {
 TEST_F(FontCollectionTest, ResolveFace_Emoji_TriesFallback) {
     ASSERT_TRUE(collection_->setPrimaryFont("TestMono", 14.0f));
     size_t chain_before = collection_->chainLength();
-    FontFaceId face = collection_->resolveFace(U'\x1F600');  // grinning face emoji
+    CollectionFaceId face = collection_->resolveFace(U'\x1F600');  // grinning face emoji
     EXPECT_GT(collection_->chainLength(), chain_before);
-    EXPECT_NE(face, kInvalidFontFace);
+    EXPECT_NE(face, kInvalidCollectionFace);
 }

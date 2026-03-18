@@ -1,6 +1,9 @@
 #include "termcore/font/box_drawing.h"
+#include "box_drawing_util.h"
 #include <algorithm>
 #include <cmath>
+
+using termcore::detail::fill_rect;
 
 namespace termcore {
 
@@ -14,18 +17,6 @@ bool is_box_drawing(char32_t cp) {
     // Powerline Glyphs: U+E0B0-U+E0B3
     if (cp >= 0xE0B0 && cp <= 0xE0B3) return true;
     return false;
-}
-
-// Helper: fill a rectangle in the bitmap
-static void fill_rect(std::vector<uint8_t>& bmp, int bw, int bh,
-                       int x0, int y0, int x1, int y1, uint8_t val) {
-    x0 = std::max(0, x0);
-    y0 = std::max(0, y0);
-    x1 = std::min(bw, x1);
-    y1 = std::min(bh, y1);
-    for (int y = y0; y < y1; ++y)
-        for (int x = x0; x < x1; ++x)
-            bmp[y * bw + x] = val;
 }
 
 // --- Block Elements (U+2580-U+259F) ---
