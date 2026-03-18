@@ -125,6 +125,7 @@ public:
 
     // --- Utility ---
     std::string getLineText(int row) const;
+    std::string getScrollbackLineText(int line) const;  // line 0 = most recent
 
     // --- VtParserHandler implementation ---
     void onPrint(char32_t codepoint) override;

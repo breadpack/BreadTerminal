@@ -286,6 +286,37 @@ std::string Screen::getLineText(int row) const {
     return result;
 }
 
+// --- getScrollbackLineText ---
+std::string Screen::getScrollbackLineText(int line) const {
+    if (line < 0 || static_cast<size_t>(line) >= scrollback_.size())
+        return "";
+    // line 0 = most recent = back of deque
+    size_t idx = scrollback_.size() - 1 - static_cast<size_t>(line);
+    std::string result;
+    for (const auto& cell : scrollback_[idx]) {
+        char32_t cp = cell.codepoint;
+        if (cp < 0x80) result += static_cast<char>(cp);
+        else if (cp < 0x800) {
+            result += static_cast<char>(0xC0 | (cp >> 6));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            result += static_cast<char>(0xE0 | (cp >> 12));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else {
+            result += static_cast<char>(0xF0 | (cp >> 18));
+            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+    }
+    // Trim trailing spaces
+    auto pos = result.find_last_not_of(' ');
+    if (pos != std::string::npos) result.erase(pos + 1);
+    else result.clear();
+    return result;
+}
+
 // --- Alt screen ---
 void Screen::switchToAltScreen(bool save_cursor) {
     if (alt_screen_active_) return;

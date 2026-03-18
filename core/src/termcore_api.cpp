@@ -20,6 +20,9 @@ struct TermPane {
     std::unique_ptr<VtParser> parser;
     std::unique_ptr<Pty> pty;
     std::string line_text_buf; // temp buffer for tc_pane_get_line_text
+    std::string title_buf;
+    std::string cwd_buf;
+    std::string scrollback_buf;
 
     TermPane(TermCore* c, int rows, int cols)
         : core(c),
@@ -118,6 +121,56 @@ const char* tc_pane_get_line_text(TermPane* pane, int row) {
     if (!pane || !pane->screen) return "";
     pane->line_text_buf = pane->screen->getLineText(row);
     return pane->line_text_buf.c_str();
+}
+
+// ---------- Extended screen query ----------
+
+const char* tc_pane_get_title(TermPane* pane) {
+    if (!pane || !pane->screen) return "";
+    pane->title_buf = pane->screen->title();
+    return pane->title_buf.c_str();
+}
+
+const char* tc_pane_get_working_dir(TermPane* pane) {
+    if (!pane || !pane->screen) return "";
+    pane->cwd_buf = pane->screen->workingDirectory();
+    return pane->cwd_buf.c_str();
+}
+
+int tc_pane_get_cursor_style(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return static_cast<int>(pane->screen->cursorShape());
+}
+
+int tc_pane_get_cursor_blink(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return pane->screen->cursorBlink() ? 1 : 0;
+}
+
+int tc_pane_scrollback_size(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return static_cast<int>(pane->screen->scrollbackSize());
+}
+
+const char* tc_pane_get_scrollback_line(TermPane* pane, int line) {
+    if (!pane || !pane->screen) return "";
+    pane->scrollback_buf = pane->screen->getScrollbackLineText(line);
+    return pane->scrollback_buf.c_str();
+}
+
+int tc_pane_alt_screen_active(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return pane->screen->altScreenActive() ? 1 : 0;
+}
+
+int tc_pane_bracketed_paste(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return pane->screen->bracketedPaste() ? 1 : 0;
+}
+
+int tc_pane_app_cursor_keys(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return pane->screen->appCursorKeys() ? 1 : 0;
 }
 
 // ---------- PTY I/O ----------

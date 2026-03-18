@@ -176,3 +176,171 @@ TEST(CApi, NullSafety) {
 
     tc_set_notify_callback(nullptr, nullptr, nullptr);
 }
+
+// --- Extended C API: Title ---
+TEST(CApi, GetTitleAfterOsc0) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    // OSC 0 ; title ST
+    const char* seq = "\x1b]0;My Terminal\x07";
+    tc_pane_feed(pane, seq, strlen(seq));
+
+    EXPECT_STREQ(tc_pane_get_title(pane), "My Terminal");
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Working directory ---
+TEST(CApi, GetWorkingDirAfterOsc7) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    const char* seq = "\x1b]7;file:///Users/test/project\x07";
+    tc_pane_feed(pane, seq, strlen(seq));
+
+    std::string cwd = tc_pane_get_working_dir(pane);
+    EXPECT_FALSE(cwd.empty());
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Cursor style default ---
+TEST(CApi, GetCursorStyleDefault) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    EXPECT_EQ(tc_pane_get_cursor_style(pane), 0); // Block
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Cursor style after DECSCUSR ---
+TEST(CApi, GetCursorStyleAfterDecscusr) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    // CSI 5 SP q = blinking bar (Bar = 2)
+    const char* seq = "\x1b[5 q";
+    tc_pane_feed(pane, seq, strlen(seq));
+
+    EXPECT_EQ(tc_pane_get_cursor_style(pane), 2); // Bar
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Cursor blink ---
+TEST(CApi, GetCursorBlink) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    // Default cursor blinks
+    EXPECT_EQ(tc_pane_get_cursor_blink(pane), 1);
+
+    // CSI 2 SP q = steady block (no blink)
+    const char* seq = "\x1b[2 q";
+    tc_pane_feed(pane, seq, strlen(seq));
+    EXPECT_EQ(tc_pane_get_cursor_blink(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Scrollback size initially zero ---
+TEST(CApi, ScrollbackSizeInitial) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    EXPECT_EQ(tc_pane_scrollback_size(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Scrollback size after scrolling ---
+TEST(CApi, ScrollbackSizeAfterScroll) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 4, 80);
+
+    // Fill screen and force scrollback
+    const char* text = "Line1\nLine2\nLine3\nLine4\nLine5\nLine6\n";
+    tc_pane_feed(pane, text, strlen(text));
+
+    EXPECT_GT(tc_pane_scrollback_size(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Get scrollback line text ---
+TEST(CApi, GetScrollbackLine) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 4, 80);
+
+    // Write enough lines to push some into scrollback
+    const char* text = "AAA\nBBB\nCCC\nDDD\nEEE\nFFF\n";
+    tc_pane_feed(pane, text, strlen(text));
+
+    int sb_size = tc_pane_scrollback_size(pane);
+    ASSERT_GT(sb_size, 0);
+
+    // Line 0 is most recent scrollback line
+    const char* line = tc_pane_get_scrollback_line(pane, 0);
+    ASSERT_NE(line, nullptr);
+    EXPECT_GT(strlen(line), 0u);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Alt screen default ---
+TEST(CApi, AltScreenDefault) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    EXPECT_EQ(tc_pane_alt_screen_active(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Alt screen after DECSET 1049 ---
+TEST(CApi, AltScreenAfterDecset) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    const char* seq = "\x1b[?1049h";
+    tc_pane_feed(pane, seq, strlen(seq));
+
+    EXPECT_EQ(tc_pane_alt_screen_active(pane), 1);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Bracketed paste default ---
+TEST(CApi, BracketedPasteDefault) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    EXPECT_EQ(tc_pane_bracketed_paste(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: App cursor keys default ---
+TEST(CApi, AppCursorKeysDefault) {
+    TermCore* core = tc_create();
+    TermPane* pane = tc_pane_create(core, 24, 80);
+
+    EXPECT_EQ(tc_pane_app_cursor_keys(pane), 0);
+
+    tc_destroy(core);
+}
+
+// --- Extended C API: Null safety for new functions ---
+TEST(CApi, ExtendedNullSafety) {
+    EXPECT_STREQ(tc_pane_get_title(nullptr), "");
+    EXPECT_STREQ(tc_pane_get_working_dir(nullptr), "");
+    EXPECT_EQ(tc_pane_get_cursor_style(nullptr), 0);
+    EXPECT_EQ(tc_pane_get_cursor_blink(nullptr), 0);
+    EXPECT_EQ(tc_pane_scrollback_size(nullptr), 0);
+    EXPECT_STREQ(tc_pane_get_scrollback_line(nullptr, 0), "");
+    EXPECT_EQ(tc_pane_alt_screen_active(nullptr), 0);
+    EXPECT_EQ(tc_pane_bracketed_paste(nullptr), 0);
+    EXPECT_EQ(tc_pane_app_cursor_keys(nullptr), 0);
+}

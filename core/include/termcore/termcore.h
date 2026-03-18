@@ -47,6 +47,36 @@ int tc_pane_cols(TermPane* pane);
 /// Returns text of a line. Pointer valid until next call on same pane.
 const char* tc_pane_get_line_text(TermPane* pane, int row);
 
+// ---------- Extended screen query ----------
+
+/// Get terminal title (set by OSC 0/2). Pointer valid until next call on same pane.
+const char* tc_pane_get_title(TermPane* pane);
+
+/// Get working directory (set by OSC 7). Pointer valid until next call on same pane.
+const char* tc_pane_get_working_dir(TermPane* pane);
+
+/// Get cursor style: 0=Block, 1=Underline, 2=Bar
+int tc_pane_get_cursor_style(TermPane* pane);
+
+/// Check if cursor is blinking
+int tc_pane_get_cursor_blink(TermPane* pane);
+
+/// Get scrollback line count
+int tc_pane_scrollback_size(TermPane* pane);
+
+/// Get scrollback line text. line=0 is most recent (just above screen).
+/// Pointer valid until next call on same pane.
+const char* tc_pane_get_scrollback_line(TermPane* pane, int line);
+
+/// Check if alternate screen is active
+int tc_pane_alt_screen_active(TermPane* pane);
+
+/// Check if bracketed paste mode is active
+int tc_pane_bracketed_paste(TermPane* pane);
+
+/// Check if application cursor keys mode is active
+int tc_pane_app_cursor_keys(TermPane* pane);
+
 // ---------- PTY I/O ----------
 int tc_pane_spawn(TermPane* pane, const char* command);
 int tc_pane_read_pty(TermPane* pane, char* buf, size_t buf_size);
