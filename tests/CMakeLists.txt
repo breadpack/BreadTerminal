@@ -15,6 +15,7 @@ add_executable(termcore_tests
     test_pty.cpp
     test_capi.cpp
     test_unicode_width.cpp
+    test_box_drawing.cpp
 )
 
 target_link_libraries(termcore_tests
