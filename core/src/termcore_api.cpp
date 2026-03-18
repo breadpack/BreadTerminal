@@ -5,7 +5,9 @@
 #include "termcore/mouse.h"
 #include "termcore/mux.h"
 #include "termcore/agent.h"
+#if TERMCORE_HAS_LUA
 #include "termcore/lua_engine.h"
+#endif
 #include "termcore/notification.h"
 #include "termcore/webview.h"
 
@@ -43,7 +45,9 @@ struct TermCore {
     // Owned subsystems
     termcore::Mux mux;
     termcore::AgentTracker agent_tracker;
+#if TERMCORE_HAS_LUA
     termcore::LuaEngine lua_engine;
+#endif
     termcore::NotificationStore notifications;
 };
 
@@ -402,19 +406,31 @@ void tc_agent_sweep_stale(TermCore* core) {
 // ---------- Lua plugin system ----------
 
 int tc_lua_load_plugin(TermCore* core, const char* plugin_path) {
+#if TERMCORE_HAS_LUA
     if (!core || !plugin_path) return -1;
     return core->lua_engine.loadPlugin(plugin_path) ? 0 : -1;
+#else
+    (void)core; (void)plugin_path; return -1;
+#endif
 }
 
 int tc_lua_load_string(TermCore* core, const char* code) {
+#if TERMCORE_HAS_LUA
     if (!core || !code) return -1;
     return core->lua_engine.loadString(code) ? 0 : -1;
+#else
+    (void)core; (void)code; return -1;
+#endif
 }
 
 void tc_lua_fire_event(TermCore* core, int event_type, const char* data) {
+#if TERMCORE_HAS_LUA
     if (!core) return;
     core->lua_engine.fireEvent(static_cast<termcore::LuaEvent>(event_type),
                                data ? data : "");
+#else
+    (void)core; (void)event_type; (void)data;
+#endif
 }
 
 // ---------- Notifications ----------

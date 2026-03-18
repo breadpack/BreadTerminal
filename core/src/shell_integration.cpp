@@ -3,7 +3,17 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+
+#if defined(_WIN32)
+#include <direct.h>
+#include <sys/types.h>
 #include <sys/stat.h>
+#define bt_mkdir(p) _mkdir(p)
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#else
+#include <sys/stat.h>
+#define bt_mkdir(p) mkdir(p, 0755)
+#endif
 
 namespace termcore {
 
@@ -180,7 +190,7 @@ static bool mkdirRecursive(const std::string& path) {
     for (size_t i = 0; i < path.size(); ++i) {
         current += path[i];
         if (path[i] == '/' || i == path.size() - 1) {
-            mkdir(current.c_str(), 0755);
+            bt_mkdir(current.c_str());
         }
     }
     struct stat st{};

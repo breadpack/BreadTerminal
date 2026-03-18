@@ -1,4 +1,10 @@
 #include <gtest/gtest.h>
+
+#if !TERMCORE_HAS_LUA
+// Skip all Lua tests when Lua is not available
+TEST(LuaEngineTest, Disabled) { GTEST_SKIP() << "Lua not available"; }
+#else
+
 #include <termcore/lua_engine.h>
 
 #include <cstdlib>
@@ -165,3 +171,5 @@ TEST(LuaEngine, LoadPluginNonexistent) {
     EXPECT_FALSE(engine.loadPlugin("/nonexistent/path/plugin.lua"));
     EXPECT_FALSE(engine.lastError().empty());
 }
+
+#endif // TERMCORE_HAS_LUA
