@@ -7,6 +7,7 @@ add_library(termcore_macos STATIC
     src/CoreTextDiscovery.mm
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
+    src/WKWebViewBridge.mm
 )
 
 target_include_directories(termcore_macos
@@ -28,6 +29,7 @@ target_link_libraries(termcore_macos
         "-framework Foundation"
         "-framework Metal"
         "-framework QuartzCore"
+        "-framework WebKit"
 )
 
 # Enable Objective-C++ for .mm files
@@ -36,6 +38,7 @@ set_source_files_properties(
     src/CoreTextDiscovery.mm
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
+    src/WKWebViewBridge.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++"
 )
 

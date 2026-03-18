@@ -13,6 +13,7 @@ set(TERMCORE_SOURCES
     src/font/glyph_atlas.cpp
     src/font/glyph_cache.cpp
     src/font/font_collection.cpp
+    src/font/variable_font.cpp
     src/mux.cpp
     src/lua_engine.cpp
     src/notification.cpp

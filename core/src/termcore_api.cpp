@@ -7,6 +7,7 @@
 #include "termcore/agent.h"
 #include "termcore/lua_engine.h"
 #include "termcore/notification.h"
+#include "termcore/webview.h"
 
 #include <algorithm>
 #include <cstring>
@@ -436,6 +437,71 @@ void tc_notification_mark_all_read(TermCore* core) {
 void tc_notification_clear(TermCore* core) {
     if (!core) return;
     core->notifications.clear();
+}
+
+// ---------- WebView ----------
+
+struct TermWebView {
+    TermCore* core = nullptr;
+    std::unique_ptr<termcore::IWebView> webview;
+    std::string url_buf;
+    std::string title_buf;
+};
+
+TermWebView* tc_webview_create(TermCore* core) {
+    if (!core) return nullptr;
+    auto webview = termcore::createWebView();
+    if (!webview) return nullptr;
+    auto* wv = new TermWebView();
+    wv->core = core;
+    wv->webview = std::move(webview);
+    return wv;
+}
+
+void tc_webview_destroy(TermWebView* wv) {
+    delete wv;
+}
+
+void tc_webview_navigate(TermWebView* wv, const char* url) {
+    if (!wv || !wv->webview || !url) return;
+    wv->webview->navigate(url);
+}
+
+const char* tc_webview_get_url(TermWebView* wv) {
+    if (!wv || !wv->webview) return "";
+    wv->url_buf = wv->webview->currentUrl();
+    return wv->url_buf.c_str();
+}
+
+const char* tc_webview_get_title(TermWebView* wv) {
+    if (!wv || !wv->webview) return "";
+    wv->title_buf = wv->webview->title();
+    return wv->title_buf.c_str();
+}
+
+void tc_webview_go_back(TermWebView* wv) {
+    if (!wv || !wv->webview) return;
+    wv->webview->goBack();
+}
+
+void tc_webview_go_forward(TermWebView* wv) {
+    if (!wv || !wv->webview) return;
+    wv->webview->goForward();
+}
+
+void tc_webview_reload(TermWebView* wv) {
+    if (!wv || !wv->webview) return;
+    wv->webview->reload();
+}
+
+int tc_webview_can_go_back(TermWebView* wv) {
+    if (!wv || !wv->webview) return 0;
+    return wv->webview->canGoBack() ? 1 : 0;
+}
+
+int tc_webview_can_go_forward(TermWebView* wv) {
+    if (!wv || !wv->webview) return 0;
+    return wv->webview->canGoForward() ? 1 : 0;
 }
 
 // ---------- Version ----------

@@ -36,6 +36,7 @@ add_executable(termcore_tests
     test_sixel.cpp
     test_kitty_graphics.cpp
     test_shell_integration.cpp
+    test_variable_font.cpp
 )
 
 target_link_libraries(termcore_tests
@@ -49,6 +50,7 @@ if(APPLE)
         test_coretext_rasterizer.cpp
         test_coretext_discovery.cpp
         test_metal_renderer.mm
+        test_webview.cpp
     )
     target_link_libraries(termcore_tests PRIVATE termcore_macos)
     set_source_files_properties(

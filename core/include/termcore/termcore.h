@@ -134,6 +134,19 @@ int tc_notification_unread_count(TermCore* core);
 void tc_notification_mark_all_read(TermCore* core);
 void tc_notification_clear(TermCore* core);
 
+// ---------- WebView ----------
+typedef struct TermWebView TermWebView;
+TermWebView* tc_webview_create(TermCore* core);
+void tc_webview_destroy(TermWebView* wv);
+void tc_webview_navigate(TermWebView* wv, const char* url);
+const char* tc_webview_get_url(TermWebView* wv);
+const char* tc_webview_get_title(TermWebView* wv);
+void tc_webview_go_back(TermWebView* wv);
+void tc_webview_go_forward(TermWebView* wv);
+void tc_webview_reload(TermWebView* wv);
+int tc_webview_can_go_back(TermWebView* wv);
+int tc_webview_can_go_forward(TermWebView* wv);
+
 // ---------- Version ----------
 const char* termcore_version(void);
 
