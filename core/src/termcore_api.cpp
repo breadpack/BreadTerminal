@@ -2,8 +2,10 @@
 #include "termcore/screen.h"
 #include "termcore/vt_parser.h"
 #include "termcore/pty.h"
+#include "termcore/mouse.h"
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -157,6 +159,29 @@ void tc_set_notify_callback(TermCore* core, tc_notify_callback cb,
     if (!core) return;
     core->notify_cb = cb;
     core->notify_user_data = user_data;
+}
+
+// ---------- Mouse event encoding ----------
+
+int tc_pane_encode_mouse(TermPane* pane, int type, int button,
+                          int col, int row, int mods,
+                          char* buf, size_t buf_size) {
+    if (!pane || !pane->screen || !buf) return 0;
+    MouseEvent event;
+    event.type = static_cast<MouseEventType>(type);
+    event.button = static_cast<MouseButton>(button);
+    event.col = col;
+    event.row = row;
+    event.shift = (mods & 1) != 0;
+    event.alt = (mods & 2) != 0;
+    event.ctrl = (mods & 4) != 0;
+
+    auto seq = encodeMouseEvent(event,
+                                 pane->screen->mouseMode(),
+                                 pane->screen->mouseEncoding());
+    if (seq.empty() || seq.size() > buf_size) return 0;
+    memcpy(buf, seq.data(), seq.size());
+    return static_cast<int>(seq.size());
 }
 
 // ---------- Version ----------

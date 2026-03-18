@@ -59,6 +59,16 @@ typedef void (*tc_notify_callback)(TermPane* pane, int type,
 void tc_set_notify_callback(TermCore* core, tc_notify_callback cb,
                             void* user_data);
 
+// ---------- Mouse event encoding ----------
+/// Encode a mouse event into an escape sequence for the PTY.
+/// Returns length written to buf, or 0 if mouse reporting is inactive.
+/// type: 0=Press, 1=Release, 2=Move, 3=ScrollUp, 4=ScrollDown
+/// button: 0=Left, 1=Middle, 2=Right, 3=Release, 4=ScrollUp, 5=ScrollDown
+/// mods: bit0=shift, bit1=alt, bit2=ctrl
+int tc_pane_encode_mouse(TermPane* pane, int type, int button,
+                          int col, int row, int mods,
+                          char* buf, size_t buf_size);
+
 // ---------- Version ----------
 const char* termcore_version(void);
 
