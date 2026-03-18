@@ -7,6 +7,7 @@ set(TERMCORE_SOURCES
     src/font/box_drawing.cpp
     src/font/box_drawing_lines.cpp
     src/font/font_shaper.cpp
+    src/font/glyph_atlas.cpp
 )
 
 if(UNIX)
