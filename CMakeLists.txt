@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 project(BreadTerminal
     VERSION 0.1.0
-    LANGUAGES CXX OBJCXX
+    LANGUAGES CXX
     DESCRIPTION "Cross-platform AI coding agent terminal"
 )
+
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

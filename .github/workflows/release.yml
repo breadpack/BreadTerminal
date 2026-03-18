@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-14  # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install harfbuzz icu4c@77 lua@5.4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DICU_ROOT="$(brew --prefix icu4c@77)"
+
+      - name: Build
+        run: cmake --build build --config Release --target BreadTerminal
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure
+
+      - name: Package DMG
+        run: |
+          APP_PATH="build/platform/macos/BreadTerminal.app"
+          # Create DMG
+          mkdir -p dmg_staging
+          cp -R "$APP_PATH" dmg_staging/
+          ln -s /Applications dmg_staging/Applications
+          hdiutil create -volname "BreadTerminal" \
+            -srcfolder dmg_staging \
+            -ov -format UDZO \
+            "BreadTerminal-${{ github.ref_name }}-macos-universal.dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: "*.dmg"
+
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libharfbuzz-dev libicu-dev libfreetype-dev libfontconfig-dev \
+            libgtk-4-dev libepoxy-dev \
+            lua5.4 liblua5.4-dev \
+            libwebkit2gtk-4.1-dev
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure
+
+      - name: Package
+        run: |
+          mkdir -p package/usr/local/bin
+          mkdir -p package/usr/local/share/breadterminal/shell
+          cp build/platform/linux/breadterminal package/usr/local/bin/
+          cp shell/*.sh shell/*.zsh shell/*.fish package/usr/local/share/breadterminal/shell/
+          # Create tar.gz
+          tar -czf "BreadTerminal-${{ github.ref_name }}-linux-x86_64.tar.gz" -C package .
+          # Create .deb
+          mkdir -p deb/DEBIAN
+          mkdir -p deb/usr/local/bin
+          mkdir -p deb/usr/local/share/breadterminal/shell
+          cp build/platform/linux/breadterminal deb/usr/local/bin/
+          cp shell/*.sh shell/*.zsh shell/*.fish deb/usr/local/share/breadterminal/shell/
+          cat > deb/DEBIAN/control << 'CTRL'
+          Package: breadterminal
+          Version: ${{ github.ref_name }}
+          Section: x11
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-4-1, libharfbuzz0b, libicu74, libfreetype6, libfontconfig1, libepoxy0
+          Maintainer: BreadTerminal Team
+          Description: Cross-platform AI coding agent terminal
+           A terminal emulator designed for AI coding agent workflows.
+          CTRL
+          # Fix version in control (remove 'v' prefix)
+          sed -i "s/Version: v/Version: /" deb/DEBIAN/control
+          dpkg-deb --build deb "BreadTerminal-${{ github.ref_name }}-linux-amd64.deb"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            *.tar.gz
+            *.deb
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          vcpkg install harfbuzz:x64-windows icu:x64-windows lua:x64-windows freetype:x64-windows
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: cd build && ctest --output-on-failure -C Release
+
+      - name: Package
+        run: |
+          mkdir package
+          mkdir package\shell
+          Copy-Item "build\platform\windows\Release\BreadTerminal.exe" package\
+          Copy-Item "shell\*" package\shell\ -Recurse
+          # Copy vcpkg DLLs
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" package\
+          Compress-Archive -Path package\* -DestinationPath "BreadTerminal-${{ github.ref_name }}-windows-x64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: "*.zip"
+
+  release:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "BreadTerminal ${{ github.ref_name }}"
+          body: |
+            ## BreadTerminal ${{ github.ref_name }}
+
+            Cross-platform AI coding agent terminal.
+
+            ### Downloads
+
+            | Platform | File |
+            |----------|------|
+            | macOS (Universal) | `BreadTerminal-${{ github.ref_name }}-macos-universal.dmg` |
+            | Linux (x86_64) | `BreadTerminal-${{ github.ref_name }}-linux-x86_64.tar.gz` |
+            | Linux (Debian/Ubuntu) | `BreadTerminal-${{ github.ref_name }}-linux-amd64.deb` |
+            | Windows (x64) | `BreadTerminal-${{ github.ref_name }}-windows-x64.zip` |
+
+            ### What's included
+            - VT100/VT220/xterm terminal emulation with 516 tests
+            - GPU-accelerated rendering (Metal/OpenGL/D3D11)
+            - AI agent detection and notification system
+            - Kitty keyboard & graphics protocols, Sixel support
+            - Lua 5.4 plugin system
+            - Shell integration (bash/zsh/fish)
+            - Built-in themes (Dracula, One Dark, Catppuccin, etc.)
+            - Tab/split pane management
+            - WebView embedding
+          draft: false
+          prerelease: true
+          files: |
+            artifacts/macos-dmg/*
+            artifacts/linux-packages/*
+            artifacts/windows-package/*
