@@ -120,21 +120,22 @@ jobs:
           vcpkg install harfbuzz:x64-windows icu:x64-windows freetype:x64-windows
 
       - name: Build Lua 5.4 from source
+        shell: pwsh
         run: |
-          curl -L -o lua-5.4.7.tar.gz https://www.lua.org/ftp/lua-5.4.7.tar.gz
-          tar xzf lua-5.4.7.tar.gz
-          cd lua-5.4.7
-          # Build Lua as static library with MSVC
-          cl /c /O2 /DLUA_BUILD_AS_DLL /I. src\*.c
-          del lua.obj luac.obj
+          Invoke-WebRequest -Uri "https://www.lua.org/ftp/lua-5.4.7.tar.gz" -OutFile lua.tar.gz
+          tar xzf lua.tar.gz
+          Push-Location lua-5.4.7
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=amd64"
+          cl /c /O2 /I. src/*.c
+          if (Test-Path lua.obj) { Remove-Item lua.obj }
+          if (Test-Path luac.obj) { Remove-Item luac.obj }
           lib /OUT:lua54.lib *.obj
-          mkdir ..\lua-install\include ..\lua-install\lib
-          copy src\lua.h ..\lua-install\include\
-          copy src\luaconf.h ..\lua-install\include\
-          copy src\lualib.h ..\lua-install\include\
-          copy src\lauxlib.h ..\lua-install\include\
-          copy lua54.lib ..\lua-install\lib\
-        shell: cmd
+          Pop-Location
+          New-Item -ItemType Directory -Force lua-install/include, lua-install/lib | Out-Null
+          Copy-Item lua-5.4.7/src/lua.h, lua-5.4.7/src/luaconf.h, lua-5.4.7/src/lualib.h, lua-5.4.7/src/lauxlib.h lua-install/include/
+          Copy-Item lua-5.4.7/lua54.lib lua-install/lib/
 
       - name: Configure CMake
         run: |
