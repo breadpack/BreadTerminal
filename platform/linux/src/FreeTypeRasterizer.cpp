@@ -6,6 +6,7 @@
 #include FT_GLYPH_H
 
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <unordered_map>
 

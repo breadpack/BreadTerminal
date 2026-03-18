@@ -8,6 +8,8 @@
 #include "termcore/pty.h"
 #include "termcore/mouse.h"
 #include "termcore/font/font_collection.h"
+
+#include <algorithm>
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"

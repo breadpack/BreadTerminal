@@ -12,6 +12,8 @@
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"
 
+#include <algorithm>
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
