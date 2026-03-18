@@ -77,6 +77,9 @@ int tc_pane_bracketed_paste(TermPane* pane);
 /// Check if application cursor keys mode is active
 int tc_pane_app_cursor_keys(TermPane* pane);
 
+/// Check if any mouse reporting mode is active
+int tc_pane_mouse_mode_active(TermPane* pane);
+
 // ---------- PTY I/O ----------
 int tc_pane_spawn(TermPane* pane, const char* command);
 int tc_pane_read_pty(TermPane* pane, char* buf, size_t buf_size);

@@ -34,6 +34,12 @@ class Pty;
 /// Resize the terminal grid to match current view size.
 - (void)updateGridSize;
 
+/// Copy selection to clipboard.
+- (void)copy:(id)sender;
+
+/// Paste from clipboard with bracketed-paste support.
+- (void)paste:(id)sender;
+
 @property (nonatomic, readonly) int termRows;
 @property (nonatomic, readonly) int termCols;
 

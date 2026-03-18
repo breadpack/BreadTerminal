@@ -173,6 +173,11 @@ int tc_pane_app_cursor_keys(TermPane* pane) {
     return pane->screen->appCursorKeys() ? 1 : 0;
 }
 
+int tc_pane_mouse_mode_active(TermPane* pane) {
+    if (!pane || !pane->screen) return 0;
+    return pane->screen->mouseMode() != termcore::MouseMode::None ? 1 : 0;
+}
+
 // ---------- PTY I/O ----------
 
 int tc_pane_spawn(TermPane* pane, const char* command) {
