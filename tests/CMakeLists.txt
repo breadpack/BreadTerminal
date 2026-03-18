@@ -18,6 +18,7 @@ add_executable(termcore_tests
     test_box_drawing.cpp
     test_font_shaper.cpp
     test_glyph_atlas.cpp
+    test_glyph_cache.cpp
 )
 
 target_link_libraries(termcore_tests
