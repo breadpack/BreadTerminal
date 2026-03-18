@@ -14,4 +14,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 enable_testing()
 
 add_subdirectory(core)
+
+if(APPLE)
+    add_subdirectory(platform/macos)
+endif()
+
 add_subdirectory(tests)

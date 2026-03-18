@@ -28,5 +28,10 @@ target_link_libraries(termcore_tests
         GTest::gtest_main
 )
 
+if(APPLE)
+    target_sources(termcore_tests PRIVATE test_coretext_rasterizer.cpp)
+    target_link_libraries(termcore_tests PRIVATE termcore_macos)
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(termcore_tests)
