@@ -13,6 +13,7 @@ set(TERMCORE_SOURCES
     src/font/glyph_atlas.cpp
     src/font/glyph_cache.cpp
     src/font/font_collection.cpp
+    src/mux.cpp
 )
 
 if(UNIX)

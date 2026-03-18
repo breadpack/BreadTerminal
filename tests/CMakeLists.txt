@@ -24,6 +24,7 @@ add_executable(termcore_tests
     test_glyph_cache.cpp
     test_font_collection.cpp
     test_mouse.cpp
+    test_mux.cpp
 )
 
 target_link_libraries(termcore_tests
