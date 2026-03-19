@@ -364,6 +364,18 @@ void MetalTextRenderer::setFontStack(FontCollection* collection,
     impl_->glyphCache = cache;
     impl_->glyphAtlas = atlas;
     impl_->rasterizer = rasterizer;
+
+    // Pre-cache ASCII glyphs for instant first-frame display
+    if (collection && cache && atlas && rasterizer) {
+        CollectionFaceId cface = collection->resolveFace('A');
+        if (cface != kInvalidCollectionFace) {
+            FontFaceId primaryFace = collection->rasterizerFaceId(cface);
+            if (primaryFace != kInvalidFontFace) {
+                cache->precacheAscii(primaryFace, collection->fontSize(),
+                                      *rasterizer, *atlas);
+            }
+        }
+    }
 }
 
 void MetalTextRenderer::render(const Screen& screen) {
