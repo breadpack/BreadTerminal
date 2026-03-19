@@ -65,7 +65,7 @@ static double machTimeToSeconds(uint64_t elapsed) {
     self.wantsLayer = YES;
     _metalLayer = [CAMetalLayer layer];
     _metalLayer.device = _device;
-    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     _metalLayer.framebufferOnly = YES;
     _metalLayer.frame = self.bounds;
     _metalLayer.contentsScale = self.window.backingScaleFactor ?: 2.0;
@@ -133,78 +133,27 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _impl->lastActivityTime = mach_absolute_time();
     _impl->idleMode = false;
 
-    // Set up display link (replaces NSTimer for frame pacing)
-    [self setupDisplayLink];
+    // Render timer will be started after view is added to window
+    // (cannot use __weak self during init — may be nil)
 
     return self;
 }
 
-#pragma mark - Display link management
+- (void)markActivity {}
 
-- (void)setupDisplayLink {
-    // Try CADisplayLink first (macOS 14+)
-    if (@available(macOS 14.0, *)) {
-        _impl->useCADisplayLink = true;
-        _impl->displayLink = [self displayLinkWithTarget:self selector:@selector(renderFrame)];
-        [_impl->displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-        return;
-    }
-
-    // Fallback: CVDisplayLink for older macOS
-    _impl->useCADisplayLink = false;
-    CVDisplayLinkCreateWithActiveCGDisplays(&_impl->cvDisplayLink);
-    CVDisplayLinkSetOutputCallback(_impl->cvDisplayLink, displayLinkCallback, (__bridge void*)self);
-    CVDisplayLinkStart(_impl->cvDisplayLink);
-}
-
-- (void)stopDisplayLink {
-    if (@available(macOS 14.0, *)) {
-        if (_impl->useCADisplayLink && _impl->displayLink) {
-            [_impl->displayLink invalidate];
-            _impl->displayLink = nil;
-        }
-    }
-    if (_impl->cvDisplayLink) {
-        CVDisplayLinkStop(_impl->cvDisplayLink);
-        CVDisplayLinkRelease(_impl->cvDisplayLink);
-        _impl->cvDisplayLink = nullptr;
-    }
-}
-
-- (void)enterIdleMode {
-    if (_impl->idleMode) return;
-    _impl->idleMode = true;
-
-    // Stop the display link to save power
-    [self stopDisplayLink];
-
-    // Start a low-frequency idle timer instead
-    __weak TerminalView* weakSelf = self;
-    _impl->idleTimer = [NSTimer scheduledTimerWithTimeInterval:kIdleCheckInterval
-                                                       repeats:YES
-                                                         block:^(NSTimer* _Nonnull timer) {
-        TerminalView* s = weakSelf;
-        if (!s) { [timer invalidate]; return; }
-        [s renderFrame];
-    }];
-}
-
-- (void)exitIdleMode {
-    if (!_impl->idleMode) return;
-    _impl->idleMode = false;
-
-    // Stop idle timer
-    [_impl->idleTimer invalidate];
-    _impl->idleTimer = nil;
-
-    // Restart display link at full vsync rate
-    [self setupDisplayLink];
-}
-
-- (void)markActivity {
-    _impl->lastActivityTime = mach_absolute_time();
-    if (_impl->idleMode) {
-        [self exitIdleMode];
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window && !_impl->idleTimer) {
+        // Start 60fps render timer now that view is in a window
+        __weak TerminalView* weakSelf = self;
+        _impl->idleTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0
+                                                            repeats:YES
+                                                              block:^(NSTimer* timer) {
+            TerminalView* s = weakSelf;
+            if (!s) { [timer invalidate]; return; }
+            [s renderFrame];
+        }];
+        _metalLayer.contentsScale = self.window.backingScaleFactor;
     }
 }
 
@@ -379,17 +328,12 @@ static double machTimeToSeconds(uint64_t elapsed) {
     if (!_metalLayer) {
         _metalLayer = [CAMetalLayer layer];
         _metalLayer.device = _device;
-        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     }
     return _metalLayer;
 }
 
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-    if (self.window) {
-        _metalLayer.contentsScale = self.window.backingScaleFactor;
-    }
-}
+// viewDidMoveToWindow is implemented above (line 144)
 
 - (void)setFrameSize:(NSSize)newSize {
     [super setFrameSize:newSize];
@@ -482,58 +426,50 @@ static double machTimeToSeconds(uint64_t elapsed) {
     // Dispatch PTY reads on a dedicated serial queue
     int fd = _impl->pty->fd();
     dispatch_source_t src = dispatch_source_create(
-        DISPATCH_SOURCE_TYPE_READ, fd, 0, _impl->ptyQueue);
+        DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
     dispatch_source_set_event_handler(src, ^{
         TerminalView* s = weakSelf;
-        if (s) [s readPtyDataOnQueue];
+        if (s) [s readPtyDataOnMainQueue];
     });
     dispatch_source_set_cancel_handler(src, ^{});
     _impl->ptyReadSource = src;
     dispatch_resume(src);
 }
 
-- (void)readPtyDataOnQueue {
-    // Called on ptyQueue — read from PTY and feed parser under lock
+- (void)readPtyDataOnMainQueue {
+    // Called on main queue — read from PTY and feed parser directly
     char buf[65536];
     for (;;) {
         int n = _impl->pty->read(buf, sizeof(buf));
         if (n > 0) {
-            std::lock_guard<std::mutex> lock(_impl->screenMutex);
             _impl->parser->feed(buf, static_cast<size_t>(n));
         } else if (n < 0) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (_impl->ptyReadSource) {
-                    dispatch_source_cancel(_impl->ptyReadSource);
-                    _impl->ptyReadSource = nullptr;
-                }
-            });
+            if (_impl->ptyReadSource) {
+                dispatch_source_cancel(_impl->ptyReadSource);
+                _impl->ptyReadSource = nullptr;
+            }
             return;
         } else {
-            // n == 0: no more data available right now
             break;
         }
     }
 
-    // Signal main thread that rendering is needed
-    __weak TerminalView* weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        TerminalView* s = weakSelf;
-        if (!s) return;
-        s->_impl->needsRender = true;
-        [s markActivity];
+    _impl->needsRender = true;
 
-        // Update window title from OSC sequences
-        std::string title;
-        {
-            std::lock_guard<std::mutex> lock(s->_impl->screenMutex);
-            title = s->_impl->screen->title();
-        }
+    // Update window title from OSC sequences
+    if (_impl->screen) {
+        std::string title = _impl->screen->title();
         if (!title.empty()) {
             NSString* t = [NSString stringWithUTF8String:title.c_str()];
-            if (t && ![s.window.title isEqualToString:t])
-                s.window.title = t;
+            if (t && ![self.window.title isEqualToString:t])
+                self.window.title = t;
         }
-    });
+    }
+
+    // Exit copy mode on new PTY output
+    if (_impl->copyModeActive) {
+        [self exitCopyMode];
+    }
 }
 
 #pragma mark - Text I/O
@@ -580,37 +516,10 @@ static double machTimeToSeconds(uint64_t elapsed) {
 }
 
 - (void)renderFrame {
-    // Synchronized output (mode ?2026): defer rendering while active,
-    // unless the safety timeout (500ms) has elapsed.
-    if (_impl->screen && _impl->screen->syncUpdate()) {
-        auto elapsed = std::chrono::steady_clock::now() - _impl->screen->syncStartTime();
-        if (elapsed < std::chrono::milliseconds(500)) {
-            // Sync mode active and under timeout — skip render, keep needsRender set
-            return;
-        }
-        // Safety timeout expired — render anyway (app forgot to reset sync mode)
-    }
-
-    // --- Idle downclock: check if we should transition to idle mode ---
-    bool screenDirty = false;
-    {
-        std::lock_guard<std::mutex> lock(_impl->screenMutex);
-        screenDirty = _impl->screen ? _impl->screen->isDirty() : false;
-    }
-
+    // Simple render guard: always render when cursor visible (for blink) or content changed
     bool imeActive = _markedText != nil && _markedText.length > 0;
     bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
-
-    // If nothing needs rendering, check whether to enter idle mode
-    if (!_impl->needsRender && !cursorNeedsRedraw && !screenDirty) {
-        uint64_t now = mach_absolute_time();
-        double elapsed = machTimeToSeconds(now - _impl->lastActivityTime);
-        if (elapsed > kIdleTimeoutSeconds && !_impl->idleMode) {
-            [self enterIdleMode];
-        }
-        return;
-    }
-
+    if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
     // Ensure drawable size is valid
@@ -625,8 +534,7 @@ static double machTimeToSeconds(uint64_t elapsed) {
         }
     }
 
-    // Lock screen for rendering
-    std::lock_guard<std::mutex> lock(_impl->screenMutex);
+    // No mutex needed — PTY read and render both on main queue
 
     // Inject IME marked text into screen cells before render, restore after
     struct IMESavedCell { int row, col; termcore::TermCell cell; };

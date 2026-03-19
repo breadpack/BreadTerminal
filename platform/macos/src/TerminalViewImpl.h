@@ -62,7 +62,7 @@ struct TerminalViewImpl {
     bool idleMode = false;
     NSTimer* idleTimer = nil;  // fires at reduced rate when idle
 
-    bool needsRender = false;
+    bool needsRender = true;  // Start with initial render needed
     bool notifyOnCommandFinish = true;
     int windowPadding = 0;  // logical pixels, stored for grid calculation
     std::string currentThemeString;  // Stores the raw theme config value (may be adaptive)
