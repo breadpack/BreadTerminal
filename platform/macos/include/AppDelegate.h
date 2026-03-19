@@ -3,9 +3,17 @@
 
 #import <Cocoa/Cocoa.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@protocol SidebarViewControllerDelegate;
+
+@interface AppDelegate : NSObject <NSApplicationDelegate, SidebarViewControllerDelegate>
 
 @property (strong) NSWindow* mainWindow;
+
+/// Toggle sidebar visibility (Cmd+Shift+B).
+- (IBAction)toggleSidebar:(id)sender;
+
+/// Open the Preferences window (Cmd+,).
+- (IBAction)openPreferences:(id)sender;
 
 @end
 

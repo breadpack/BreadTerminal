@@ -9,7 +9,11 @@
 #include "termcore/keybinding.h"
 #include "termcore/search.h"
 #include "termcore/url_detector.h"
+#include "termcore/paste_guard.h"
 #include "termcore/mouse.h"
+#include "termcore/mux.h"
+#include "termcore/notification.h"
+#include "termcore/agent.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
@@ -34,6 +38,10 @@ struct TerminalViewImpl {
     std::unique_ptr<termcore::KeybindingManager> keybindings;
     std::unique_ptr<termcore::TerminalSearch> search;
     std::unique_ptr<termcore::UrlDetector> urlDetector;
+    std::unique_ptr<termcore::PasteGuard> pasteGuard;
+    std::unique_ptr<termcore::Mux> mux;
+    std::unique_ptr<termcore::NotificationStore> notifications;
+    std::unique_ptr<termcore::AgentTracker> agentTracker;
     dispatch_source_t ptyReadSource = nullptr;
     NSTimer* renderTimer = nil;
     bool needsRender = false;
@@ -54,11 +62,18 @@ struct TerminalViewImpl {
     BOOL _searchActive;
     NSTextField* _searchField;
     NSTrackingArea* _trackingArea;
+    NSVisualEffectView* _visualEffectView;
     // Note: _termRows and _termCols are synthesized properties on TerminalView.
 }
 
 /// Internal helper: write raw bytes to the PTY.
 - (void)writePty:(const char*)str;
+
+/// Accessors for socket API integration.
+- (termcore::Mux&)mux;
+- (termcore::NotificationStore&)notifications;
+- (termcore::AgentTracker&)agentTracker;
+- (termcore::Pty*)pty;
 
 @end
 

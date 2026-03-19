@@ -185,7 +185,7 @@ TEST_F(ScreenTest, SgrReset) {
     feed("\x1B[1;31mA\x1B[0mB");
     EXPECT_NE(screen.cellAt(0, 0).attributes & AttrBold, 0);
     EXPECT_EQ(screen.cellAt(0, 1).attributes & AttrBold, 0);
-    EXPECT_EQ(screen.cellAt(0, 1).fg_color, 0xFFFFFFu);
+    EXPECT_EQ(screen.cellAt(0, 1).fg_color, kColorDefault);
 }
 
 // 10. Scroll region

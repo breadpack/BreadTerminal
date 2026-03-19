@@ -36,7 +36,11 @@ enum class Action : uint16_t {
     // Font
     FontIncrease, FontDecrease, FontReset,
     // Misc
-    ResetTerminal, ClearScrollback, ShowNotifications,
+    ResetTerminal, ClearScrollback, ShowNotifications, ReloadConfig,
+    // Sidebar / Workspace
+    ToggleSidebar,
+    SwitchWorkspace1, SwitchWorkspace2, SwitchWorkspace3, SwitchWorkspace4,
+    SwitchWorkspace5, SwitchWorkspace6, SwitchWorkspace7, SwitchWorkspace8,
     // Custom (string-based action)
     Custom,
 };

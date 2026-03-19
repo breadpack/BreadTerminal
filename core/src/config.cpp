@@ -1,9 +1,13 @@
 #include "termcore/config.h"
+#include "termcore/theme_loader.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
+#include <sys/stat.h>
 
 namespace termcore {
 
@@ -65,6 +69,18 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
         config.shell = value;
     } else if (key == "theme") {
         config.theme = value;
+    } else if (key == "clipboard-paste-protection") {
+        config.clipboard_paste_protection = value;
+    } else if (key == "clipboard-paste-bracketed-safe") {
+        config.clipboard_paste_bracketed_safe = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "background-opacity") {
+        config.background_opacity = std::clamp(std::stof(value), 0.0f, 1.0f);
+    } else if (key == "background-blur") {
+        config.background_blur = std::stoi(value);
+    } else if (key == "sidebar-visible") {
+        config.sidebar_visible = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "sidebar-width") {
+        config.sidebar_width = std::stoi(value);
     } else if (key == "keybind") {
         // Format: "trigger=action"
         auto eq = value.find('=');
@@ -83,19 +99,43 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
 
 Config parseConfigString(const std::string& content) {
     Config config;
-    std::istringstream stream(content);
-    std::string line;
 
-    while (std::getline(stream, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') continue;
+    // First pass: find the theme directive and apply it as a baseline.
+    // This allows explicit color values to override the theme.
+    {
+        std::istringstream stream(content);
+        std::string line;
+        while (std::getline(stream, line)) {
+            line = trim(line);
+            if (line.empty() || line[0] == '#') continue;
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = trim(line.substr(0, eq));
+            if (key == "theme") {
+                std::string value = trim(line.substr(eq + 1));
+                config.theme = value;
+                auto theme = findTheme(value);
+                if (theme) {
+                    applyTheme(config, *theme);
+                }
+                break;  // Only first theme directive matters
+            }
+        }
+    }
 
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-
-        std::string key = trim(line.substr(0, eq));
-        std::string value = trim(line.substr(eq + 1));
-        parseLine(config, key, value);
+    // Second pass: parse all directives (explicit colors override theme).
+    {
+        std::istringstream stream(content);
+        std::string line;
+        while (std::getline(stream, line)) {
+            line = trim(line);
+            if (line.empty() || line[0] == '#') continue;
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = trim(line.substr(0, eq));
+            std::string value = trim(line.substr(eq + 1));
+            parseLine(config, key, value);
+        }
     }
 
     return config;
@@ -167,6 +207,125 @@ bool writeDefaultConfig(const std::string& path) {
          << "keybind = cmd+shift+d=split_down\n";
 
     return file.good();
+}
+
+namespace {
+
+std::string colorToHex(uint32_t color) {
+    std::ostringstream oss;
+    oss << "#" << std::hex << std::setfill('0') << std::setw(6) << (color & 0xFFFFFF);
+    return oss.str();
+}
+
+} // namespace
+
+std::string serializeConfig(const Config& config) {
+    std::ostringstream out;
+
+    out << "# BreadTerminal Configuration\n\n";
+
+    // Font
+    out << "# Font\n";
+    out << "font-family = " << config.font_family << "\n";
+    out << "font-size = " << config.font_size << "\n";
+    for (const auto& feat : config.font_features) {
+        out << "font-feature = " << feat << "\n";
+    }
+    out << "\n";
+
+    // Colors
+    out << "# Colors\n";
+    out << "background = " << colorToHex(config.background) << "\n";
+    out << "foreground = " << colorToHex(config.foreground) << "\n";
+    out << "cursor-color = " << colorToHex(config.cursor_color) << "\n";
+    out << "selection-background = " << colorToHex(config.selection_background) << "\n";
+    out << "selection-foreground = " << colorToHex(config.selection_foreground) << "\n";
+    out << "\n";
+
+    // Palette
+    out << "# Palette (16 ANSI colors)\n";
+    for (int i = 0; i < 16; ++i) {
+        out << "palette = " << i << "=" << colorToHex(config.palette[i]) << "\n";
+    }
+    out << "\n";
+
+    // Window
+    out << "# Window\n";
+    out << "window-width = " << config.window_width << "\n";
+    out << "window-height = " << config.window_height << "\n";
+    out << "\n";
+
+    // Terminal
+    out << "# Terminal\n";
+    out << "scrollback-limit = " << config.scrollback_limit << "\n";
+    out << "cursor-style = " << config.cursor_style << "\n";
+    out << "cursor-blink = " << (config.cursor_blink ? "true" : "false") << "\n";
+    if (!config.shell.empty()) {
+        out << "shell = " << config.shell << "\n";
+    }
+    out << "\n";
+
+    // Clipboard
+    out << "# Clipboard\n";
+    out << "clipboard-paste-protection = " << config.clipboard_paste_protection << "\n";
+    out << "clipboard-paste-bracketed-safe = " << (config.clipboard_paste_bracketed_safe ? "true" : "false") << "\n";
+    out << "\n";
+
+    // Background transparency
+    out << "# Background transparency\n";
+    out << "background-opacity = " << config.background_opacity << "\n";
+    out << "background-blur = " << config.background_blur << "\n";
+    out << "\n";
+
+    // Sidebar
+    out << "# Sidebar\n";
+    out << "sidebar-visible = " << (config.sidebar_visible ? "true" : "false") << "\n";
+    out << "sidebar-width = " << config.sidebar_width << "\n";
+    out << "\n";
+
+    // Theme
+    if (!config.theme.empty()) {
+        out << "# Theme\n";
+        out << "theme = " << config.theme << "\n";
+        out << "\n";
+    }
+
+    // Keybindings
+    if (!config.keybindings.empty()) {
+        out << "# Keybindings\n";
+        for (const auto& kb : config.keybindings) {
+            out << "keybind = " << kb.trigger << "=" << kb.action << "\n";
+        }
+        out << "\n";
+    }
+
+    return out.str();
+}
+
+bool writeConfigFile(const std::string& path, const Config& config) {
+    std::string content = serializeConfig(config);
+    std::string tmpPath = path + ".tmp";
+
+    {
+        std::ofstream file(tmpPath, std::ios::binary);
+        if (!file.is_open()) return false;
+        file << content;
+        if (!file.good()) {
+            std::remove(tmpPath.c_str());
+            return false;
+        }
+    }
+
+    // Set 0600 permissions
+    chmod(tmpPath.c_str(), 0600);
+
+    // Atomic rename
+    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+
+    return true;
 }
 
 void applyTheme(Config& config, const Theme& theme) {

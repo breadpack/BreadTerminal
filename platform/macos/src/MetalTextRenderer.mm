@@ -1,5 +1,6 @@
 #import "MetalTextRenderer.h"
 #import "MetalAtlasUploader.h"
+#import <algorithm>
 #import "termcore/font/glyph_atlas.h"
 #import "termcore/font/glyph_cache.h"
 #import "termcore/font/font_collection.h"
@@ -33,6 +34,9 @@ struct MetalTextRenderer::Impl {
     // Viewport (physical pixels)
     float viewportWidth = 0;
     float viewportHeight = 0;
+
+    // Background opacity (0.0 = fully transparent, 1.0 = opaque)
+    float backgroundOpacity = 1.0f;
 
     // Reusable instance buffer
     std::vector<CellInstance> cellInstances;
@@ -217,7 +221,10 @@ fragment float4 cell_fragment(
     texture2d<float> atlas_gray [[texture(0)]],
     texture2d<float> atlas_color [[texture(1)]]
 ) {
-    if ((in.flags & 4) != 0) { return in.bg_color; }
+    if ((in.flags & 4) != 0) {
+        float a = in.bg_color.a;
+        return float4(in.bg_color.rgb * a, a);
+    }
     bool is_color = (in.flags & 2) != 0;
     if (is_color) {
         constexpr sampler emojiSampler(coord::pixel, address::clamp_to_edge, filter::linear);
@@ -258,13 +265,17 @@ fragment float4 cell_fragment(
         cellInstances.clear();
         cellInstances.reserve(static_cast<size_t>(rows) * cols * 2);
 
+        const auto& dc = screen.dynamicColors();
+
+        uint8_t bgAlpha = static_cast<uint8_t>(255.0f * backgroundOpacity);
+
         // Pass 1: Background quads
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const TermCell& cell = screen.cellAt(row, col);
 
-                uint32_t fg = cell.fg_color;
-                uint32_t bg = cell.bg_color;
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
 
                 CellInstance inst = {};
@@ -277,7 +288,7 @@ fragment float4 cell_fragment(
                 inst.bg_r = (bg >> 16) & 0xFF;
                 inst.bg_g = (bg >> 8) & 0xFF;
                 inst.bg_b = bg & 0xFF;
-                inst.bg_a = 255;
+                inst.bg_a = bgAlpha;
                 inst.flags = 4; // bg pass
                 cellInstances.push_back(inst);
             }
@@ -331,8 +342,8 @@ fragment float4 cell_fragment(
                         }
                     }
                     if (boxInfo) {
-                        uint32_t fg = cell.fg_color;
-                        uint32_t bg = cell.bg_color;
+                        uint32_t fg = dc.resolveFg(cell.fg_color);
+                        uint32_t bg = dc.resolveBg(cell.bg_color);
                         if (cell.attributes & AttrInverse) std::swap(fg, bg);
 
                         CellInstance inst = {};
@@ -374,8 +385,8 @@ fragment float4 cell_fragment(
                     key, fontSize, *rasterizer, *glyphAtlas);
                 if (!info) continue;
 
-                uint32_t fg = cell.fg_color;
-                uint32_t bg = cell.bg_color;
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
 
                 bool is_wide = (cell.width == 2);
@@ -518,14 +529,22 @@ void MetalTextRenderer::render(const Screen& screen) {
                         length:sizeof(CellUniforms)
                        options:MTLResourceStorageModeShared];
 
+        // Use dynamic background color for clear
+        const auto& dc = screen.dynamicColors();
+        uint32_t bgc = dc.background;
+        double clearR = ((bgc >> 16) & 0xFF) / 255.0;
+        double clearG = ((bgc >> 8) & 0xFF) / 255.0;
+        double clearB = (bgc & 0xFF) / 255.0;
+
         // Render pass
         MTLRenderPassDescriptor* pass =
             [MTLRenderPassDescriptor renderPassDescriptor];
         pass.colorAttachments[0].texture = drawable.texture;
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        double clearA = static_cast<double>(impl_->backgroundOpacity);
         pass.colorAttachments[0].clearColor =
-            MTLClearColorMake(0, 0, 0, 1);
+            MTLClearColorMake(clearR * clearA, clearG * clearA, clearB * clearA, clearA);
 
         id<MTLCommandBuffer> cmd =
             [impl_->commandQueue commandBuffer];
@@ -561,6 +580,10 @@ void MetalTextRenderer::render(const Screen& screen) {
 void MetalTextRenderer::resize(float width, float height) {
     impl_->viewportWidth = width;
     impl_->viewportHeight = height;
+}
+
+void MetalTextRenderer::setBackgroundOpacity(float opacity) {
+    impl_->backgroundOpacity = std::clamp(opacity, 0.0f, 1.0f);
 }
 
 } // namespace termcore

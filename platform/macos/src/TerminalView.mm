@@ -78,6 +78,15 @@
 
     // URL detector
     _impl->urlDetector = std::make_unique<termcore::UrlDetector>();
+
+    // Paste guard (default config)
+    _impl->pasteGuard = std::make_unique<termcore::PasteGuard>();
+
+    // Mux, notifications, agent tracker (for socket API)
+    _impl->mux = std::make_unique<termcore::Mux>();
+    _impl->notifications = std::make_unique<termcore::NotificationStore>();
+    _impl->agentTracker = std::make_unique<termcore::AgentTracker>();
+
     _searchActive = NO;
 
     // Set initial drawable size and viewport — both in physical pixels
@@ -121,8 +130,70 @@
         _impl->keybindings->loadFromConfig(bindings);
     }
 
+    // Paste guard
+    {
+        termcore::PasteGuard::Config pgCfg;
+        if (config.clipboard_paste_protection == "always")
+            pgCfg.mode = termcore::PasteGuard::Config::Mode::Always;
+        else if (config.clipboard_paste_protection == "never")
+            pgCfg.mode = termcore::PasteGuard::Config::Mode::Never;
+        else
+            pgCfg.mode = termcore::PasteGuard::Config::Mode::Multiline;
+        pgCfg.trust_bracketed = config.clipboard_paste_bracketed_safe;
+        _impl->pasteGuard = std::make_unique<termcore::PasteGuard>(pgCfg);
+    }
+
+    // Background transparency & blur
+    [self applyTransparencyConfig:config];
+
     // Recalculate grid with potentially new font metrics
     [self updateGridSize];
+}
+
+- (void)applyTransparencyConfig:(const termcore::Config&)config {
+    float opacity = config.background_opacity;
+    int blur = config.background_blur;
+    bool needsTransparency = (opacity < 1.0f) || (blur > 0);
+
+    if (needsTransparency) {
+        _metalLayer.framebufferOnly = NO;
+        _metalLayer.opaque = NO;
+    } else {
+        _metalLayer.framebufferOnly = YES;
+        _metalLayer.opaque = YES;
+    }
+
+    _impl->renderer->setBackgroundOpacity(opacity);
+
+    if (blur > 0) {
+        if (!_visualEffectView) {
+            _visualEffectView = [[NSVisualEffectView alloc] initWithFrame:self.bounds];
+            _visualEffectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+            _visualEffectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+            _visualEffectView.state = NSVisualEffectStateActive;
+            [self addSubview:_visualEffectView positioned:NSWindowBelow relativeTo:nil];
+        }
+
+        // Map blur level to material
+        switch (blur) {
+            case 1:
+                _visualEffectView.material = NSVisualEffectMaterialHUDWindow;
+                break;
+            case 2:
+                _visualEffectView.material = NSVisualEffectMaterialSheet;
+                break;
+            case 3:
+            default:
+                _visualEffectView.material = NSVisualEffectMaterialUnderWindowBackground;
+                break;
+        }
+    } else {
+        // Remove blur view if not needed
+        if (_visualEffectView) {
+            [_visualEffectView removeFromSuperview];
+            _visualEffectView = nil;
+        }
+    }
 }
 
 #pragma mark - NSView overrides
@@ -266,6 +337,82 @@
     }
 
     _impl->renderer->render(*_impl->screen);
+}
+
+#pragma mark - Config hot reload
+
+- (void)applyConfigDelta:(const termcore::Config&)config
+                   dirty:(termcore::ConfigDirtyFlags)dirty {
+    using namespace termcore;
+
+    if (hasFlag(dirty, ConfigDirtyFlags::Font)) {
+        if (!config.font_family.empty()) {
+            _impl->fontCollection->setPrimaryFont(config.font_family, config.font_size);
+            auto metrics = _impl->fontCollection->primaryMetrics();
+            _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 16.0f;
+            _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 32.0f;
+            // Invalidate glyph cache since font changed
+            _impl->cache = std::make_unique<GlyphCache>();
+            _impl->atlas = std::make_unique<GlyphAtlas>();
+            _impl->renderer->setFontStack(
+                _impl->fontCollection.get(), _impl->cache.get(),
+                _impl->atlas.get(), _impl->rasterizer.get());
+            [self updateGridSize];
+        }
+    }
+
+    if (hasFlag(dirty, ConfigDirtyFlags::Colors) || hasFlag(dirty, ConfigDirtyFlags::Theme)) {
+        // Re-apply transparency/background settings
+        [self applyTransparencyConfig:config];
+    }
+
+    if (hasFlag(dirty, ConfigDirtyFlags::Keybindings)) {
+        if (!config.keybindings.empty()) {
+            std::vector<std::pair<std::string, std::string>> bindings;
+            for (const auto& kb : config.keybindings) {
+                bindings.emplace_back(kb.trigger, kb.action);
+            }
+            _impl->keybindings->loadFromConfig(bindings);
+        }
+    }
+
+    [self setNeedsRender];
+}
+
+#pragma mark - Socket API accessors
+
+- (termcore::Mux&)mux { return *_impl->mux; }
+- (termcore::NotificationStore&)notifications { return *_impl->notifications; }
+- (termcore::AgentTracker&)agentTracker { return *_impl->agentTracker; }
+- (termcore::Pty*)pty { return _impl->pty.get(); }
+
+#pragma mark - Config error display
+
+- (void)showConfigError:(NSString*)message {
+    // Create error banner at top of view
+    CGFloat bannerHeight = 28.0;
+    NSRect bannerRect = NSMakeRect(0,
+                                    self.bounds.size.height - bannerHeight,
+                                    self.bounds.size.width,
+                                    bannerHeight);
+
+    NSTextField* errorLabel = [[NSTextField alloc] initWithFrame:bannerRect];
+    errorLabel.stringValue = [NSString stringWithFormat:@" Config error: %@", message];
+    errorLabel.editable = NO;
+    errorLabel.bordered = NO;
+    errorLabel.selectable = NO;
+    errorLabel.drawsBackground = YES;
+    errorLabel.backgroundColor = [NSColor colorWithRed:0.8 green:0.1 blue:0.1 alpha:0.9];
+    errorLabel.textColor = [NSColor whiteColor];
+    errorLabel.font = [NSFont systemFontOfSize:12.0 weight:NSFontWeightMedium];
+    errorLabel.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    [self addSubview:errorLabel];
+
+    // Auto-dismiss after 5 seconds
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        [errorLabel removeFromSuperview];
+    });
 }
 
 @end

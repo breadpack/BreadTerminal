@@ -1,6 +1,7 @@
 #if !defined(_WIN32)
 
 #include "termcore/pty.h"
+#include "termcore/terminfo.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -39,6 +40,9 @@ public:
         ws.ws_row = static_cast<unsigned short>(rows);
         ws.ws_col = static_cast<unsigned short>(cols);
 
+        // Install terminfo entry once (static ensures single initialization)
+        static auto s_terminfo = termcore::installTerminfo();
+
         pid_t child = forkpty(&master_fd_, nullptr, nullptr, &ws);
         if (child < 0) {
             master_fd_ = -1;
@@ -47,7 +51,7 @@ public:
 
         if (child == 0) {
             // --- Child process ---
-            setupChild(command, args, working_dir);
+            setupChild(command, args, working_dir, s_terminfo);
             // setupChild calls execvp; if we reach here, exec failed.
             _exit(127);
         }
@@ -192,7 +196,8 @@ private:
 
     static void setupChild(const std::string& command,
                             const std::vector<std::string>& args,
-                            const std::string& working_dir) {
+                            const std::string& working_dir,
+                            const TerminfoInstallResult& terminfo) {
         // Change working directory if specified
         if (!working_dir.empty()) {
             if (chdir(working_dir.c_str()) != 0) {
@@ -200,8 +205,17 @@ private:
             }
         }
 
-        // Set TERM environment variable
-        setenv("TERM", "xterm-256color", 1);
+        // Set TERM environment variable (uses custom terminfo or fallback)
+        setenv("TERM", terminfo.term_name.c_str(), 1);
+
+        // Set TERMINFO path so the shell can find our custom entry
+        if (!terminfo.terminfo_dir.empty()) {
+            setenv("TERMINFO", terminfo.terminfo_dir.c_str(), 1);
+        }
+
+        // Additional environment for true color and program identification
+        setenv("COLORTERM", "truecolor", 1);
+        setenv("TERM_PROGRAM", "BreadTerminal", 1);
 
         // Determine the command to run
         std::string cmd = command;

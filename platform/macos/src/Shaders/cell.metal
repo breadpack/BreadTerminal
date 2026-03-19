@@ -89,8 +89,9 @@ fragment float4 cell_fragment(
     texture2d<float> atlas_color [[texture(1)]]
 ) {
     if ((in.flags & 4) != 0) {
-        // Background pass
-        return in.bg_color;
+        // Background pass -- pre-multiply alpha for transparency compositing
+        float a = in.bg_color.a;
+        return float4(in.bg_color.rgb * a, a);
     }
 
     bool is_color = (in.flags & 2) != 0;

@@ -219,23 +219,15 @@ void Screen::handleSGR(const std::vector<int>& params) {
         } else if (p == 29) {
             pen_.attributes &= ~AttrStrikethrough;
         } else if (p >= 30 && p <= 37) {
-            pen_.fg_color = kColorTable[p - 30];
+            pen_.fg_color = dynamic_colors_.palette[p - 30];
         } else if (p == 38) {
             // Extended foreground: 38;5;n or 38;2;r;g;b
             if (i + 1 < params.size()) {
                 int sub = params[i + 1];
                 if (sub == 5 && i + 2 < params.size()) {
                     int idx = params[i + 2];
-                    if (idx >= 0 && idx < 16)
-                        pen_.fg_color = kColorTable[idx];
-                    else if (idx >= 16 && idx < 232) {
-                        int c = idx - 16;
-                        int r = c / 36, g = (c / 6) % 6, b = c % 6;
-                        pen_.fg_color = (kCubeValues[r] << 16) | (kCubeValues[g] << 8) | kCubeValues[b];
-                    } else if (idx >= 232 && idx < 256) {
-                        int gray = 8 + (idx - 232) * 10;
-                        pen_.fg_color = (gray << 16) | (gray << 8) | gray;
-                    }
+                    if (idx >= 0 && idx < 256)
+                        pen_.fg_color = dynamic_colors_.palette[idx];
                     i += 2;
                 } else if (sub == 2 && i + 4 < params.size()) {
                     int r = params[i + 2], g = params[i + 3], b = params[i + 4];
@@ -244,25 +236,17 @@ void Screen::handleSGR(const std::vector<int>& params) {
                 }
             }
         } else if (p == 39) {
-            pen_.fg_color = 0xFFFFFF;
+            pen_.fg_color = kColorDefault;
         } else if (p >= 40 && p <= 47) {
-            pen_.bg_color = kColorTable[p - 40];
+            pen_.bg_color = dynamic_colors_.palette[p - 40];
         } else if (p == 48) {
             // Extended background
             if (i + 1 < params.size()) {
                 int sub = params[i + 1];
                 if (sub == 5 && i + 2 < params.size()) {
                     int idx = params[i + 2];
-                    if (idx >= 0 && idx < 16)
-                        pen_.bg_color = kColorTable[idx];
-                    else if (idx >= 16 && idx < 232) {
-                        int c = idx - 16;
-                        int r = c / 36, g = (c / 6) % 6, b = c % 6;
-                        pen_.bg_color = (kCubeValues[r] << 16) | (kCubeValues[g] << 8) | kCubeValues[b];
-                    } else if (idx >= 232 && idx < 256) {
-                        int gray = 8 + (idx - 232) * 10;
-                        pen_.bg_color = (gray << 16) | (gray << 8) | gray;
-                    }
+                    if (idx >= 0 && idx < 256)
+                        pen_.bg_color = dynamic_colors_.palette[idx];
                     i += 2;
                 } else if (sub == 2 && i + 4 < params.size()) {
                     int r = params[i + 2], g = params[i + 3], b = params[i + 4];
@@ -271,11 +255,11 @@ void Screen::handleSGR(const std::vector<int>& params) {
                 }
             }
         } else if (p == 49) {
-            pen_.bg_color = 0x000000;
+            pen_.bg_color = kColorDefault;
         } else if (p >= 90 && p <= 97) {
-            pen_.fg_color = kColorTable[p - 90 + 8];
+            pen_.fg_color = dynamic_colors_.palette[p - 90 + 8];
         } else if (p >= 100 && p <= 107) {
-            pen_.bg_color = kColorTable[p - 100 + 8];
+            pen_.bg_color = dynamic_colors_.palette[p - 100 + 8];
         }
     }
 }

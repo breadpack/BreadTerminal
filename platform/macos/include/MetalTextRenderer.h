@@ -67,6 +67,9 @@ public:
     /// Handle viewport resize.
     void resize(float width, float height);
 
+    /// Set background opacity for transparency support (0.0 - 1.0).
+    void setBackgroundOpacity(float opacity);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

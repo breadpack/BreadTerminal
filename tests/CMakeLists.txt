@@ -14,6 +14,7 @@ add_executable(termcore_tests
     test_screen.cpp
     test_screen_modes.cpp
     test_screen_osc.cpp
+    test_screen_osc_colors.cpp
     test_screen_csi_ext.cpp
     test_pty.cpp
     test_capi.cpp
@@ -28,6 +29,7 @@ add_executable(termcore_tests
     test_lua_engine.cpp
     test_notification.cpp
     test_config.cpp
+    test_config_diff.cpp
     test_agent.cpp
     test_keybinding.cpp
     test_search.cpp
@@ -38,6 +40,16 @@ add_executable(termcore_tests
     test_shell_integration.cpp
     test_variable_font.cpp
     test_bitmap_flip.cpp
+    test_terminfo.cpp
+    test_paste_guard.cpp
+    test_session.cpp
+    test_git_branch_detector.cpp
+    test_workspace_status.cpp
+    test_jsonrpc.cpp
+    test_command_dispatcher.cpp
+    test_theme_loader.cpp
+    test_theme_index.cpp
+    test_font_index.cpp
 )
 
 target_link_libraries(termcore_tests

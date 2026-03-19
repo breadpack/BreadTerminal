@@ -1,4 +1,5 @@
 #include "termcore/screen.h"
+#include "termcore/config.h"
 #include "screen_colors.h"
 #include "termcore/font/unicode_width.h"
 #include <algorithm>
@@ -256,6 +257,18 @@ void Screen::onOscDispatch(int osc_number,
     case 777: // Desktop notification (rxvt-unicode style)
         handleOscNotification(777, osc_string);
         break;
+    case 4: // OSC 4: Set/query palette color
+        handleOscPaletteColor(osc_string);
+        break;
+    case 10: case 11: case 12: case 13: case 14:
+    case 15: case 16: case 17: case 18: case 19:
+        handleOscDynamicColor(osc_number, osc_string);
+        break;
+    case 104: // Reset palette color(s)
+    case 110: case 111: case 112: case 113: case 114:
+    case 115: case 116: case 117: case 118: case 119:
+        handleOscResetColor(osc_number, osc_string);
+        break;
     default:
         break;
     }
@@ -403,6 +416,10 @@ void Screen::clearScreen() {
     for (int r = 0; r < rows_; ++r)
         for (int c = 0; c < cols_; ++c)
             eraseCell(mutableCellAt(r, c));
+}
+
+void Screen::initDynamicColors(const Config& cfg) {
+    dynamic_colors_.initFromConfig(cfg);
 }
 
 } // namespace termcore

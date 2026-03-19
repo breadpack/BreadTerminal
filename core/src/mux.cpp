@@ -12,6 +12,14 @@ void Mux::setPaneCallbacks(PaneCreateCallback create_cb, PaneDestroyCallback des
     destroy_cb_ = std::move(destroy_cb);
 }
 
+void Mux::setOnChanged(MuxChangeCallback cb) {
+    on_changed_ = std::move(cb);
+}
+
+void Mux::fireOnChanged() {
+    if (on_changed_) on_changed_();
+}
+
 // --- Workspace ---
 
 WorkspaceId Mux::createWorkspace(const std::string& name) {
@@ -23,6 +31,7 @@ WorkspaceId Mux::createWorkspace(const std::string& name) {
     if (active_workspace_ == kInvalidWorkspace) {
         active_workspace_ = id;
     }
+    fireOnChanged();
     return id;
 }
 
@@ -43,6 +52,7 @@ void Mux::destroyWorkspace(WorkspaceId id) {
     if (active_workspace_ == id) {
         active_workspace_ = workspaces_.empty() ? kInvalidWorkspace : workspaces_.front()->id;
     }
+    fireOnChanged();
 }
 
 Workspace* Mux::getWorkspace(WorkspaceId id) {
@@ -60,6 +70,7 @@ void Mux::setActiveWorkspace(WorkspaceId id) {
     for (auto& ws : workspaces_) {
         if (ws->id == id) {
             active_workspace_ = id;
+            fireOnChanged();
             return;
         }
     }
@@ -86,6 +97,7 @@ TabId Mux::createTab(WorkspaceId ws_id, int rows, int cols) {
     TabId id = tab->id;
     ws->tabs.push_back(std::move(tab));
     ws->active_tab_index = ws->tabs.size() - 1;
+    fireOnChanged();
     return id;
 }
 
@@ -111,6 +123,7 @@ void Mux::destroyTab(WorkspaceId ws_id, TabId tab_id) {
     } else if (idx < ws->active_tab_index) {
         ws->active_tab_index--;
     }
+    fireOnChanged();
 }
 
 Tab* Mux::activeTab(WorkspaceId ws_id) {
@@ -126,6 +139,7 @@ void Mux::setActiveTab(WorkspaceId ws_id, TabId tab_id) {
     for (size_t i = 0; i < ws->tabs.size(); ++i) {
         if (ws->tabs[i]->id == tab_id) {
             ws->active_tab_index = i;
+            fireOnChanged();
             return;
         }
     }
@@ -163,6 +177,7 @@ PaneId Mux::splitPane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id,
     node->first = std::move(first);
     node->second = std::move(second);
 
+    fireOnChanged();
     return new_pane;
 }
 
@@ -175,6 +190,7 @@ void Mux::closePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id) {
         if (destroy_cb_) destroy_cb_(pane_id);
         tab->root.reset();
         tab->active_pane = kInvalidPane;
+        fireOnChanged();
         return;
     }
 
@@ -208,9 +224,10 @@ void Mux::closePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id) {
         collectPanes(tab->root.get(), panes);
         tab->active_pane = panes.empty() ? kInvalidPane : panes.front();
     }
+    fireOnChanged();
 }
 
-PaneId Mux::activePaneId(WorkspaceId ws_id, TabId tab_id) {
+PaneId Mux::activePaneId(WorkspaceId ws_id, TabId tab_id) const {
     auto* tab = findTab(ws_id, tab_id);
     if (!tab) return kInvalidPane;
     return tab->active_pane;
@@ -296,6 +313,34 @@ const Tab* Mux::findTab(WorkspaceId ws_id, TabId tab_id) const {
         }
     }
     return nullptr;
+}
+
+std::vector<WorkspaceId> Mux::allWorkspaceIds() const {
+    std::vector<WorkspaceId> ids;
+    ids.reserve(workspaces_.size());
+    for (const auto& ws : workspaces_) {
+        ids.push_back(ws->id);
+    }
+    return ids;
+}
+
+std::vector<TabId> Mux::allTabIds(WorkspaceId ws_id) const {
+    std::vector<TabId> ids;
+    for (const auto& ws : workspaces_) {
+        if (ws->id == ws_id) {
+            ids.reserve(ws->tabs.size());
+            for (const auto& t : ws->tabs) {
+                ids.push_back(t->id);
+            }
+            break;
+        }
+    }
+    return ids;
+}
+
+const SplitNode* Mux::splitRoot(WorkspaceId ws_id, TabId tab_id) const {
+    const auto* tab = findTab(ws_id, tab_id);
+    return tab ? tab->root.get() : nullptr;
 }
 
 }  // namespace termcore

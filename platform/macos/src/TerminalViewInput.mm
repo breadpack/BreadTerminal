@@ -255,6 +255,11 @@ static uint8_t modsFromEvent(NSEvent* event) {
     case termcore::Action::ToggleFullscreen:
         [self.window toggleFullScreen:nil];
         break;
+    case termcore::Action::ReloadConfig:
+        // Notify AppDelegate to trigger config reload via the watcher
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"BreadTerminalReloadConfig" object:nil];
+        break;
     default:
         break;
     }
@@ -396,13 +401,17 @@ static uint8_t modsFromEvent(NSEvent* event) {
 
 - (void)paste:(id)sender {
     NSString* text = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
-    if (!text || !_impl->pty) return;
-    const char* utf8 = text.UTF8String;
-    size_t len = strlen(utf8);
-    bool bracketed = _impl->screen && _impl->screen->bracketedPaste();
-    if (bracketed) _impl->pty->write("\033[200~", 6);
-    _impl->pty->write(utf8, len);
-    if (bracketed) _impl->pty->write("\033[201~", 6);
+    if (!text || text.length == 0 || !_impl->pty) return;
+
+    BOOL bracketed = _impl->screen && _impl->screen->bracketedPaste();
+    std::string utf8Str = [text UTF8String];
+
+    auto analysis = _impl->pasteGuard->analyze(utf8Str, bracketed);
+    if (analysis.danger == termcore::PasteDanger::Safe) {
+        [self executePaste:text bracketed:bracketed];
+    } else {
+        [self confirmPaste:text analysis:analysis bracketed:bracketed];
+    }
 }
 
 - (void)copy:(id)sender {

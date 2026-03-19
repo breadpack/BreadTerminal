@@ -6,6 +6,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 #include "termcore/config.h"
+#include "termcore/config_diff.h"
 
 namespace termcore {
 class Screen;
@@ -21,6 +22,8 @@ class Pty;
 class KeybindingManager;
 class TerminalSearch;
 class UrlDetector;
+class PasteGuard;
+struct PasteAnalysis;
 enum class Action : uint16_t;
 } // namespace termcore
 
@@ -42,6 +45,13 @@ enum class Action : uint16_t;
 
 /// Resize the terminal grid to match current view size.
 - (void)updateGridSize;
+
+/// Apply incremental config changes based on dirty flags.
+- (void)applyConfigDelta:(const termcore::Config&)config
+                   dirty:(termcore::ConfigDirtyFlags)dirty;
+
+/// Show a transient config error banner at the top of the view.
+- (void)showConfigError:(NSString*)message;
 
 @property (nonatomic, readonly) int termRows;
 @property (nonatomic, readonly) int termCols;
@@ -68,6 +78,19 @@ enum class Action : uint16_t;
 
 /// Capture debug screenshot + state dump (Cmd+Shift+S)
 - (void)captureScreenshot;
+
+@end
+
+/// Paste protection category: paste analysis, confirmation dialog, execution.
+@interface TerminalView (Paste)
+
+/// Execute the paste, writing text to PTY with optional bracketed-paste wrapping.
+- (void)executePaste:(NSString*)text bracketed:(BOOL)bracketed;
+
+/// Show a confirmation dialog for potentially dangerous paste content.
+- (void)confirmPaste:(NSString*)text
+            analysis:(const termcore::PasteAnalysis&)analysis
+           bracketed:(BOOL)bracketed;
 
 @end
 

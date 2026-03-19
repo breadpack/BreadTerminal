@@ -85,6 +85,25 @@ add_executable(BreadTerminal MACOSX_BUNDLE
     src/AppDelegate.mm
     src/TerminalView.mm
     src/TerminalViewInput.mm
+    src/TerminalViewPaste.mm
+    src/ConfigWatcherMac.mm
+    src/WorkspaceRowView.mm
+    src/SidebarViewController.mm
+    src/TerminalContentViewController.mm
+    src/PrefsColorWellButton.mm
+    src/PreferencesWindowController.mm
+    src/PrefsGeneralViewController.mm
+    src/PrefsAppearanceViewController.mm
+    src/PrefsFontViewController.mm
+    src/PrefsKeybindingsViewController.mm
+    src/PrefsClipboardViewController.mm
+    src/PrefsSidebarViewController.mm
+    src/ThemeCardView.mm
+    src/ThemeDownloader.mm
+    src/ThemeHubViewController.mm
+    src/FontCardView.mm
+    src/FontDownloader.mm
+    src/FontHubViewController.mm
 )
 
 target_include_directories(BreadTerminal PRIVATE
@@ -110,6 +129,25 @@ set_source_files_properties(
     src/AppDelegate.mm
     src/TerminalView.mm
     src/TerminalViewInput.mm
+    src/TerminalViewPaste.mm
+    src/ConfigWatcherMac.mm
+    src/WorkspaceRowView.mm
+    src/SidebarViewController.mm
+    src/TerminalContentViewController.mm
+    src/PrefsColorWellButton.mm
+    src/PreferencesWindowController.mm
+    src/PrefsGeneralViewController.mm
+    src/PrefsAppearanceViewController.mm
+    src/PrefsFontViewController.mm
+    src/PrefsKeybindingsViewController.mm
+    src/PrefsClipboardViewController.mm
+    src/PrefsSidebarViewController.mm
+    src/ThemeCardView.mm
+    src/ThemeDownloader.mm
+    src/ThemeHubViewController.mm
+    src/FontCardView.mm
+    src/FontDownloader.mm
+    src/FontHubViewController.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
 )
 
@@ -132,5 +170,31 @@ if(METAL_COMPILER_RESULT EQUAL 0)
             ${METAL_LIB}
             "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources/default.metallib"
         COMMENT "Copying default.metallib into BreadTerminal.app bundle"
+    )
+endif()
+
+# Copy theme_index.json into the bundle Resources if it exists
+set(THEME_INDEX_JSON "${CMAKE_SOURCE_DIR}/resources/theme_index.json")
+if(EXISTS ${THEME_INDEX_JSON})
+    add_custom_command(TARGET BreadTerminal POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${THEME_INDEX_JSON}
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources/theme_index.json"
+        COMMENT "Copying theme_index.json into BreadTerminal.app bundle"
+    )
+endif()
+
+# Copy font_index.json into the bundle Resources
+set(FONT_INDEX_JSON "${CMAKE_CURRENT_SOURCE_DIR}/resources/font_index.json")
+if(EXISTS ${FONT_INDEX_JSON})
+    add_custom_command(TARGET BreadTerminal POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${FONT_INDEX_JSON}
+            "$<TARGET_BUNDLE_DIR:BreadTerminal>/Contents/Resources/font_index.json"
+        COMMENT "Copying font_index.json into BreadTerminal.app bundle"
     )
 endif()

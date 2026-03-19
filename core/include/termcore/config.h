@@ -44,6 +44,18 @@ struct Config {
     bool cursor_blink = true;
     std::string shell;  // Empty = use $SHELL
 
+    // Clipboard paste protection
+    std::string clipboard_paste_protection = "multiline";  // "never", "multiline", "always"
+    bool clipboard_paste_bracketed_safe = true;
+
+    // Background transparency
+    float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
+    int background_blur = 0;           // 0=none, 1=low, 2=medium, 3=high
+
+    // Sidebar
+    bool sidebar_visible = true;
+    int sidebar_width = 220;
+
     // Theme
     std::string theme;  // Theme name or "dark:name,light:name"
 
@@ -67,6 +79,13 @@ std::string defaultConfigPath();
 
 /// Write a default config file if none exists.
 bool writeDefaultConfig(const std::string& path);
+
+/// Serialize a Config to config file text format.
+std::string serializeConfig(const Config& config);
+
+/// Write a config to a file atomically (write .tmp, rename).
+/// Sets 0600 permissions on the file.
+bool writeConfigFile(const std::string& path, const Config& config);
 
 /// Named color themes
 struct Theme {

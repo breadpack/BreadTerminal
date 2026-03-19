@@ -1,6 +1,17 @@
+# nlohmann/json for session serialization
+include(FetchContent)
+FetchContent_Declare(nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3)
+FetchContent_MakeAvailable(nlohmann_json)
+
+# zlib for scrollback compression
+find_package(ZLIB REQUIRED)
+
 set(TERMCORE_SOURCES
     src/termcore_api.cpp
     src/vt_parser.cpp
+    src/dynamic_colors.cpp
     src/screen.cpp
     src/screen_csi.cpp
     src/screen_csi_ext.cpp
@@ -17,20 +28,38 @@ set(TERMCORE_SOURCES
     src/mux.cpp
     src/notification.cpp
     src/config.cpp
+    src/config_diff.cpp
     src/config_themes.cpp
+    src/theme_loader.cpp
+    src/theme_index.cpp
+    src/font_index.cpp
     src/agent.cpp
     src/keybinding.cpp
+    src/git_branch_detector.cpp
+    src/workspace_status.cpp
     src/search.cpp
     src/url_detector.cpp
     src/kitty_keyboard.cpp
     src/sixel.cpp
     src/kitty_graphics.cpp
     src/shell_integration.cpp
+    src/paste_guard.cpp
     src/webview_stub.cpp
+    src/terminfo.cpp
+    src/session_paths.cpp
+    src/session_serializer.cpp
+    src/session_deserializer.cpp
+    src/socket/jsonrpc.cpp
+    src/socket/command_dispatcher_mux.cpp
+    src/socket/command_dispatcher_misc.cpp
+    src/socket/socket_server.cpp
 )
 
 if(UNIX)
-    list(APPEND TERMCORE_SOURCES src/pty_unix.cpp)
+    list(APPEND TERMCORE_SOURCES
+        src/pty_unix.cpp
+        src/socket/unix_socket_transport.cpp
+    )
 endif()
 
 if(WIN32)
@@ -116,7 +145,7 @@ target_include_directories(termcore
         ${HARFBUZZ_INCLUDE_DIRS}
 )
 
-target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES})
+target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES} nlohmann_json::nlohmann_json ZLIB::ZLIB)
 target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
 
 if(TERMCORE_HAS_LUA)

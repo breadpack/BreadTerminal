@@ -1,6 +1,7 @@
 #ifndef TERMCORE_SCREEN_H
 #define TERMCORE_SCREEN_H
 
+#include "termcore/dynamic_colors.h"
 #include "termcore/kitty_keyboard.h"
 #include "termcore/vt_parser.h"
 #include <cstdint>
@@ -25,8 +26,8 @@ enum CellAttribute : uint16_t {
 /// A single cell in the terminal grid.
 struct TermCell {
     char32_t codepoint = ' ';
-    uint32_t fg_color = 0xFFFFFF;
-    uint32_t bg_color = 0x000000;
+    uint32_t fg_color = kColorDefault;
+    uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
     uint8_t width = 1;
 };
@@ -45,8 +46,8 @@ struct CursorState {
 
 /// Current SGR pen attributes applied to new cells.
 struct Pen {
-    uint32_t fg_color = 0xFFFFFF;
-    uint32_t bg_color = 0x000000;
+    uint32_t fg_color = kColorDefault;
+    uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
 };
 
@@ -127,6 +128,17 @@ public:
     using ClipboardCallback = std::function<void(const ClipboardEvent&)>;
     void setClipboardCallback(ClipboardCallback cb) { clipboard_callback_ = std::move(cb); }
 
+    // --- Dynamic colors ---
+    struct DynamicColorEvent {
+        int index;        // -1 = palette changed, 0..9 = OSC 10..19 slot
+        uint32_t color;   // new color value
+    };
+    using DynamicColorCallback = std::function<void(const DynamicColorEvent&)>;
+    void setDynamicColorCallback(DynamicColorCallback cb) { dynamic_color_callback_ = std::move(cb); }
+
+    const DynamicColors& dynamicColors() const { return dynamic_colors_; }
+    void initDynamicColors(const Config& cfg);
+
     // --- Utility ---
     std::string getLineText(int row) const;
     std::string getScrollbackLineText(int line) const;  // line 0 = most recent
@@ -196,10 +208,14 @@ private:
     // Tab stops
     std::vector<bool> tab_stops_;
 
+    // Dynamic colors
+    DynamicColors dynamic_colors_;
+
     // Callbacks
     ResponseCallback response_callback_;
     NotificationCallback notification_callback_;
     ClipboardCallback clipboard_callback_;
+    DynamicColorCallback dynamic_color_callback_;
 
     // Alternate screen buffer
     struct ScreenState {
@@ -262,6 +278,9 @@ private:
     void handleOscClipboard(const std::string& str);
     void handleOscNotification(int type, const std::string& str);
     void handleOscShellIntegration(const std::string& str);
+    void handleOscPaletteColor(const std::string& str);
+    void handleOscDynamicColor(int osc_number, const std::string& str);
+    void handleOscResetColor(int osc_number, const std::string& str);
 
     // Alt screen helpers
     void switchToAltScreen(bool save_cursor);

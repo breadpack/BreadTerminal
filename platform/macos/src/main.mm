@@ -23,6 +23,10 @@ int main(int argc, const char* argv[]) {
                            action:@selector(orderFrontStandardAboutPanel:)
                     keyEquivalent:@""];
         [appMenu addItem:[NSMenuItem separatorItem]];
+        [appMenu addItemWithTitle:@"Preferences..."
+                           action:@selector(openPreferences:)
+                    keyEquivalent:@","];
+        [appMenu addItem:[NSMenuItem separatorItem]];
         [appMenu addItemWithTitle:@"Quit BreadTerminal"
                            action:@selector(terminate:)
                     keyEquivalent:@"q"];

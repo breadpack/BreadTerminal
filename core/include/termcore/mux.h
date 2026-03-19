@@ -43,6 +43,7 @@ struct Workspace {
 
 using PaneCreateCallback = std::function<PaneId(int rows, int cols)>;
 using PaneDestroyCallback = std::function<void(PaneId)>;
+using MuxChangeCallback = std::function<void()>;
 
 class Mux {
 public:
@@ -50,6 +51,9 @@ public:
     ~Mux();
 
     void setPaneCallbacks(PaneCreateCallback create_cb, PaneDestroyCallback destroy_cb);
+
+    /// Set a callback that fires when the mux structure changes.
+    void setOnChanged(MuxChangeCallback cb);
 
     WorkspaceId createWorkspace(const std::string& name = "");
     void destroyWorkspace(WorkspaceId id);
@@ -65,11 +69,20 @@ public:
     PaneId splitPane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id,
                      SplitDirection direction, int rows = 24, int cols = 80);
     void closePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id);
-    PaneId activePaneId(WorkspaceId ws_id, TabId tab_id);
+    PaneId activePaneId(WorkspaceId ws_id, TabId tab_id) const;
     void setActivePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id);
     std::vector<PaneId> allPanes(WorkspaceId ws_id, TabId tab_id) const;
 
     size_t workspaceCount() const { return workspaces_.size(); }
+
+    /// Get all workspace IDs.
+    std::vector<WorkspaceId> allWorkspaceIds() const;
+
+    /// Get all tab IDs in a workspace.
+    std::vector<TabId> allTabIds(WorkspaceId ws_id) const;
+
+    /// Access split tree root (const) for a tab.
+    const SplitNode* splitRoot(WorkspaceId ws_id, TabId tab_id) const;
 
 private:
     SplitNode* findNode(SplitNode* node, PaneId pane_id);
@@ -84,8 +97,11 @@ private:
     WorkspaceId next_workspace_id_ = 1;
     TabId next_tab_id_ = 1;
 
+    void fireOnChanged();
+
     PaneCreateCallback create_cb_;
     PaneDestroyCallback destroy_cb_;
+    MuxChangeCallback on_changed_;
 };
 
 }  // namespace termcore

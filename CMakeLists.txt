@@ -31,4 +31,6 @@ if(WIN32)
     add_subdirectory(platform/windows)
 endif()
 
+add_subdirectory(tools/breadterminal)
+
 add_subdirectory(tests)
