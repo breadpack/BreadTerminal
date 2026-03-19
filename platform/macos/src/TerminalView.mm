@@ -109,8 +109,7 @@
 }
 
 - (void)dealloc {
-    if (_impl->ptyReadSource) dispatch_source_cancel(_impl->ptyReadSource);
-    [_impl->renderTimer invalidate];
+    // TerminalViewImpl destructor handles ptyReadSource cancel and renderTimer invalidation
     delete _impl;
 }
 
@@ -143,6 +142,11 @@
             pgCfg.mode = termcore::PasteGuard::Config::Mode::Multiline;
         pgCfg.trust_bracketed = config.clipboard_paste_bracketed_safe;
         _impl->pasteGuard = std::make_unique<termcore::PasteGuard>(pgCfg);
+    }
+
+    // Scrollback limit
+    if (config.scrollback_limit > 0) {
+        _impl->screen->setMaxScrollback(static_cast<size_t>(config.scrollback_limit));
     }
 
     // Cursor blink interval
@@ -471,6 +475,14 @@
 #pragma mark - Config error display
 
 - (void)showConfigError:(NSString*)message {
+    // Remove any existing error banner before creating a new one
+    static const NSInteger kConfigErrorBannerTag = 9001;
+    for (NSView* subview in [self.subviews copy]) {
+        if (subview.tag == kConfigErrorBannerTag) {
+            [subview removeFromSuperview];
+        }
+    }
+
     // Create error banner at top of view
     CGFloat bannerHeight = 28.0;
     NSRect bannerRect = NSMakeRect(0,
@@ -479,6 +491,7 @@
                                     bannerHeight);
 
     NSTextField* errorLabel = [[NSTextField alloc] initWithFrame:bannerRect];
+    errorLabel.tag = kConfigErrorBannerTag;
     errorLabel.stringValue = [NSString stringWithFormat:@" Config error: %@", message];
     errorLabel.editable = NO;
     errorLabel.bordered = NO;

@@ -148,6 +148,7 @@ static uint8_t modsFromEvent(NSEvent* event) {
 - (void)doCommandBySelector:(SEL)selector {
     // Called by interpretKeyEvents: for non-text commands (backspace, arrows, etc.)
     // When IME is not composing, translate to terminal escape sequences.
+    if (!_impl->pty) return;
     if (selector == @selector(deleteBackward:)) {
         [self writePty:"\x7f"];
     } else if (selector == @selector(deleteForward:)) {
@@ -219,6 +220,7 @@ static uint8_t modsFromEvent(NSEvent* event) {
 }
 
 - (BOOL)handleSpecialKey:(NSEvent*)event {
+    if (!_impl->pty) return NO;
     unsigned short kc = event.keyCode;
     bool appCur = _impl->screen && _impl->screen->appCursorKeys();
     const char* pfx = appCur ? "\x1bO" : "\x1b[";

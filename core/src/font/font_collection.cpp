@@ -158,9 +158,13 @@ FontMetrics FontCollection::primaryMetrics() const {
 }
 
 CollectionFaceId FontCollection::resolveFace(char32_t codepoint) {
-    // Check cache first
+    // Check cache first (SIZE_MAX is a sentinel for negative cache: fallback failed)
     auto it = codepoint_cache_.find(codepoint);
     if (it != codepoint_cache_.end()) {
+        if (it->second == SIZE_MAX) {
+            // Negative cache hit: fallback previously failed, return primary face
+            return chain_.empty() ? kInvalidCollectionFace : 0;
+        }
         return static_cast<CollectionFaceId>(it->second);
     }
 
@@ -272,12 +276,10 @@ CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
 
     FontDescriptor desc = discovery_.findFallback(codepoint, style);
     if (desc.file_path.empty()) {
-        fprintf(stderr, "[FONT FALLBACK] U+%04X: no fallback found\n", (unsigned)codepoint);
+        // Cache the failure so we don't repeat expensive system fallback lookups
+        codepoint_cache_[codepoint] = SIZE_MAX;
         return kInvalidCollectionFace;
     }
-
-    fprintf(stderr, "[FONT FALLBACK] U+%04X: found '%s' at '%s'\n",
-            (unsigned)codepoint, desc.family.c_str(), desc.file_path.c_str());
 
     // Check if we already have this font in the chain
     for (size_t i = 0; i < chain_.size(); ++i) {
@@ -289,7 +291,7 @@ CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
                 codepoint_cache_[codepoint] = i;
                 return static_cast<CollectionFaceId>(i);
             }
-            codepoint_cache_[codepoint] = 0;
+            codepoint_cache_[codepoint] = SIZE_MAX;
             return kInvalidCollectionFace;
         }
     }
@@ -298,13 +300,14 @@ CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
     FontEntry entry;
     entry.descriptor = desc;
     if (!ensureLoaded(entry)) {
+        codepoint_cache_[codepoint] = SIZE_MAX;
         return kInvalidCollectionFace;
     }
 
     // Verify it actually has the glyph
     uint32_t glyph_index = rasterizer_.getGlyphIndex(entry.rasterizer_face_id, codepoint);
     if (glyph_index == 0) {
-        codepoint_cache_[codepoint] = 0;
+        codepoint_cache_[codepoint] = SIZE_MAX;
         return kInvalidCollectionFace;
     }
 

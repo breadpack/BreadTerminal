@@ -134,7 +134,15 @@ void Screen::handleOscWorkingDirectory(const std::string& str) {
     auto slash_pos = rest.find('/');
     if (slash_pos == std::string::npos) {
         working_directory_ = urlDecode(rest);
+        remote_hostname_.clear();
     } else {
+        // Extract hostname (between "file://" and the first '/')
+        std::string hostname = rest.substr(0, slash_pos);
+        if (!hostname.empty() && hostname != "localhost") {
+            remote_hostname_ = hostname;
+        } else {
+            remote_hostname_.clear();
+        }
         working_directory_ = urlDecode(rest.substr(slash_pos));
     }
 }
@@ -181,6 +189,8 @@ void Screen::handleOscClipboard(const std::string& str) {
         }
     } else {
         // Write request - data is base64 encoded
+        // Only allow if clipboard write permission has been explicitly granted
+        if (!clipboard_write_allowed_) return;
         event.is_read = false;
         event.data = data;
         if (clipboard_callback_) {

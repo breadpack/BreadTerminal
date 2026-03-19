@@ -75,6 +75,8 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
         config.clipboard_paste_protection = value;
     } else if (key == "clipboard-paste-bracketed-safe") {
         config.clipboard_paste_bracketed_safe = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "allow-clipboard-write") {
+        config.allow_clipboard_write = (value == "true" || value == "1" || value == "yes");
     } else if (key == "background-opacity") {
         config.background_opacity = std::clamp(std::stof(value), 0.0f, 1.0f);
     } else if (key == "background-blur") {
@@ -272,6 +274,7 @@ std::string serializeConfig(const Config& config) {
     out << "# Clipboard\n";
     out << "clipboard-paste-protection = " << config.clipboard_paste_protection << "\n";
     out << "clipboard-paste-bracketed-safe = " << (config.clipboard_paste_bracketed_safe ? "true" : "false") << "\n";
+    out << "allow-clipboard-write = " << (config.allow_clipboard_write ? "true" : "false") << "\n";
     out << "\n";
 
     // Background transparency

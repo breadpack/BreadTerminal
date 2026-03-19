@@ -29,6 +29,9 @@
 
     // Preferences
     PreferencesWindowController* _prefsController;
+
+    // Notification observer token (must be removed on termination)
+    id _reloadConfigObserver;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
@@ -185,7 +188,7 @@
     });
 
     // Listen for manual reload requests (from ReloadConfig keybinding)
-    [[NSNotificationCenter defaultCenter]
+    _reloadConfigObserver = [[NSNotificationCenter defaultCenter]
         addObserverForName:@"BreadTerminalReloadConfig"
                     object:nil
                      queue:[NSOperationQueue mainQueue]
@@ -203,7 +206,10 @@
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    if (_reloadConfigObserver) {
+        [[NSNotificationCenter defaultCenter] removeObserver:_reloadConfigObserver];
+        _reloadConfigObserver = nil;
+    }
 
     // Stop socket server
     [_socketDrainTimer invalidate];

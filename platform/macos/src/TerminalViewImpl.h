@@ -42,9 +42,18 @@ struct TerminalViewImpl {
     std::unique_ptr<termcore::Mux> mux;
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
-    dispatch_source_t ptyReadSource = nullptr;
+    __strong dispatch_source_t ptyReadSource = nullptr;
     NSTimer* renderTimer = nil;
     bool needsRender = false;
+
+    ~TerminalViewImpl() {
+        if (ptyReadSource) {
+            dispatch_source_cancel(ptyReadSource);
+            ptyReadSource = nullptr;
+        }
+        [renderTimer invalidate];
+        renderTimer = nil;
+    }
 };
 
 /// Expose ivars so that the category in TerminalViewInput.mm can access them.

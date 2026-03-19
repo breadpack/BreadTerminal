@@ -2,6 +2,7 @@
 
 #include "termcore/pty.h"
 #include "termcore/terminfo.h"
+#include "termcore/shell_integration.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -42,6 +43,10 @@ public:
 
         // Install terminfo entry once (static ensures single initialization)
         static auto s_terminfo = termcore::installTerminfo();
+
+        // Suppress SIGPIPE so writes to a dead PTY return EPIPE
+        // instead of killing the process.
+        ::signal(SIGPIPE, SIG_IGN);
 
         pid_t child = forkpty(&master_fd_, nullptr, nullptr, &ws);
         if (child < 0) {
@@ -92,6 +97,13 @@ public:
         }
         ssize_t n = ::write(master_fd_, data, len);
         if (n < 0) {
+            if (errno == EPIPE || errno == EIO) {
+                // PTY slave closed — treat as graceful disconnect
+                return -1;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0;
+            }
             return -1;
         }
         return static_cast<int>(n);
@@ -216,6 +228,15 @@ private:
         // Additional environment for true color and program identification
         setenv("COLORTERM", "truecolor", 1);
         setenv("TERM_PROGRAM", "BreadTerminal", 1);
+
+        // Shell integration environment variables
+        for (const auto& [key, value] : getShellEnvVars()) {
+            setenv(key.c_str(), value.c_str(), 1);
+        }
+
+        // Ensure locale is set for proper UTF-8 handling (don't overwrite if already set)
+        setenv("LANG", "en_US.UTF-8", 0);
+        setenv("LC_CTYPE", "UTF-8", 0);
 
         // Determine the command to run
         std::string cmd = command;

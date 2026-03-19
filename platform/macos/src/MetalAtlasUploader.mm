@@ -40,6 +40,8 @@ struct MetalAtlasUploader::Impl {
 
         int pageW = page.width();
         int pageH = page.height();
+        int bpp = bytesPerPixel(fmt);
+        bool textureRecreated = false;
 
         // Recreate texture if dimensions changed (atlas expanded)
         if (!textures[idx] ||
@@ -57,15 +59,32 @@ struct MetalAtlasUploader::Impl {
             textures[idx] = [device newTextureWithDescriptor:desc];
             textureWidths[idx] = pageW;
             textureHeights[idx] = pageH;
+            textureRecreated = true;
         }
 
-        // Upload pixel data
-        int bpp = bytesPerPixel(fmt);
-        MTLRegion region = MTLRegionMake2D(0, 0, pageW, pageH);
-        [textures[idx] replaceRegion:region
-                         mipmapLevel:0
-                           withBytes:page.data()
-                         bytesPerRow:pageW * bpp];
+        // Use dirty rect to upload only the modified region
+        auto dirty = page.dirtyRect();
+        if (textureRecreated || dirty.width <= 0 || dirty.height <= 0
+            || page.isFullDirty()) {
+            // Full upload needed (texture recreated or full dirty)
+            MTLRegion region = MTLRegionMake2D(0, 0, pageW, pageH);
+            [textures[idx] replaceRegion:region
+                             mipmapLevel:0
+                               withBytes:page.data()
+                             bytesPerRow:pageW * bpp];
+        } else {
+            // Partial upload: only the dirty bounding box
+            MTLRegion region = MTLRegionMake2D(dirty.x, dirty.y,
+                                                dirty.width, dirty.height);
+            // Compute pointer to the first row of the dirty region
+            const uint8_t* src = page.data()
+                + static_cast<size_t>(dirty.y) * pageW * bpp
+                + static_cast<size_t>(dirty.x) * bpp;
+            [textures[idx] replaceRegion:region
+                             mipmapLevel:0
+                               withBytes:src
+                             bytesPerRow:pageW * bpp];
+        }
 
         page.clearDirty();
     }
