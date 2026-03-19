@@ -51,15 +51,30 @@ void Screen::clampCursor() {
 
 void Screen::scrollUp(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
+
+    // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
+    if (top == 0 && bottom == rows_ - 1) {
+        for (int i = 0; i < count; ++i) {
+            if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_) {
+                scrollback_.push_back(std::move(grid_.front()));
+                if (scrollback_.size() > max_scrollback_) {
+                    scrollback_.pop_front();
+                }
+            }
+            grid_.pop_front();
+            grid_.push_back(makeRow());
+        }
+        return;
+    }
+
+    // Slow path: partial scroll region — O(region) shift
     for (int i = 0; i < count; ++i) {
-        // If scrolling the whole screen, save to scrollback (not on alt screen)
         if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
             scrollback_.push_back(std::move(grid_[top]));
             if (scrollback_.size() > max_scrollback_) {
                 scrollback_.pop_front();
             }
         }
-        // Shift lines up
         for (int r = top; r < bottom; ++r) {
             grid_[r] = std::move(grid_[r + 1]);
         }
@@ -69,6 +84,17 @@ void Screen::scrollUp(int top, int bottom, int count) {
 
 void Screen::scrollDown(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
+
+    // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
+    if (top == 0 && bottom == rows_ - 1) {
+        for (int i = 0; i < count; ++i) {
+            grid_.pop_back();
+            grid_.push_front(makeRow());
+        }
+        return;
+    }
+
+    // Slow path: partial scroll region
     for (int i = 0; i < count; ++i) {
         for (int r = bottom; r > top; --r) {
             grid_[r] = std::move(grid_[r - 1]);
@@ -271,6 +297,44 @@ void Screen::onOscDispatch(int osc_number,
         break;
     default:
         break;
+    }
+}
+
+// --- onDcsDispatch ---
+void Screen::onDcsDispatch(char32_t final_char,
+                           const std::vector<int>& params,
+                           const std::string& intermediates,
+                           const std::string& data) {
+    (void)final_char;
+    (void)params;
+    (void)intermediates;
+
+    // tmux DCS passthrough: ESC P tmux; <escaped-sequence> ST
+    // In the DCS state machine, 't' is the final char that transitions to
+    // passthrough, so data starts with "mux;" followed by the inner sequence
+    // with doubled ESCs (ESC ESC -> ESC).
+    static const std::string kTmuxDataPrefix = "mux;";
+    if (final_char == 't' &&
+        data.size() > kTmuxDataPrefix.size() &&
+        data.compare(0, kTmuxDataPrefix.size(), kTmuxDataPrefix) == 0) {
+
+        if (!parser_feed_callback_) return;
+
+        // Extract the inner sequence after "mux;"
+        std::string inner;
+        inner.reserve(data.size() - kTmuxDataPrefix.size());
+        for (size_t i = kTmuxDataPrefix.size(); i < data.size(); ++i) {
+            inner.push_back(data[i]);
+            // Un-double ESC: ESC ESC -> ESC (skip the second ESC)
+            if (static_cast<uint8_t>(data[i]) == 0x1B &&
+                i + 1 < data.size() &&
+                static_cast<uint8_t>(data[i + 1]) == 0x1B) {
+                ++i;  // skip the doubled ESC
+            }
+        }
+
+        // Re-feed the unwrapped sequence through the parser
+        parser_feed_callback_(inner.data(), inner.size());
     }
 }
 

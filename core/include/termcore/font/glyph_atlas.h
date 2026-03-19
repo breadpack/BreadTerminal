@@ -74,6 +74,10 @@ public:
     /// Expand the atlas to new dimensions, preserving existing content.
     void expand(int new_width, int new_height);
 
+    /// Reset the atlas when full: clear pixels, reset free list to one full rect.
+    /// Returns true if the atlas was at max size and was reset.
+    bool resetIfFull(int max_size);
+
 private:
     /// Guillotine bin packing: free rectangles
     struct FreeRect {
@@ -112,7 +116,8 @@ public:
     /// Pack a rasterized glyph into the appropriate atlas.
     /// Adds 1px border around the glyph to prevent texture bleed.
     /// Returns the region, or nullopt if all atlases are full.
-    std::optional<GlyphRegion> pack(const RasterizedGlyph& glyph);
+    /// If was_reset is non-null and an atlas page was reset, *was_reset is set to true.
+    std::optional<GlyphRegion> pack(const RasterizedGlyph& glyph, bool* was_reset = nullptr);
 
     /// Get atlas page by format index.
     const AtlasPage* getPage(AtlasFormat format) const;

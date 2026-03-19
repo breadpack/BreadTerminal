@@ -54,7 +54,14 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
         key.face_id, key.glyph_index, size, key.subpixel);
 
     // Pack into atlas
-    auto region = atlas.pack(rasterized);
+    bool atlas_was_reset = false;
+    auto region = atlas.pack(rasterized, &atlas_was_reset);
+
+    // If atlas was reset, all cached UV references are stale — clear everything
+    if (atlas_was_reset) {
+        clear();
+    }
+
     if (!region.has_value()) {
         return std::nullopt;  // Atlas full
     }

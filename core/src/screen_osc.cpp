@@ -147,6 +147,23 @@ void Screen::handleOscWorkingDirectory(const std::string& str) {
     }
 }
 
+// --- URI scheme validation helper ---
+static bool isAllowedUriScheme(const std::string& uri) {
+    // Extract scheme (everything before "://") or before ":"
+    auto colon = uri.find(':');
+    if (colon == std::string::npos || colon == 0) return false;
+
+    std::string scheme;
+    scheme.reserve(colon);
+    for (size_t i = 0; i < colon; ++i) {
+        scheme += static_cast<char>(std::tolower(static_cast<unsigned char>(uri[i])));
+    }
+
+    // Allow only safe schemes
+    return scheme == "http" || scheme == "https" ||
+           scheme == "mailto" || scheme == "ssh" || scheme == "file";
+}
+
 // --- OSC 8: Hyperlink ---
 void Screen::handleOscHyperlink(const std::string& str) {
     // Format: params;uri
@@ -154,14 +171,21 @@ void Screen::handleOscHyperlink(const std::string& str) {
     auto semi = str.find(';');
     if (semi == std::string::npos) {
         // Malformed; treat entire string as URI
-        current_hyperlink_ = str;
+        if (isAllowedUriScheme(str)) {
+            current_hyperlink_ = str;
+        } else {
+            current_hyperlink_.clear();
+        }
         return;
     }
     auto uri = str.substr(semi + 1);
     if (uri.empty()) {
         current_hyperlink_.clear();
-    } else {
+    } else if (isAllowedUriScheme(uri)) {
         current_hyperlink_ = uri;
+    } else {
+        // Reject URIs with disallowed schemes (javascript:, data:, etc.)
+        current_hyperlink_.clear();
     }
 }
 

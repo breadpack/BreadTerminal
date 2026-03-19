@@ -211,6 +211,10 @@
         _reloadConfigObserver = nil;
     }
 
+    // Destroy preferences controller first — it holds a raw IConfigWatcher* that
+    // will become dangling once _configWatcher is destroyed.
+    _prefsController = nil;
+
     // Stop socket server
     [_socketDrainTimer invalidate];
     _socketDrainTimer = nil;

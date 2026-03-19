@@ -121,6 +121,8 @@ private:
 
     // DCS collection
     std::string dcs_data_;
+    char32_t dcs_final_char_ = 0;  // The byte that transitioned to DcsPassthrough
+    bool dcs_pending_ = false;     // ESC received during DcsPassthrough
 
     // UTF-8 collection
     char32_t utf8_codepoint_ = 0;

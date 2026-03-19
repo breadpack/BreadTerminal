@@ -293,23 +293,29 @@
 }
 
 - (void)readPtyData {
-    char buf[8192];
-    int n = _impl->pty->read(buf, sizeof(buf));
-    if (n > 0) {
-        _impl->parser->feed(buf, static_cast<size_t>(n));
-        _impl->needsRender = true;
-        // Update window title from OSC sequences
-        auto title = _impl->screen->title();
-        if (!title.empty()) {
-            NSString* t = [NSString stringWithUTF8String:title.c_str()];
-            if (t && ![self.window.title isEqualToString:t])
-                self.window.title = t;
+    char buf[65536];
+    for (;;) {
+        int n = _impl->pty->read(buf, sizeof(buf));
+        if (n > 0) {
+            _impl->parser->feed(buf, static_cast<size_t>(n));
+        } else if (n < 0) {
+            if (_impl->ptyReadSource) {
+                dispatch_source_cancel(_impl->ptyReadSource);
+                _impl->ptyReadSource = nullptr;
+            }
+            return;
+        } else {
+            // n == 0: no more data available right now
+            break;
         }
-    } else if (n < 0) {
-        if (_impl->ptyReadSource) {
-            dispatch_source_cancel(_impl->ptyReadSource);
-            _impl->ptyReadSource = nullptr;
-        }
+    }
+    _impl->needsRender = true;
+    // Update window title from OSC sequences
+    auto title = _impl->screen->title();
+    if (!title.empty()) {
+        NSString* t = [NSString stringWithUTF8String:title.c_str()];
+        if (t && ![self.window.title isEqualToString:t])
+            self.window.title = t;
     }
 }
 
@@ -390,9 +396,8 @@
                     imeSaved.push_back({curRow, c, orig});
                 }
 
-                // Write main cell
-                termcore::TermCell& cell = const_cast<termcore::TermCell&>(
-                    _impl->screen->cellAt(curRow, col));
+                // Write main cell via safe mutable accessor
+                termcore::TermCell& cell = _impl->screen->mutableCellAt(curRow, col);
                 cell.codepoint = cp;
                 cell.fg_color = _impl->screen->dynamicColors().background;
                 cell.bg_color = _impl->screen->dynamicColors().foreground;
@@ -401,8 +406,7 @@
 
                 // Write continuation cell for wide chars
                 if (w == 2 && col + 1 < cols) {
-                    termcore::TermCell& cont = const_cast<termcore::TermCell&>(
-                        _impl->screen->cellAt(curRow, col + 1));
+                    termcore::TermCell& cont = _impl->screen->mutableCellAt(curRow, col + 1);
                     cont.codepoint = 0;
                     cont.fg_color = cell.fg_color;
                     cont.bg_color = cell.bg_color;
@@ -419,8 +423,7 @@
 
     // Restore original cells
     for (const auto& sc : imeSaved) {
-        termcore::TermCell& cell = const_cast<termcore::TermCell&>(
-            _impl->screen->cellAt(sc.row, sc.col));
+        termcore::TermCell& cell = _impl->screen->mutableCellAt(sc.row, sc.col);
         cell = sc.cell;
     }
 }

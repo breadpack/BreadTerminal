@@ -39,6 +39,9 @@ void ConfigWatcherMac::start(const std::string& path, ConfigReloadCallback callb
 void ConfigWatcherMac::stop() {
     running_ = false;
 
+    // Signal all captured blocks that the watcher is no longer valid.
+    alive_->store(false);
+
     if (debounce_timer_) {
         dispatch_source_cancel(debounce_timer_);
         debounce_timer_ = nullptr;
@@ -55,6 +58,9 @@ void ConfigWatcherMac::stop() {
     }
 
     callback_ = nullptr;
+
+    // Allocate a fresh alive flag for any future start() call.
+    alive_ = std::make_shared<std::atomic<bool>>(true);
 }
 
 void ConfigWatcherMac::reloadNow() {
@@ -92,11 +98,13 @@ void ConfigWatcherMac::openAndWatch() {
         return;
     }
 
-    // Prevent captures from preventing destruction
+    // Capture a shared alive flag so dispatch blocks can safely detect
+    // that stop() has been called, even if the C++ object is already freed.
     __block ConfigWatcherMac* watcher = this;
+    std::shared_ptr<std::atomic<bool>> aliveFlag = alive_;
 
     dispatch_source_set_event_handler(source_, ^{
-        if (!watcher->running_) return;
+        if (!aliveFlag->load() || !watcher->running_) return;
 
         unsigned long flags = dispatch_source_get_data(watcher->source_);
 
@@ -112,9 +120,10 @@ void ConfigWatcherMac::openAndWatch() {
                 watcher->fd_ = -1;
             }
             // Re-open with retry (editor may atomically replace files)
+            std::shared_ptr<std::atomic<bool>> innerAlive = aliveFlag;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
                            dispatch_get_main_queue(), ^{
-                if (watcher->running_) {
+                if (innerAlive->load() && watcher->running_) {
                     watcher->openAndWatch();
                     // Also trigger a reload since the file was replaced
                     watcher->doReload();
@@ -135,11 +144,12 @@ void ConfigWatcherMac::openAndWatch() {
             dispatch_source_set_timer(watcher->debounce_timer_,
                                       dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC),
                                       DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
+            std::shared_ptr<std::atomic<bool>> timerAlive = aliveFlag;
             dispatch_source_set_event_handler(watcher->debounce_timer_, ^{
-                if (watcher->running_) {
+                if (timerAlive->load() && watcher->running_) {
                     watcher->doReload();
                 }
-                if (watcher->debounce_timer_) {
+                if (timerAlive->load() && watcher->debounce_timer_) {
                     dispatch_source_cancel(watcher->debounce_timer_);
                     watcher->debounce_timer_ = nullptr;
                 }

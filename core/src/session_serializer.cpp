@@ -12,6 +12,9 @@
 #include <string>
 #include <vector>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -294,27 +297,29 @@ bool SessionManager::save(const SessionData& data, const std::string& dir) {
     }
     j["workspaces"] = workspaces_j;
 
-    // Atomic write: write to tmp file, then rename
+    // Atomic write: write to tmp file with 0600 from creation (no TOCTOU race),
+    // then rename into place.
     std::string tmp_path = filepath + ".tmp";
+    std::string json_str = j.dump(2);
     {
-        std::ofstream ofs(tmp_path, std::ios::binary);
-        if (!ofs) return false;
-        ofs << j.dump(2);
-        if (!ofs) return false;
-    }
-
-    // Set permissions 0600
-    fs::permissions(tmp_path,
-                    fs::perms::owner_read | fs::perms::owner_write,
-                    fs::perm_options::replace, ec);
-    if (ec) {
-        fs::remove(tmp_path, ec);
-        return false;
+        int fd = ::open(tmp_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+        if (fd < 0) return false;
+        size_t total = 0;
+        while (total < json_str.size()) {
+            ssize_t n = ::write(fd, json_str.data() + total, json_str.size() - total);
+            if (n < 0) {
+                ::close(fd);
+                ::unlink(tmp_path.c_str());
+                return false;
+            }
+            total += static_cast<size_t>(n);
+        }
+        ::close(fd);
     }
 
     fs::rename(tmp_path, filepath, ec);
     if (ec) {
-        fs::remove(tmp_path, ec);
+        ::unlink(tmp_path.c_str());
         return false;
     }
 

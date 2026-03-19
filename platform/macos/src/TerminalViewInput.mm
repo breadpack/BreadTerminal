@@ -552,8 +552,11 @@ static uint8_t modsFromEvent(NSEvent* event) {
 - (NSPoint)cellPositionForEvent:(NSEvent*)event {
     NSPoint loc = [self convertPoint:event.locationInWindow fromView:nil];
     float flippedY = self.bounds.size.height - loc.y;
-    int col = std::max(0, std::min((int)(loc.x / _cellWidth), self.termCols - 1));
-    int row = std::max(0, std::min((int)(flippedY / _cellHeight), self.termRows - 1));
+    // loc is in points; _cellWidth/_cellHeight are in physical pixels.
+    // Scale points to physical pixels before dividing by cell dimensions.
+    CGFloat scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0;
+    int col = std::max(0, std::min((int)(loc.x * scale / _cellWidth), self.termCols - 1));
+    int row = std::max(0, std::min((int)(flippedY * scale / _cellHeight), self.termRows - 1));
     return NSMakePoint(col, row);
 }
 

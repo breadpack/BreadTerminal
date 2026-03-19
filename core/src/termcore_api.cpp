@@ -34,7 +34,14 @@ struct TermPane {
     TermPane(TermCore* c, int rows, int cols)
         : core(c),
           screen(std::make_unique<Screen>(rows, cols)),
-          parser(std::make_unique<VtParser>(*screen)) {}
+          parser(std::make_unique<VtParser>(*screen)) {
+        // Wire parser re-feed callback for DCS passthrough (e.g. tmux)
+        auto* p = parser.get();
+        screen->setParserFeedCallback(
+            [p](const char* data, size_t len) {
+                p->feed(data, len);
+            });
+    }
 };
 
 struct TermCore {

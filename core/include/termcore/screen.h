@@ -76,6 +76,7 @@ public:
 
     // --- Grid access ---
     const TermCell& cellAt(int row, int col) const;
+    TermCell& mutableCellAt(int row, int col);
     int rows() const { return rows_; }
     int cols() const { return cols_; }
 
@@ -116,6 +117,10 @@ public:
     // --- Response callback (for writing back to PTY) ---
     using ResponseCallback = std::function<void(const std::string&)>;
     void setResponseCallback(ResponseCallback cb) { response_callback_ = std::move(cb); }
+
+    // --- Parser re-feed callback (for DCS passthrough, e.g. tmux) ---
+    using ParserFeedCallback = std::function<void(const char*, size_t)>;
+    void setParserFeedCallback(ParserFeedCallback cb) { parser_feed_callback_ = std::move(cb); }
 
     // --- Notification callback ---
     using NotificationCallback = std::function<void(const TermNotification&)>;
@@ -158,6 +163,10 @@ public:
                        const std::string& intermediates) override;
     void onOscDispatch(int osc_number,
                        const std::string& osc_string) override;
+    void onDcsDispatch(char32_t final_char,
+                       const std::vector<int>& params,
+                       const std::string& intermediates,
+                       const std::string& data) override;
 
 private:
     using Row = std::vector<TermCell>;
@@ -165,7 +174,7 @@ private:
     // Grid
     int rows_;
     int cols_;
-    std::vector<Row> grid_;
+    std::deque<Row> grid_;
     std::deque<Row> scrollback_;
     size_t max_scrollback_ = 10000;
 
@@ -219,6 +228,7 @@ private:
 
     // Callbacks
     ResponseCallback response_callback_;
+    ParserFeedCallback parser_feed_callback_;
     NotificationCallback notification_callback_;
     ClipboardCallback clipboard_callback_;
     DynamicColorCallback dynamic_color_callback_;
@@ -228,7 +238,7 @@ private:
 
     // Alternate screen buffer
     struct ScreenState {
-        std::vector<Row> grid;
+        std::deque<Row> grid;
         CursorState cursor;
         Pen pen;
         int scroll_top = 0;
@@ -243,7 +253,6 @@ private:
     void scrollUp(int top, int bottom, int count = 1);
     void scrollDown(int top, int bottom, int count = 1);
     void clampCursor();
-    TermCell& mutableCellAt(int row, int col);
     void eraseCell(TermCell& cell) const;
     void advanceCursorAfterPrint();
 

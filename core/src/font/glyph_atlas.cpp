@@ -91,6 +91,47 @@ std::optional<GlyphRegion> AtlasPage::pack(int glyph_width, int glyph_height,
 
     splitRect(*best, padded_w, padded_h);
 
+    // Cap the free list to prevent unbounded growth.
+    // When exceeded, the caller should trigger a full atlas reset.
+    static constexpr size_t kMaxFreeRects = 2000;
+    if (free_rects_.size() > kMaxFreeRects) {
+        // Compact: merge adjacent rects with same Y and height (horizontal merge)
+        std::sort(free_rects_.begin(), free_rects_.end(),
+                  [](const FreeRect& a, const FreeRect& b) {
+                      return a.y < b.y || (a.y == b.y && a.x < b.x);
+                  });
+        std::vector<FreeRect> merged;
+        merged.reserve(free_rects_.size());
+        for (size_t i = 0; i < free_rects_.size(); ++i) {
+            if (!merged.empty() &&
+                merged.back().y == free_rects_[i].y &&
+                merged.back().height == free_rects_[i].height &&
+                merged.back().x + merged.back().width == free_rects_[i].x) {
+                merged.back().width += free_rects_[i].width;
+            } else {
+                merged.push_back(free_rects_[i]);
+            }
+        }
+        // Vertical merge pass: merge rects with same X and width
+        std::sort(merged.begin(), merged.end(),
+                  [](const FreeRect& a, const FreeRect& b) {
+                      return a.x < b.x || (a.x == b.x && a.y < b.y);
+                  });
+        std::vector<FreeRect> merged2;
+        merged2.reserve(merged.size());
+        for (size_t i = 0; i < merged.size(); ++i) {
+            if (!merged2.empty() &&
+                merged2.back().x == merged[i].x &&
+                merged2.back().width == merged[i].width &&
+                merged2.back().y + merged2.back().height == merged[i].y) {
+                merged2.back().height += merged[i].height;
+            } else {
+                merged2.push_back(merged[i]);
+            }
+        }
+        free_rects_ = std::move(merged2);
+    }
+
     // Mark dirty region including the 1px border padding
     markDirtyRegion(rx, ry, padded_w, padded_h);
 
@@ -126,6 +167,24 @@ void AtlasPage::blit(const GlyphRegion& region, const uint8_t* data, int data_st
         std::memcpy(&pixels_[dst_offset], &data[src_offset], region.width * bpp);
     }
     markDirtyRegion(region.x, region.y, region.width, region.height);
+}
+
+bool AtlasPage::resetIfFull(int max_size) {
+    if (width_ < max_size || height_ < max_size) {
+        return false;  // Not at max size, can still expand
+    }
+
+    // Clear all pixels to 0
+    std::memset(pixels_.data(), 0, pixels_.size());
+
+    // Reset free list to one full-page rect
+    free_rects_.clear();
+    free_rects_.push_back({0, 0, width_, height_});
+
+    // Mark entire atlas dirty for full GPU re-upload
+    markDirtyRegion(0, 0, width_, height_);
+
+    return true;
 }
 
 void AtlasPage::expand(int new_width, int new_height) {
@@ -200,7 +259,7 @@ AtlasPage& GlyphAtlas::expandPage(AtlasFormat format) {
     return page;
 }
 
-std::optional<GlyphRegion> GlyphAtlas::pack(const RasterizedGlyph& glyph) {
+std::optional<GlyphRegion> GlyphAtlas::pack(const RasterizedGlyph& glyph, bool* was_reset) {
     // Handle empty glyphs gracefully
     if (glyph.width <= 0 || glyph.height <= 0) {
         AtlasFormat fmt = formatForPixelFormat(glyph.format);
@@ -240,7 +299,24 @@ std::optional<GlyphRegion> GlyphAtlas::pack(const RasterizedGlyph& glyph) {
     expandPage(fmt);
 
     if (page.width() == old_w && page.height() == old_h) {
-        // Can't expand further
+        // Can't expand further — try resetting the atlas page
+        if (page.resetIfFull(max_size_)) {
+            if (was_reset) *was_reset = true;
+            // Retry pack after reset
+            result = page.pack(glyph.width, glyph.height,
+                               glyph.bearing_x, glyph.bearing_y);
+            if (result) {
+                int bpp = 1;
+                switch (fmt) {
+                    case AtlasFormat::R8:   bpp = 1; break;
+                    case AtlasFormat::BGRA: bpp = 4; break;
+                    case AtlasFormat::RGB:  bpp = 3; break;
+                    default: break;
+                }
+                page.blit(*result, glyph.bitmap.data(), glyph.width * bpp);
+            }
+            return result;
+        }
         return std::nullopt;
     }
 

@@ -229,6 +229,10 @@ private:
         setenv("COLORTERM", "truecolor", 1);
         setenv("TERM_PROGRAM", "BreadTerminal", 1);
 
+        // SSH TERM fallback: shell integration scripts use this to downgrade
+        // TERM when running ssh, since remote hosts won't have our terminfo.
+        setenv("BREADTERMINAL_SSH_TERM", "xterm-256color", 0);
+
         // Shell integration environment variables
         for (const auto& [key, value] : getShellEnvVars()) {
             setenv(key.c_str(), value.c_str(), 1);
