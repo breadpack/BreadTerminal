@@ -4,6 +4,7 @@
 #import "termcore/font/glyph_cache.h"
 #import "termcore/font/font_collection.h"
 #import "termcore/font/i_font_rasterizer.h"
+#import "termcore/font/box_drawing.h"
 #import "termcore/screen.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -287,6 +288,72 @@ fragment float4 cell_fragment(
             for (int col = 0; col < cols; ++col) {
                 const TermCell& cell = screen.cellAt(row, col);
                 if (cell.codepoint <= ' ') continue;
+
+                char32_t cp = cell.codepoint;
+
+                // Check for procedural box drawing
+                bool is_box_drawing =
+                    (cp >= 0x2500 && cp <= 0x259F) ||
+                    (cp >= 0x2800 && cp <= 0x28FF) ||
+                    (cp >= 0xE0B0 && cp <= 0xE0B3);
+
+                if (is_box_drawing) {
+                    // Use a special GlyphKey with kInvalidFontFace to distinguish from font glyphs
+                    GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
+                    auto boxInfo = glyphCache->get(boxKey);
+                    if (!boxInfo) {
+                        BoxGlyphBitmap boxBitmap = render_box_glyph(
+                            cp,
+                            static_cast<int>(cellW),
+                            static_cast<int>(cellH));
+                        if (!boxBitmap.bitmap.empty()) {
+                            RasterizedGlyph rg;
+                            rg.bitmap = std::move(boxBitmap.bitmap);
+                            rg.width = boxBitmap.width;
+                            rg.height = boxBitmap.height;
+                            rg.bearing_x = 0;
+                            rg.bearing_y = static_cast<int32_t>(ascent);
+                            rg.format = PixelFormat::Grayscale;
+                            auto region = glyphAtlas->pack(rg);
+                            if (region) {
+                                GlyphInfo gi;
+                                gi.region = *region;
+                                gi.advance_x = cellW;
+                                gi.advance_y = 0;
+                                gi.is_color = false;
+                                glyphCache->put(boxKey, gi);
+                                boxInfo = gi;
+                            }
+                        }
+                    }
+                    if (boxInfo) {
+                        uint32_t fg = cell.fg_color;
+                        uint32_t bg = cell.bg_color;
+                        if (cell.attributes & AttrInverse) std::swap(fg, bg);
+
+                        CellInstance inst = {};
+                        inst.grid_col = static_cast<uint16_t>(col);
+                        inst.grid_row = static_cast<uint16_t>(row);
+                        inst.glyph_x = static_cast<uint16_t>(boxInfo->region.x);
+                        inst.glyph_y = static_cast<uint16_t>(boxInfo->region.y);
+                        inst.glyph_width = static_cast<uint16_t>(boxInfo->region.width);
+                        inst.glyph_height = static_cast<uint16_t>(boxInfo->region.height);
+                        // Box drawing fills cell from top-left
+                        inst.offset_x = 0;
+                        inst.offset_y = 0;
+                        inst.fg_r = (fg >> 16) & 0xFF;
+                        inst.fg_g = (fg >> 8) & 0xFF;
+                        inst.fg_b = fg & 0xFF;
+                        inst.fg_a = 255;
+                        inst.bg_r = (bg >> 16) & 0xFF;
+                        inst.bg_g = (bg >> 8) & 0xFF;
+                        inst.bg_b = bg & 0xFF;
+                        inst.bg_a = 255;
+                        inst.flags = 1; // has_glyph
+                        cellInstances.push_back(inst);
+                    }
+                    continue;  // Skip normal font rendering for this cell
+                }
 
                 CollectionFaceId faceId =
                     fontCollection->resolveFace(cell.codepoint);
