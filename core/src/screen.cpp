@@ -28,6 +28,30 @@ const TermCell& Screen::cellAt(int row, int col) const {
     static const TermCell empty{};
     if (row < 0 || row >= rows_ || col < 0 || col >= cols_)
         return empty;
+
+    if (viewport_offset_ > 0) {
+        // When scrolled up, the top `viewport_offset_` rows come from scrollback
+        // and the remaining rows come from the grid (shifted)
+        int scrollback_rows_visible = std::min(viewport_offset_, rows_);
+        if (row < scrollback_rows_visible) {
+            // This row comes from scrollback
+            int sb_size = static_cast<int>(scrollback_.size());
+            int sb_idx = sb_size - viewport_offset_ + row;
+            if (sb_idx < 0 || sb_idx >= sb_size)
+                return empty;
+            const auto& sb_row = scrollback_[sb_idx];
+            if (col < static_cast<int>(sb_row.size()))
+                return sb_row[col];
+            return empty;
+        } else {
+            // This row comes from the grid
+            int grid_row = row - scrollback_rows_visible;
+            if (grid_row >= 0 && grid_row < rows_)
+                return grid_[grid_row][col];
+            return empty;
+        }
+    }
+
     return grid_[row][col];
 }
 
@@ -272,6 +296,27 @@ void Screen::onOscDispatch(int osc_number,
     default:
         break;
     }
+}
+
+// --- Viewport scrolling ---
+void Screen::scrollViewportUp(int lines) {
+    if (lines <= 0 || alt_screen_active_) return;
+    int max_offset = static_cast<int>(scrollback_.size());
+    viewport_offset_ = std::min(viewport_offset_ + lines, max_offset);
+}
+
+void Screen::scrollViewportDown(int lines) {
+    if (lines <= 0) return;
+    viewport_offset_ = std::max(viewport_offset_ - lines, 0);
+}
+
+void Screen::scrollViewportToTop() {
+    if (alt_screen_active_) return;
+    viewport_offset_ = static_cast<int>(scrollback_.size());
+}
+
+void Screen::scrollViewportToBottom() {
+    viewport_offset_ = 0;
 }
 
 // --- resize ---

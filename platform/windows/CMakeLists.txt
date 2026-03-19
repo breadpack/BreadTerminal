@@ -7,6 +7,7 @@ add_library(termcore_windows STATIC
     src/DirectWriteDiscovery.cpp
     src/D3DAtlasUploader.cpp
     src/D3DTextRenderer.cpp
+    src/D3DCellBuilder.cpp
 )
 
 target_include_directories(termcore_windows PUBLIC
@@ -19,5 +20,9 @@ target_link_libraries(termcore_windows PUBLIC
 add_executable(BreadTerminal WIN32
     src/main.cpp
     src/TerminalWindow.cpp
+    src/TerminalWindowState.cpp
+    src/TerminalWindowInput.cpp
+    src/TerminalSelection.cpp
+    src/TerminalSearch.cpp
 )
-target_link_libraries(BreadTerminal PRIVATE termcore_windows)
+target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32)

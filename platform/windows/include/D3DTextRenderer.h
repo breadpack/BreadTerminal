@@ -25,7 +25,7 @@ struct D3DCellInstance {
     float glyph_offset[2]; // Bearing offset within cell
     float fg_color[4];     // Foreground color (RGBA, 0-1)
     float bg_color[4];     // Background color (RGBA, 0-1)
-    uint32_t flags;        // Bit flags: bit0=has_glyph, bit1=is_color
+    uint32_t flags;        // Bit flags: bit0=has_glyph, bit1=is_color, bit2=is_bg, bit3=is_cursor
 };
 
 /// D3D11-based terminal text renderer using instanced draw calls.
@@ -56,6 +56,33 @@ public:
 
     /// Handle viewport resize.
     void resize(float width, float height);
+
+    /// Selection highlight state.
+    struct Selection {
+        int startRow = 0;
+        int startCol = 0;
+        int endRow = 0;
+        int endCol = 0;
+        bool active = false;
+    };
+
+    /// Set text selection for highlight rendering.
+    void setSelection(const Selection& sel);
+
+    /// Set cursor blink visibility (called by blink timer).
+    void setCursorBlink(bool visible);
+
+    /// Search highlight for a range of cells on a row.
+    struct SearchHighlight {
+        int row;
+        int startCol;
+        int endCol;       // exclusive
+    };
+
+    /// Set search highlights for rendering. currentIndex is the index into
+    /// the highlights vector for the "current" match (rendered differently).
+    void setSearchHighlights(const std::vector<SearchHighlight>& highlights,
+                             int currentIndex);
 
 private:
     struct Impl;

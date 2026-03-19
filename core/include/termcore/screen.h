@@ -93,6 +93,20 @@ public:
     size_t scrollbackSize() const { return scrollback_.size(); }
     void setMaxScrollback(size_t max) { max_scrollback_ = max; }
 
+    // --- Viewport scrolling ---
+    /// Current viewport offset (0 = at bottom/live, >0 = scrolled up into history)
+    int viewportOffset() const { return viewport_offset_; }
+    /// Scroll the viewport up by `lines` lines (into scrollback history)
+    void scrollViewportUp(int lines);
+    /// Scroll the viewport down by `lines` lines (toward live output)
+    void scrollViewportDown(int lines);
+    /// Scroll to the very top of scrollback
+    void scrollViewportToTop();
+    /// Scroll to the bottom (live output)
+    void scrollViewportToBottom();
+    /// Returns true if viewport is at the bottom (showing live output)
+    bool isViewportAtBottom() const { return viewport_offset_ == 0; }
+
     // --- Mode accessors ---
     bool appCursorKeys() const { return app_cursor_keys_; }
     bool bracketedPaste() const { return bracketed_paste_; }
@@ -168,6 +182,7 @@ private:
     std::vector<Row> grid_;
     std::deque<Row> scrollback_;
     size_t max_scrollback_ = 10000;
+    int viewport_offset_ = 0;  // 0 = bottom (live), >0 = scrolled up
 
     // Cursor
     CursorState cursor_;

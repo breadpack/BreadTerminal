@@ -1,24 +1,10 @@
 #if defined(_WIN32)
 
-#include "D3DTextRenderer.h"
-#include "D3DAtlasUploader.h"
-#include "termcore/dynamic_colors.h"
-
-#include <d3d11.h>
-#include <d3dcompiler.h>
-#include <cstring>
-#include <vector>
-#include <algorithm>
-
-#pragma comment(lib, "d3dcompiler.lib")
+#include "D3DTextRendererImpl.h"
 
 namespace termcore {
 
-namespace {
-
-// Inline HLSL source — two-pass cell rendering (background + glyph).
-// Matches the Metal renderer approach: background quads use cell_size,
-// glyph quads use per-instance glyph_size with bearing offset.
+// HLSL shader source — two-pass cell rendering (background + glyph + cursor).
 const char* kCellShaderSource = R"(
 cbuffer CellConstants : register(b0) {
     float2 viewport_size;
@@ -32,13 +18,13 @@ Texture2D atlas_bgra : register(t1);
 SamplerState atlas_sampler : register(s0);
 
 struct CellInstance {
-    float2 position;       // Top-left pixel position of quad
-    float2 atlas_uv;       // Top-left UV in atlas (pixels)
-    float2 atlas_size_px;  // Glyph size in atlas (pixels); for bg pass = cell_size
-    float2 glyph_offset;   // Not used in shader (bearing applied on CPU)
+    float2 position;
+    float2 atlas_uv;
+    float2 atlas_size_px;
+    float2 glyph_offset;
     float4 fg_color;
     float4 bg_color;
-    uint   flags;          // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass
+    uint   flags;  // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor
 };
 
 StructuredBuffer<CellInstance> cells : register(t2);
@@ -64,7 +50,6 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 
     bool is_bg = (cell.flags & 4u) != 0u;
 
-    // Background pass: quad = cell_size.  Glyph pass: quad = glyph size.
     float2 quad_size = is_bg ? cell_size : cell.atlas_size_px;
     float2 pixel_pos = cell.position + corner * quad_size;
 
@@ -84,12 +69,16 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
     bool is_bg     = (input.flags & 4u) != 0u;
     bool has_glyph = (input.flags & 1u) != 0u;
     bool is_color  = (input.flags & 2u) != 0u;
+    bool is_cursor = (input.flags & 8u) != 0u;
 
     if (is_bg) {
         return input.bg_color;
     }
 
-    // Glyph pass — start transparent, composite glyph on top
+    if (is_cursor) {
+        return input.bg_color;
+    }
+
     float4 color = float4(0.0, 0.0, 0.0, 0.0);
     if (has_glyph) {
         if (is_color) {
@@ -103,293 +92,118 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
 }
 )";
 
-} // namespace
+// --- Impl: shader/resource setup ---
 
-struct D3DTextRenderer::Impl {
-    ID3D11Device* device = nullptr;
-    ID3D11DeviceContext* context = nullptr;
-    ID3D11RenderTargetView* rtv = nullptr;
+bool D3DTextRenderer::Impl::buildShaders() {
+    ID3DBlob* vsBlob = nullptr;
+    ID3DBlob* errorBlob = nullptr;
+    HRESULT hr = D3DCompile(
+        kCellShaderSource, strlen(kCellShaderSource),
+        "cell.hlsl", nullptr, nullptr,
+        "VSMain", "vs_5_0",
+        D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
+        &vsBlob, &errorBlob);
+    if (errorBlob) errorBlob->Release();
+    if (FAILED(hr)) return false;
 
-    // Shaders
-    ID3D11VertexShader* vertexShader = nullptr;
-    ID3D11PixelShader* pixelShader = nullptr;
+    hr = device->CreateVertexShader(
+        vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
+        nullptr, &vertexShader);
+    vsBlob->Release();
+    if (FAILED(hr)) return false;
 
-    // Constant buffer
-    ID3D11Buffer* constantBuffer = nullptr;
+    hr = D3DCompile(
+        kCellShaderSource, strlen(kCellShaderSource),
+        "cell.hlsl", nullptr, nullptr,
+        "PSMain", "ps_5_0",
+        D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
+        &vsBlob, &errorBlob);
+    if (errorBlob) errorBlob->Release();
+    if (FAILED(hr)) return false;
 
-    // Structured buffer for cell instances
-    ID3D11Buffer* cellBuffer = nullptr;
-    ID3D11ShaderResourceView* cellBufferSRV = nullptr;
-    UINT cellBufferCapacity = 0;
+    hr = device->CreatePixelShader(
+        vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
+        nullptr, &pixelShader);
+    vsBlob->Release();
+    if (FAILED(hr)) return false;
 
-    // Sampler
-    ID3D11SamplerState* sampler = nullptr;
+    return true;
+}
 
-    // Blend state
-    ID3D11BlendState* blendState = nullptr;
+bool D3DTextRenderer::Impl::createResources() {
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.ByteWidth = sizeof(CellConstants);
+    cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    // Font stack (not owned)
-    FontCollection* fontCollection = nullptr;
-    GlyphCache* glyphCache = nullptr;
-    GlyphAtlas* glyphAtlas = nullptr;
-    IFontRasterizer* rasterizer = nullptr;
+    HRESULT hr = device->CreateBuffer(&cbDesc, nullptr, &constantBuffer);
+    if (FAILED(hr)) return false;
 
-    // Atlas uploader
-    std::unique_ptr<D3DAtlasUploader> atlasUploader;
+    D3D11_SAMPLER_DESC sampDesc = {};
+    sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 
-    // Viewport
-    float viewportWidth = 0;
-    float viewportHeight = 0;
+    hr = device->CreateSamplerState(&sampDesc, &sampler);
+    if (FAILED(hr)) return false;
 
-    // Reusable buffer
-    std::vector<D3DCellInstance> cellInstances;
+    D3D11_BLEND_DESC blendDesc = {};
+    blendDesc.RenderTarget[0].BlendEnable = TRUE;
+    blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask =
+        D3D11_COLOR_WRITE_ENABLE_ALL;
 
-    struct CellConstants {
-        float viewport_size[2];
-        float cell_size[2];
-        float atlas_size[2];
-        float _padding[2];
-    };
+    hr = device->CreateBlendState(&blendDesc, &blendState);
+    if (FAILED(hr)) return false;
 
-    bool buildShaders() {
-        // Compile vertex shader
-        ID3DBlob* vsBlob = nullptr;
-        ID3DBlob* errorBlob = nullptr;
-        HRESULT hr = D3DCompile(
-            kCellShaderSource, strlen(kCellShaderSource),
-            "cell.hlsl", nullptr, nullptr,
-            "VSMain", "vs_5_0",
-            D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
-            &vsBlob, &errorBlob);
-        if (errorBlob) errorBlob->Release();
-        if (FAILED(hr)) return false;
+    return true;
+}
 
-        hr = device->CreateVertexShader(
-            vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
-            nullptr, &vertexShader);
-        vsBlob->Release();
-        if (FAILED(hr)) return false;
+void D3DTextRenderer::Impl::ensureCellBuffer(UINT requiredCount) {
+    if (cellBufferCapacity >= requiredCount) return;
 
-        // Compile pixel shader
-        hr = D3DCompile(
-            kCellShaderSource, strlen(kCellShaderSource),
-            "cell.hlsl", nullptr, nullptr,
-            "PSMain", "ps_5_0",
-            D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
-            &vsBlob, &errorBlob);
-        if (errorBlob) errorBlob->Release();
-        if (FAILED(hr)) return false;
+    if (cellBufferSRV) { cellBufferSRV->Release(); cellBufferSRV = nullptr; }
+    if (cellBuffer) { cellBuffer->Release(); cellBuffer = nullptr; }
 
-        hr = device->CreatePixelShader(
-            vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
-            nullptr, &pixelShader);
-        vsBlob->Release();
-        if (FAILED(hr)) return false;
+    cellBufferCapacity = requiredCount;
 
-        return true;
-    }
+    D3D11_BUFFER_DESC desc = {};
+    desc.ByteWidth = requiredCount * sizeof(D3DCellInstance);
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    desc.StructureByteStride = sizeof(D3DCellInstance);
 
-    bool createResources() {
-        // Constant buffer
-        D3D11_BUFFER_DESC cbDesc = {};
-        cbDesc.ByteWidth = sizeof(CellConstants);
-        cbDesc.Usage = D3D11_USAGE_DYNAMIC;
-        cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    device->CreateBuffer(&desc, nullptr, &cellBuffer);
 
-        HRESULT hr = device->CreateBuffer(&cbDesc, nullptr, &constantBuffer);
-        if (FAILED(hr)) return false;
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    srvDesc.Buffer.NumElements = requiredCount;
 
-        // Sampler (nearest neighbor for pixel-perfect text)
-        D3D11_SAMPLER_DESC sampDesc = {};
-        sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
-        sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    device->CreateShaderResourceView(
+        cellBuffer, &srvDesc, &cellBufferSRV);
+}
 
-        hr = device->CreateSamplerState(&sampDesc, &sampler);
-        if (FAILED(hr)) return false;
+void D3DTextRenderer::Impl::cleanup() {
+    if (blendState) { blendState->Release(); blendState = nullptr; }
+    if (sampler) { sampler->Release(); sampler = nullptr; }
+    if (cellBufferSRV) { cellBufferSRV->Release(); cellBufferSRV = nullptr; }
+    if (cellBuffer) { cellBuffer->Release(); cellBuffer = nullptr; }
+    if (constantBuffer) { constantBuffer->Release(); constantBuffer = nullptr; }
+    if (pixelShader) { pixelShader->Release(); pixelShader = nullptr; }
+    if (vertexShader) { vertexShader->Release(); vertexShader = nullptr; }
+}
 
-        // Blend state
-        D3D11_BLEND_DESC blendDesc = {};
-        blendDesc.RenderTarget[0].BlendEnable = TRUE;
-        blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-        blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-        blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-        blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-        blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        blendDesc.RenderTarget[0].RenderTargetWriteMask =
-            D3D11_COLOR_WRITE_ENABLE_ALL;
-
-        hr = device->CreateBlendState(&blendDesc, &blendState);
-        if (FAILED(hr)) return false;
-
-        return true;
-    }
-
-    void ensureCellBuffer(UINT requiredCount) {
-        if (cellBufferCapacity >= requiredCount) return;
-
-        if (cellBufferSRV) { cellBufferSRV->Release(); cellBufferSRV = nullptr; }
-        if (cellBuffer) { cellBuffer->Release(); cellBuffer = nullptr; }
-
-        cellBufferCapacity = requiredCount;
-
-        D3D11_BUFFER_DESC desc = {};
-        desc.ByteWidth = requiredCount * sizeof(D3DCellInstance);
-        desc.Usage = D3D11_USAGE_DYNAMIC;
-        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-        desc.StructureByteStride = sizeof(D3DCellInstance);
-
-        device->CreateBuffer(&desc, nullptr, &cellBuffer);
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-        srvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.NumElements = requiredCount;
-
-        device->CreateShaderResourceView(
-            cellBuffer, &srvDesc, &cellBufferSRV);
-    }
-
-    static void colorFromRGBA(uint32_t rgba, float out[4]) {
-        out[0] = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
-        out[1] = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
-        out[2] = static_cast<float>(rgba & 0xFF) / 255.0f;
-        out[3] = 1.0f;
-    }
-
-    void buildCellBuffer(const Screen& screen) {
-        if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
-            return;
-        }
-
-        FontMetrics metrics = fontCollection->primaryMetrics();
-        float cellW = metrics.cell_width;
-        float cellH = metrics.cell_height;
-        float ascent = metrics.ascent;
-        float fontSize = fontCollection->fontSize();
-
-        int rows = screen.rows();
-        int cols = screen.cols();
-
-        const DynamicColors& colors = screen.dynamicColors();
-
-        cellInstances.clear();
-        cellInstances.reserve(rows * cols * 2);  // bg + glyph passes
-
-        // Pass 1: Background quads (cell-sized)
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const TermCell& cell = screen.cellAt(row, col);
-
-                D3DCellInstance inst = {};
-                inst.position[0] = col * cellW;
-                inst.position[1] = row * cellH;
-
-                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
-                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
-
-                if (cell.attributes & AttrInverse) {
-                    std::swap(inst.fg_color[0], inst.bg_color[0]);
-                    std::swap(inst.fg_color[1], inst.bg_color[1]);
-                    std::swap(inst.fg_color[2], inst.bg_color[2]);
-                    std::swap(inst.fg_color[3], inst.bg_color[3]);
-                }
-
-                inst.flags = 4;  // is_bg_pass
-                cellInstances.push_back(inst);
-            }
-        }
-
-        // Pass 2: Glyph quads (glyph-sized, positioned with bearing)
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const TermCell& cell = screen.cellAt(row, col);
-
-                if (cell.codepoint == ' ' || cell.codepoint == 0) {
-                    continue;
-                }
-
-                CollectionFaceId faceId =
-                    fontCollection->resolveFace(cell.codepoint);
-                if (faceId == kInvalidCollectionFace) continue;
-
-                FontFaceId rastFace =
-                    fontCollection->rasterizerFaceId(faceId);
-                uint32_t glyphIdx =
-                    rasterizer->getGlyphIndex(rastFace, cell.codepoint);
-                if (glyphIdx == 0) continue;
-
-                GlyphKey key{rastFace, glyphIdx, {0, 0}};
-                auto info = glyphCache->getOrRasterize(
-                    key, fontSize, *rasterizer, *glyphAtlas);
-                if (!info || info->region.width <= 0 ||
-                    info->region.height <= 0) {
-                    continue;
-                }
-
-                D3DCellInstance inst = {};
-
-                // Position: cell origin + bearing offset
-                // offset_x = bearing_x (horizontal shift from cell left)
-                // offset_y = ascent - bearing_y (distance from cell top)
-                float offsetX = static_cast<float>(info->region.bearing_x);
-                float offsetY = ascent -
-                    static_cast<float>(info->region.bearing_y);
-
-                inst.position[0] = col * cellW + offsetX;
-                inst.position[1] = row * cellH + offsetY;
-
-                inst.atlas_uv[0] =
-                    static_cast<float>(info->region.x);
-                inst.atlas_uv[1] =
-                    static_cast<float>(info->region.y);
-                inst.atlas_size[0] =
-                    static_cast<float>(info->region.width);
-                inst.atlas_size[1] =
-                    static_cast<float>(info->region.height);
-
-                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
-                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
-
-                if (cell.attributes & AttrInverse) {
-                    std::swap(inst.fg_color[0], inst.bg_color[0]);
-                    std::swap(inst.fg_color[1], inst.bg_color[1]);
-                    std::swap(inst.fg_color[2], inst.bg_color[2]);
-                    std::swap(inst.fg_color[3], inst.bg_color[3]);
-                }
-
-                inst.flags = 1;  // has_glyph
-                if (info->is_color) inst.flags |= 2;
-
-                cellInstances.push_back(inst);
-            }
-        }
-    }
-
-    void cleanup() {
-        if (blendState) { blendState->Release(); blendState = nullptr; }
-        if (sampler) { sampler->Release(); sampler = nullptr; }
-        if (cellBufferSRV) {
-            cellBufferSRV->Release();
-            cellBufferSRV = nullptr;
-        }
-        if (cellBuffer) { cellBuffer->Release(); cellBuffer = nullptr; }
-        if (constantBuffer) {
-            constantBuffer->Release();
-            constantBuffer = nullptr;
-        }
-        if (pixelShader) { pixelShader->Release(); pixelShader = nullptr; }
-        if (vertexShader) {
-            vertexShader->Release();
-            vertexShader = nullptr;
-        }
-    }
-};
+// --- Public API ---
 
 D3DTextRenderer::D3DTextRenderer()
     : impl_(std::make_unique<Impl>()) {}
@@ -431,17 +245,13 @@ void D3DTextRenderer::render(const Screen& screen) {
     impl_->buildCellBuffer(screen);
     if (impl_->cellInstances.empty()) return;
 
-    // Upload dirty atlas textures
     if (impl_->glyphAtlas) {
         impl_->atlasUploader->upload(*impl_->glyphAtlas);
     }
 
     auto count = static_cast<UINT>(impl_->cellInstances.size());
-
-    // Ensure structured buffer is large enough
     impl_->ensureCellBuffer(count);
 
-    // Map and upload cell instance data
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     HRESULT hr = impl_->context->Map(
         impl_->cellBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -451,7 +261,6 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->context->Unmap(impl_->cellBuffer, 0);
     }
 
-    // Update constant buffer
     Impl::CellConstants constants = {};
     constants.viewport_size[0] = impl_->viewportWidth;
     constants.viewport_size[1] = impl_->viewportHeight;
@@ -481,54 +290,57 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->context->Unmap(impl_->constantBuffer, 0);
     }
 
-    // Clear render target
     float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     impl_->context->ClearRenderTargetView(impl_->rtv, clearColor);
 
-    // Set render state
     impl_->context->OMSetRenderTargets(1, &impl_->rtv, nullptr);
     impl_->context->OMSetBlendState(impl_->blendState, nullptr, 0xFFFFFFFF);
 
-    // Viewport
     D3D11_VIEWPORT vp = {};
     vp.Width = impl_->viewportWidth;
     vp.Height = impl_->viewportHeight;
     vp.MaxDepth = 1.0f;
     impl_->context->RSSetViewports(1, &vp);
 
-    // Shaders
     impl_->context->VSSetShader(impl_->vertexShader, nullptr, 0);
     impl_->context->PSSetShader(impl_->pixelShader, nullptr, 0);
 
-    // Constant buffer to both stages
     impl_->context->VSSetConstantBuffers(0, 1, &impl_->constantBuffer);
     impl_->context->PSSetConstantBuffers(0, 1, &impl_->constantBuffer);
 
-    // Bind atlas SRVs to pixel shader (t0=R8, t1=BGRA)
     ID3D11ShaderResourceView* psSRVs[2] = {
         impl_->atlasUploader->srvForFormat(AtlasFormat::R8),
         impl_->atlasUploader->srvForFormat(AtlasFormat::BGRA)
     };
     impl_->context->PSSetShaderResources(0, 2, psSRVs);
 
-    // Bind cell buffer SRV to vertex shader (t2)
     impl_->context->VSSetShaderResources(2, 1, &impl_->cellBufferSRV);
-
-    // Bind sampler to pixel shader
     impl_->context->PSSetSamplers(0, 1, &impl_->sampler);
 
-    // No input layout needed: vertices generated from SV_VertexID
     impl_->context->IASetInputLayout(nullptr);
     impl_->context->IASetPrimitiveTopology(
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // Instanced draw: 6 vertices per quad, N instances
     impl_->context->DrawInstanced(6, count, 0, 0);
 }
 
 void D3DTextRenderer::resize(float width, float height) {
     impl_->viewportWidth = width;
     impl_->viewportHeight = height;
+}
+
+void D3DTextRenderer::setSelection(const Selection& sel) {
+    impl_->selection = sel;
+}
+
+void D3DTextRenderer::setCursorBlink(bool visible) {
+    impl_->cursorBlinkVisible = visible;
+}
+
+void D3DTextRenderer::setSearchHighlights(
+        const std::vector<SearchHighlight>& highlights, int currentIndex) {
+    impl_->searchHighlights = highlights;
+    impl_->searchCurrentIndex = currentIndex;
 }
 
 } // namespace termcore

@@ -160,6 +160,10 @@ std::string defaultConfigPath() {
     const char* home = std::getenv("HOME");
     if (!home) return "";
     return std::string(home) + "/Library/Application Support/BreadTerminal/config";
+#elif defined(_WIN32)
+    const char* appdata = std::getenv("APPDATA");
+    if (!appdata) return "";
+    return std::string(appdata) + "\\BreadTerminal\\config";
 #else
     // Linux: respect XDG_CONFIG_HOME
     const char* xdg = std::getenv("XDG_CONFIG_HOME");
