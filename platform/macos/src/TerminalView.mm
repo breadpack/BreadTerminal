@@ -7,6 +7,7 @@
 #include "termcore/search.h"
 #include "termcore/url_detector.h"
 #include "termcore/font/font_collection.h"
+#include "termcore/font/unicode_width.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"
@@ -330,7 +331,9 @@
 
 - (void)renderFrame {
     // Always render when cursor is visible (blink requires continuous redraw)
-    bool cursorNeedsRedraw = _impl->screen && _impl->screen->cursorVisible();
+    // But NOT during IME composition — cursor is hidden, no blink needed
+    bool imeActive = _markedText != nil && _markedText.length > 0;
+    bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
     if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
@@ -359,8 +362,8 @@
         int cols = _impl->screen->cols();
         int rows = _impl->screen->rows();
         if (curRow >= 0 && curRow < rows) {
+            int col = curCol;
             for (NSUInteger i = 0; i < _markedText.length; ++i) {
-                int col = curCol + (int)i;
                 if (col >= cols) break;
 
                 unichar ch = [_markedText characterAtIndex:i];
@@ -373,15 +376,37 @@
                     }
                 }
 
-                const termcore::TermCell& orig = _impl->screen->cellAt(curRow, col);
-                imeSaved.push_back({curRow, col, orig});
+                int w = termcore::codepoint_width(cp);
+                if (w < 1) w = 1;
+                if (col + w > cols) break;
 
-                termcore::TermCell& cell = const_cast<termcore::TermCell&>(orig);
+                // Save original cells (main + continuation for wide chars)
+                for (int c = col; c < col + w; ++c) {
+                    const termcore::TermCell& orig = _impl->screen->cellAt(curRow, c);
+                    imeSaved.push_back({curRow, c, orig});
+                }
+
+                // Write main cell
+                termcore::TermCell& cell = const_cast<termcore::TermCell&>(
+                    _impl->screen->cellAt(curRow, col));
                 cell.codepoint = cp;
-                cell.fg_color = _impl->screen->dynamicColors().foreground;
-                cell.bg_color = _impl->screen->dynamicColors().background;
-                cell.attributes |= 0x04; // underline to indicate composition
-                cell.width = 1;
+                cell.fg_color = _impl->screen->dynamicColors().background;
+                cell.bg_color = _impl->screen->dynamicColors().foreground;
+                cell.attributes = 0;
+                cell.width = w;
+
+                // Write continuation cell for wide chars
+                if (w == 2 && col + 1 < cols) {
+                    termcore::TermCell& cont = const_cast<termcore::TermCell&>(
+                        _impl->screen->cellAt(curRow, col + 1));
+                    cont.codepoint = 0;
+                    cont.fg_color = cell.fg_color;
+                    cont.bg_color = cell.bg_color;
+                    cont.attributes = 0;
+                    cont.width = 0;
+                }
+
+                col += w;
             }
         }
     }
