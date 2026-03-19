@@ -37,6 +37,31 @@ char32_t utf8_decode(const char* data, size_t len, size_t& pos);
 /// Encode a codepoint to UTF-8, appending to output.
 void utf8_encode(char32_t cp, std::string& output);
 
+/// Unicode Grapheme_Cluster_Break property values (simplified UAX #29)
+enum class GBP : uint8_t {
+    Other,
+    CR,
+    LF,
+    Control,
+    Extend,        // Combining marks, Mn/Me categories
+    ZWJ,           // U+200D Zero Width Joiner
+    Regional_Indicator,
+    Prepend,
+    SpacingMark,
+    L, V, T, LV, LVT,  // Hangul syllable types
+    Extended_Pictographic,  // Emoji base
+};
+
+/// Get the Grapheme_Cluster_Break property for a codepoint
+GBP graphemeBreakProperty(char32_t cp);
+
+/// Check if there should be a grapheme break between two codepoints,
+/// given the full context of the grapheme so far.
+/// ri_count: number of consecutive Regional_Indicator codepoints seen
+/// after_zwj: whether the previous codepoint was ZWJ
+/// Returns true if a break should occur BEFORE cp2.
+bool isGraphemeBreak(char32_t cp1, char32_t cp2, int ri_count, bool after_zwj);
+
 } // namespace termcore
 
 #endif

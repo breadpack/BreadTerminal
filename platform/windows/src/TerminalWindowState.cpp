@@ -5,6 +5,9 @@
 #include "DirectWriteDiscovery.h"
 
 #include <algorithm>
+#include <dwmapi.h>
+
+#pragma comment(lib, "dwmapi.lib")
 
 // --- D3D11 lifecycle ---
 
@@ -326,6 +329,44 @@ void TerminalWindowState::toggleFullscreen() {
 
         isFullscreen = false;
     }
+}
+
+// --- DWM background blur ---
+
+void TerminalWindowState::applyBackgroundBlur(HWND hwnd) {
+    if (config.background_blur <= 0) return;
+
+    // Try Windows 11 Mica/Acrylic first (DWM_SYSTEMBACKDROP_TYPE)
+    // DWMWA_SYSTEMBACKDROP_TYPE = 38
+    enum { DWMSBT_NONE = 1, DWMSBT_MAINWINDOW = 2, DWMSBT_TRANSIENTWINDOW = 3, DWMSBT_TABBEDWINDOW = 4 };
+    int backdrop = DWMSBT_TRANSIENTWINDOW; // Acrylic
+    HRESULT hr = DwmSetWindowAttribute(hwnd, 38, &backdrop, sizeof(backdrop));
+
+    if (FAILED(hr)) {
+        // Fallback for older Windows: use DWM blur behind
+        DWM_BLURBEHIND bb = {};
+        bb.dwFlags = DWM_BB_ENABLE;
+        bb.fEnable = TRUE;
+        DwmEnableBlurBehindWindow(hwnd, &bb);
+    }
+}
+
+// --- DPI ---
+
+void TerminalWindowState::handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRect) {
+    dpiScale = static_cast<float>(dpi) / 96.0f;
+
+    if (newRect) {
+        SetWindowPos(hwnd, nullptr,
+            newRect->left, newRect->top,
+            newRect->right - newRect->left,
+            newRect->bottom - newRect->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    // Font size needs to be recalculated with new DPI
+    // The font system already handles this through changeFontSize/resetFontSize
+    needsRender = true;
 }
 
 #endif // _WIN32

@@ -177,87 +177,210 @@ int string_display_width(std::string_view str) {
 }
 
 // ---------------------------------------------------------------------------
-// Grapheme cluster helpers
+// Grapheme Break Property (UAX #29)
 // ---------------------------------------------------------------------------
 
-namespace {
+GBP graphemeBreakProperty(char32_t cp) {
+    if (cp == 0x000D) return GBP::CR;
+    if (cp == 0x000A) return GBP::LF;
+    if (cp == 0x200D) return GBP::ZWJ;
 
-bool is_combining(char32_t cp) {
-    auto cat = static_cast<UCharCategory>(u_charType(static_cast<UChar32>(cp)));
-    return cat == U_NON_SPACING_MARK || cat == U_ENCLOSING_MARK;
+    // Control characters
+    if (cp <= 0x001F || (cp >= 0x007F && cp <= 0x009F) ||
+        cp == 0x00AD || cp == 0x061C ||
+        cp == 0x200B || cp == 0x200E || cp == 0x200F ||
+        (cp >= 0x2028 && cp <= 0x2029) ||
+        (cp >= 0x2060 && cp <= 0x2064) ||
+        (cp >= 0xFFF0 && cp <= 0xFFF8) ||
+        cp == 0xFEFF) {
+        return GBP::Control;
+    }
+
+    // Regional Indicators (U+1F1E6..U+1F1FF)
+    if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return GBP::Regional_Indicator;
+
+    // Hangul Jamo
+    if (cp >= 0x1100 && cp <= 0x115F) return GBP::L;
+    if (cp >= 0xA960 && cp <= 0xA97C) return GBP::L;
+    if (cp >= 0x1160 && cp <= 0x11A7) return GBP::V;
+    if (cp >= 0xD7B0 && cp <= 0xD7C6) return GBP::V;
+    if (cp >= 0x11A8 && cp <= 0x11FF) return GBP::T;
+    if (cp >= 0xD7CB && cp <= 0xD7FB) return GBP::T;
+    // LV and LVT syllables
+    if (cp >= 0xAC00 && cp <= 0xD7A3) {
+        if ((cp - 0xAC00) % 28 == 0) return GBP::LV;
+        return GBP::LVT;
+    }
+
+    // Extended_Pictographic (common emoji ranges)
+    if (cp == 0x00A9 || cp == 0x00AE) return GBP::Extended_Pictographic;
+    if (cp >= 0x2600 && cp <= 0x27BF) return GBP::Extended_Pictographic;
+    if (cp >= 0x2B05 && cp <= 0x2B55) return GBP::Extended_Pictographic;
+    if (cp >= 0x1F000 && cp <= 0x1FAFF) return GBP::Extended_Pictographic;
+    if (cp >= 0xFE00 && cp <= 0xFE0F) return GBP::Extend; // variation selectors
+
+    // Extend (combining marks) — simplified ranges
+    if (cp >= 0x0300 && cp <= 0x036F) return GBP::Extend;  // Combining Diacriticals
+    if (cp >= 0x0483 && cp <= 0x0489) return GBP::Extend;
+    if (cp >= 0x0591 && cp <= 0x05BD) return GBP::Extend;
+    if (cp == 0x05BF) return GBP::Extend;
+    if (cp >= 0x05C1 && cp <= 0x05C2) return GBP::Extend;
+    if (cp >= 0x05C4 && cp <= 0x05C5) return GBP::Extend;
+    if (cp == 0x05C7) return GBP::Extend;
+    if (cp >= 0x0610 && cp <= 0x061A) return GBP::Extend;
+    if (cp >= 0x064B && cp <= 0x065F) return GBP::Extend;
+    if (cp == 0x0670) return GBP::Extend;
+    if (cp >= 0x06D6 && cp <= 0x06DC) return GBP::Extend;
+    if (cp >= 0x06DF && cp <= 0x06E4) return GBP::Extend;
+    if (cp >= 0x06E7 && cp <= 0x06E8) return GBP::Extend;
+    if (cp >= 0x06EA && cp <= 0x06ED) return GBP::Extend;
+    if (cp == 0x0711) return GBP::Extend;
+    if (cp >= 0x0730 && cp <= 0x074A) return GBP::Extend;
+    if (cp >= 0x0900 && cp <= 0x0903) return GBP::Extend;  // Devanagari
+    if (cp >= 0x093A && cp <= 0x094F) return GBP::Extend;
+    if (cp >= 0x0951 && cp <= 0x0957) return GBP::Extend;
+    if (cp >= 0x0962 && cp <= 0x0963) return GBP::Extend;
+    if (cp >= 0x0981 && cp <= 0x0983) return GBP::Extend;  // Bengali
+    if (cp == 0x09BC) return GBP::Extend;
+    if (cp >= 0x09BE && cp <= 0x09CD) return GBP::Extend;
+    if (cp >= 0x1AB0 && cp <= 0x1AFF) return GBP::Extend;  // Combining Diacriticals Extended
+    if (cp >= 0x1DC0 && cp <= 0x1DFF) return GBP::Extend;  // Combining Diacriticals Supplement
+    if (cp >= 0x20D0 && cp <= 0x20FF) return GBP::Extend;  // Combining Marks for Symbols
+    if (cp >= 0xFE20 && cp <= 0xFE2F) return GBP::Extend;  // Combining Half Marks
+    if (cp == 0x200C) return GBP::Extend;  // ZWNJ
+    // Emoji modifiers (skin tone)
+    if (cp >= 0x1F3FB && cp <= 0x1F3FF) return GBP::Extend;
+    // Variation selectors supplement
+    if (cp >= 0xE0100 && cp <= 0xE01EF) return GBP::Extend;
+    // Enclosing marks
+    if (cp >= 0x20DD && cp <= 0x20E0) return GBP::Extend;
+    if (cp >= 0x20E2 && cp <= 0x20E4) return GBP::Extend;
+    if (cp == 0xFE0E || cp == 0xFE0F) return GBP::Extend;  // VS15/VS16
+
+    // SpacingMark (common ones)
+    if (cp == 0x0903) return GBP::SpacingMark;
+
+    return GBP::Other;
 }
 
-bool is_regional_indicator(char32_t cp) {
-    return cp >= 0x1F1E6 && cp <= 0x1F1FF;
+// ---------------------------------------------------------------------------
+// Grapheme Break detection (UAX #29)
+// ---------------------------------------------------------------------------
+
+bool isGraphemeBreak(char32_t cp1, char32_t cp2, int ri_count, bool after_zwj) {
+    GBP p1 = graphemeBreakProperty(cp1);
+    GBP p2 = graphemeBreakProperty(cp2);
+
+    // GB3: CR x LF
+    if (p1 == GBP::CR && p2 == GBP::LF) return false;
+
+    // GB4: (Control|CR|LF) ÷
+    if (p1 == GBP::Control || p1 == GBP::CR || p1 == GBP::LF) return true;
+
+    // GB5: ÷ (Control|CR|LF)
+    if (p2 == GBP::Control || p2 == GBP::CR || p2 == GBP::LF) return true;
+
+    // GB6: L x (L|V|LV|LVT)
+    if (p1 == GBP::L && (p2 == GBP::L || p2 == GBP::V || p2 == GBP::LV || p2 == GBP::LVT))
+        return false;
+
+    // GB7: (LV|V) x (V|T)
+    if ((p1 == GBP::LV || p1 == GBP::V) && (p2 == GBP::V || p2 == GBP::T))
+        return false;
+
+    // GB8: (LVT|T) x T
+    if ((p1 == GBP::LVT || p1 == GBP::T) && p2 == GBP::T)
+        return false;
+
+    // GB9: x (Extend|ZWJ)
+    if (p2 == GBP::Extend || p2 == GBP::ZWJ) return false;
+
+    // GB9a: x SpacingMark
+    if (p2 == GBP::SpacingMark) return false;
+
+    // GB9b: Prepend x
+    if (p1 == GBP::Prepend) return false;
+
+    // GB11: ExtPict Extend* ZWJ x ExtPict
+    if (after_zwj && p2 == GBP::Extended_Pictographic) return false;
+
+    // GB12/GB13: Regional_Indicator x Regional_Indicator (only if odd count)
+    if (p1 == GBP::Regional_Indicator && p2 == GBP::Regional_Indicator) {
+        return (ri_count % 2) == 0;  // break if even count (pair complete)
+    }
+
+    // GB999: Otherwise, ÷
+    return true;
 }
 
-bool is_variation_selector(char32_t cp) {
-    return (cp >= 0xFE00 && cp <= 0xFE0F) ||
-           (cp >= 0xE0100 && cp <= 0xE01EF);
-}
-
-constexpr char32_t ZWJ = 0x200D;
-
-} // anonymous namespace
+// ---------------------------------------------------------------------------
+// Grapheme cluster splitting
+// ---------------------------------------------------------------------------
 
 std::vector<GraphemeCluster> split_graphemes(std::string_view str) {
     std::vector<GraphemeCluster> clusters;
     size_t pos = 0;
 
+    // State for grapheme break rules
+    int ri_count = 0;          // consecutive Regional_Indicator count
+    bool seen_ext_pic = false; // have we seen Extended_Pictographic in current cluster
+    char32_t prev_cp = 0;
+
     while (pos < str.size()) {
         char32_t cp = utf8_decode(str.data(), str.size(), pos);
 
-        // Skip zero-width characters that appear at the start (no cluster to extend)
-        if (clusters.empty() && is_zero_width(cp) && !is_regional_indicator(cp)) {
-            // Still create a cluster for standalone zero-width chars
-            GraphemeCluster cluster;
-            cluster.codepoints.push_back(cp);
-            cluster.display_width = 0;
-            clusters.push_back(std::move(cluster));
-            continue;
-        }
-
-        // Check if this codepoint extends the previous cluster
-        bool extends = false;
-        if (!clusters.empty()) {
-            if (is_combining(cp)) {
-                extends = true;
-            } else if (cp == ZWJ) {
-                extends = true;
-            } else if (is_variation_selector(cp)) {
-                extends = true;
-            } else if (is_regional_indicator(cp)) {
-                // Regional indicators pair up: extend if previous cluster
-                // has exactly one regional indicator
-                auto& prev = clusters.back();
-                if (prev.codepoints.size() == 1 &&
-                    is_regional_indicator(prev.codepoints[0])) {
-                    extends = true;
-                }
-            }
-            // After ZWJ, the next codepoint also extends
-            if (!extends && !clusters.empty()) {
-                auto& prev = clusters.back();
-                if (!prev.codepoints.empty() &&
-                    prev.codepoints.back() == ZWJ) {
-                    extends = true;
-                }
-            }
-        }
-
-        if (extends) {
-            clusters.back().codepoints.push_back(cp);
-            // Recalculate display width: use width of the base character
-            // For regional indicator pairs, width is 2
-            if (is_regional_indicator(cp) && clusters.back().codepoints.size() == 2) {
-                clusters.back().display_width = 2;
-            }
-        } else {
+        if (clusters.empty()) {
+            // First codepoint always starts a new cluster
             GraphemeCluster cluster;
             cluster.codepoints.push_back(cp);
             cluster.display_width = codepoint_width(cp);
             clusters.push_back(std::move(cluster));
+
+            GBP prop = graphemeBreakProperty(cp);
+            ri_count = (prop == GBP::Regional_Indicator) ? 1 : 0;
+            seen_ext_pic = (prop == GBP::Extended_Pictographic);
+            prev_cp = cp;
+            continue;
         }
+
+        // Determine after_zwj: was the previous codepoint a ZWJ, and did we
+        // see an Extended_Pictographic earlier in this cluster?
+        bool after_zwj = seen_ext_pic && (graphemeBreakProperty(prev_cp) == GBP::ZWJ);
+
+        bool should_break = isGraphemeBreak(prev_cp, cp, ri_count, after_zwj);
+
+        if (!should_break) {
+            // Extend current cluster
+            clusters.back().codepoints.push_back(cp);
+
+            GBP prop = graphemeBreakProperty(cp);
+
+            // Update RI count
+            if (prop == GBP::Regional_Indicator) {
+                ri_count++;
+                // Regional indicator pairs have display width 2
+                if (ri_count == 2) {
+                    clusters.back().display_width = 2;
+                }
+            }
+
+            // Track Extended_Pictographic within current cluster
+            if (prop == GBP::Extended_Pictographic) {
+                seen_ext_pic = true;
+            }
+        } else {
+            // Start new cluster
+            GraphemeCluster cluster;
+            cluster.codepoints.push_back(cp);
+            cluster.display_width = codepoint_width(cp);
+            clusters.push_back(std::move(cluster));
+
+            GBP prop = graphemeBreakProperty(cp);
+            ri_count = (prop == GBP::Regional_Indicator) ? 1 : 0;
+            seen_ext_pic = (prop == GBP::Extended_Pictographic);
+        }
+
+        prev_cp = cp;
     }
 
     return clusters;

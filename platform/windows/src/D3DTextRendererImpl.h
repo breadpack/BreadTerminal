@@ -35,6 +35,14 @@ struct D3DTextRenderer::Impl {
     // Cursor blink state
     bool cursorBlinkVisible = true;
 
+    // Status bar state
+    D3DTextRenderer::StatusBarInfo statusBar;
+
+    // Resize overlay state
+    bool resizeOverlayVisible = false;
+    int resizeOverlayCols = 0;
+    int resizeOverlayRows = 0;
+
     // Shaders
     ID3D11VertexShader* vertexShader = nullptr;
     ID3D11PixelShader* pixelShader = nullptr;

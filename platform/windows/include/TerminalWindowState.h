@@ -82,6 +82,9 @@ struct TerminalWindowState {
     float baseFontSize = 14.0f;   // from config or default
     float currentFontSize = 14.0f;
 
+    // DPI
+    float dpiScale = 1.0f;
+
     // State
     float cellWidth = 8.0f;
     float cellHeight = 16.0f;
@@ -126,6 +129,12 @@ struct TerminalWindowState {
 
     // --- Fullscreen ---
     void toggleFullscreen();
+
+    // --- DWM background blur ---
+    void applyBackgroundBlur(HWND hwnd);
+
+    // --- DPI ---
+    void handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRect);
 
     // --- Input ---
     void handleKeyDown(WPARAM wParam, LPARAM lParam);

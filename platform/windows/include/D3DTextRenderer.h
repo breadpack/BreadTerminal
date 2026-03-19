@@ -7,6 +7,7 @@
 #include "termcore/font/font_collection.h"
 #include "termcore/font/i_font_rasterizer.h"
 #include <memory>
+#include <string>
 
 #if defined(_WIN32)
 struct ID3D11Device;
@@ -69,6 +70,22 @@ public:
 
     /// Set text selection for highlight rendering.
     void setSelection(const Selection& sel);
+
+    /// Status bar information displayed at the bottom of the viewport.
+    struct StatusBarInfo {
+        std::string left_text;    // e.g., "master" (git branch)
+        std::string center_text;  // e.g., ""
+        std::string right_text;   // e.g., "80x24"
+        uint32_t bg_color = 0x2d2d2d;  // dark gray
+        uint32_t fg_color = 0xcccccc;  // light gray
+        bool visible = true;
+    };
+
+    /// Set status bar content for rendering.
+    void setStatusBar(const StatusBarInfo& info);
+
+    /// Set resize overlay visibility and dimensions.
+    void setResizeOverlay(bool visible, int cols, int rows);
 
     /// Set cursor blink visibility (called by blink timer).
     void setCursorBlink(bool visible);

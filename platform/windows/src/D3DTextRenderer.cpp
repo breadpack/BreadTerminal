@@ -370,6 +370,16 @@ void D3DTextRenderer::setSearchHighlights(
     impl_->searchCurrentIndex = currentIndex;
 }
 
+void D3DTextRenderer::setStatusBar(const StatusBarInfo& info) {
+    impl_->statusBar = info;
+}
+
+void D3DTextRenderer::setResizeOverlay(bool visible, int cols, int rows) {
+    impl_->resizeOverlayVisible = visible;
+    impl_->resizeOverlayCols = cols;
+    impl_->resizeOverlayRows = rows;
+}
+
 } // namespace termcore
 
 #endif // _WIN32

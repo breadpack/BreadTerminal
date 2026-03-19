@@ -6,6 +6,14 @@
 #include <chrono>
 #include <cmath>
 #include <windowsx.h>
+#include <imm.h>
+
+namespace termcore {
+    void handleImeStartComposition(HWND hwnd, int cursor_x, int cursor_y, int cell_height);
+    std::string handleImeComposition(HWND hwnd, LPARAM lParam);
+    void handleImeEndComposition(HWND hwnd);
+    void positionImeWindow(HWND hwnd, int x, int y, int height);
+}
 
 namespace {
 
@@ -188,6 +196,43 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             DestroyWindow(hWnd);
             return 0;
 
+        case WM_IME_STARTCOMPOSITION:
+            if (state && state->fontCollection) {
+                auto m = state->fontCollection->primaryMetrics();
+                int cursorX = 0, cursorY = 0;
+                if (state->screen) {
+                    cursorX = static_cast<int>(state->screen->cursorCol() * m.cell_width);
+                    cursorY = static_cast<int>(state->screen->cursorRow() * m.cell_height);
+                }
+                termcore::handleImeStartComposition(hWnd, cursorX, cursorY,
+                                                     static_cast<int>(m.cell_height));
+            }
+            break;
+
+        case WM_IME_COMPOSITION: {
+            std::string result = termcore::handleImeComposition(hWnd, lParam);
+            if (!result.empty() && state) {
+                state->sendPtyData(result.data(), result.size());
+                if (state->screen && !state->screen->isViewportAtBottom()) {
+                    state->screen->scrollViewportToBottom();
+                }
+                state->needsRender = true;
+            }
+            return 0;
+        }
+
+        case WM_IME_ENDCOMPOSITION:
+            termcore::handleImeEndComposition(hWnd);
+            break;
+
+        case WM_DPICHANGED:
+            if (state) {
+                UINT dpi = HIWORD(wParam);
+                const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+                state->handleDpiChange(hWnd, dpi, suggested);
+            }
+            return 0;
+
         case WM_DESTROY:
             KillTimer(hWnd, kRenderTimerId);
             KillTimer(hWnd, kCursorBlinkTimerId);
@@ -203,6 +248,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
 // Public API: create and show the terminal window, run message loop.
 int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
+    // Enable per-monitor DPI awareness
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -242,6 +290,8 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
         BYTE alpha = static_cast<BYTE>(state->config.background_opacity * 255.0f);
         SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
     }
+
+    state->applyBackgroundBlur(hwnd);
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);

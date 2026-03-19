@@ -11,13 +11,14 @@ add_library(termcore_windows STATIC
     src/ConfigWatcherWin.cpp
     src/TerminalWindowIME.cpp
     src/TerminalWindowNotify.cpp
+    src/D3DImageRenderer.cpp
 )
 
 target_include_directories(termcore_windows PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(termcore_windows PUBLIC
-    termcore dwrite d2d1 d3d11 dxgi windowsapp imm32
+    termcore dwrite d2d1 d3d11 dxgi d3dcompiler windowsapp imm32 dwmapi
 )
 
 add_executable(BreadTerminal WIN32
