@@ -72,6 +72,7 @@ struct TerminalWindowState {
     int termRows = 24;
     int termCols = 80;
     bool needsRender = false;
+    bool inLiveResize = false;
 
     bool initD3D(HWND hWnd);
     void createRenderTarget();
@@ -233,8 +234,11 @@ void TerminalWindowState::renderFrame() {
     renderer->render(*screen);
 
     if (swapChain) {
-        swapChain->Present(1, 0);
+        // Skip V-Sync during live resize for immediate feedback
+        UINT syncInterval = inLiveResize ? 0 : 1;
+        swapChain->Present(syncInterval, 0);
     }
+
 }
 
 void TerminalWindowState::sendPtyData(const char* data, size_t len) {
@@ -328,15 +332,30 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             newState->initTerminal();
             newState->startShell();
 
+            // Force an initial render so the window isn't blank
+            newState->needsRender = true;
+
             SetTimer(hWnd, kRenderTimerId, kRenderIntervalMs, nullptr);
             return 0;
         }
+
+        case WM_ENTERSIZEMOVE:
+            if (state) state->inLiveResize = true;
+            return 0;
+
+        case WM_EXITSIZEMOVE:
+            if (state) state->inLiveResize = false;
+            return 0;
 
         case WM_SIZE:
             if (state && wParam != SIZE_MINIMIZED) {
                 int width = LOWORD(lParam);
                 int height = HIWORD(lParam);
                 state->resizeSwapChain(width, height);
+                // Render immediately so the old frame doesn't get
+                // stretched to the new size.
+                state->needsRender = false;
+                state->renderFrame();
             }
             return 0;
 
@@ -357,6 +376,19 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
         case WM_CHAR:
             if (state) state->handleChar(wParam);
             return 0;
+
+        case WM_PAINT: {
+            // Validate the window region without GDI painting —
+            // D3D11 swap chain handles all rendering.
+            PAINTSTRUCT ps;
+            BeginPaint(hWnd, &ps);
+            EndPaint(hWnd, &ps);
+            if (state) state->needsRender = true;
+            return 0;
+        }
+
+        case WM_ERASEBKGND:
+            return 1;  // Tell Windows we handled background erase
 
         case WM_DESTROY:
             KillTimer(hWnd, kRenderTimerId);
@@ -379,8 +411,7 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32513)); // IDC_IBEAM
     wc.lpszClassName = kWindowClassName;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(
-        GetStockObject(BLACK_BRUSH));
+    wc.hbrBackground = nullptr;  // D3D11 handles all painting
 
     if (!RegisterClassExW(&wc)) return 1;
 

@@ -3,9 +3,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+
+#if !defined(_WIN32)
 #include <sys/stat.h>
 #include <unistd.h>
-#include <string>
+#endif
 
 namespace termcore {
 
@@ -144,6 +147,18 @@ const char* breadTerminalTerminfoSource() {
     return kTerminfoSource;
 }
 
+#if defined(_WIN32)
+
+// Terminfo is not used on Windows (ConPTY handles terminal capabilities)
+TerminfoInstallResult installTerminfo() {
+    TerminfoInstallResult result;
+    result.term_name = "xterm-256color";
+    result.success = true;
+    return result;
+}
+
+#else // Unix
+
 /// Get the platform-specific terminfo installation directory
 static std::string getTerminfoDir() {
     const char* home = getenv("HOME");
@@ -263,5 +278,7 @@ TerminfoInstallResult installTerminfo() {
     result.success = true;
     return result;
 }
+
+#endif // _WIN32
 
 } // namespace termcore

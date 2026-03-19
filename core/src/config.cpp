@@ -319,8 +319,10 @@ bool writeConfigFile(const std::string& path, const Config& config) {
         }
     }
 
-    // Set 0600 permissions
+    // Set 0600 permissions (Unix only)
+#if !defined(_WIN32)
     chmod(tmpPath.c_str(), 0600);
+#endif
 
     // Atomic rename
     if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {

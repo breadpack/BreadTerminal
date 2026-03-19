@@ -2,6 +2,7 @@
 
 #include "D3DTextRenderer.h"
 #include "D3DAtlasUploader.h"
+#include "termcore/dynamic_colors.h"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -15,7 +16,9 @@ namespace termcore {
 
 namespace {
 
-// Inline HLSL source (matches cell.hlsl)
+// Inline HLSL source — two-pass cell rendering (background + glyph).
+// Matches the Metal renderer approach: background quads use cell_size,
+// glyph quads use per-instance glyph_size with bearing offset.
 const char* kCellShaderSource = R"(
 cbuffer CellConstants : register(b0) {
     float2 viewport_size;
@@ -29,13 +32,13 @@ Texture2D atlas_bgra : register(t1);
 SamplerState atlas_sampler : register(s0);
 
 struct CellInstance {
-    float2 position;
-    float2 atlas_uv;
-    float2 atlas_size_px;
-    float2 glyph_offset;
+    float2 position;       // Top-left pixel position of quad
+    float2 atlas_uv;       // Top-left UV in atlas (pixels)
+    float2 atlas_size_px;  // Glyph size in atlas (pixels); for bg pass = cell_size
+    float2 glyph_offset;   // Not used in shader (bearing applied on CPU)
     float4 fg_color;
     float4 bg_color;
-    uint   flags;
+    uint   flags;          // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass
 };
 
 StructuredBuffer<CellInstance> cells : register(t2);
@@ -59,7 +62,12 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 
     CellInstance cell = cells[instance_id];
 
-    float2 pixel_pos = cell.position + corner * cell_size;
+    bool is_bg = (cell.flags & 4u) != 0u;
+
+    // Background pass: quad = cell_size.  Glyph pass: quad = glyph size.
+    float2 quad_size = is_bg ? cell_size : cell.atlas_size_px;
+    float2 pixel_pos = cell.position + corner * quad_size;
+
     float2 ndc = (pixel_pos / viewport_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;
 
@@ -73,21 +81,24 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 }
 
 float4 PSMain(VS_OUTPUT input) : SV_Target {
-    float4 color = input.bg_color;
-
+    bool is_bg     = (input.flags & 4u) != 0u;
     bool has_glyph = (input.flags & 1u) != 0u;
     bool is_color  = (input.flags & 2u) != 0u;
 
-    if (has_glyph) {
-        if (is_color) {
-            float4 glyph_color = atlas_bgra.Sample(atlas_sampler, input.texCoord);
-            color = lerp(color, glyph_color, glyph_color.a);
-        } else {
-            float alpha = atlas_r8.Sample(atlas_sampler, input.texCoord).r;
-            color = lerp(color, input.fg_color, alpha);
-        }
+    if (is_bg) {
+        return input.bg_color;
     }
 
+    // Glyph pass — start transparent, composite glyph on top
+    float4 color = float4(0.0, 0.0, 0.0, 0.0);
+    if (has_glyph) {
+        if (is_color) {
+            color = atlas_bgra.Sample(atlas_sampler, input.texCoord);
+        } else {
+            float alpha = atlas_r8.Sample(atlas_sampler, input.texCoord).r;
+            color = float4(input.fg_color.rgb, alpha);
+        }
+    }
     return color;
 }
 )";
@@ -259,14 +270,18 @@ struct D3DTextRenderer::Impl {
         FontMetrics metrics = fontCollection->primaryMetrics();
         float cellW = metrics.cell_width;
         float cellH = metrics.cell_height;
+        float ascent = metrics.ascent;
         float fontSize = fontCollection->fontSize();
 
         int rows = screen.rows();
         int cols = screen.cols();
 
-        cellInstances.clear();
-        cellInstances.reserve(rows * cols);
+        const DynamicColors& colors = screen.dynamicColors();
 
+        cellInstances.clear();
+        cellInstances.reserve(rows * cols * 2);  // bg + glyph passes
+
+        // Pass 1: Background quads (cell-sized)
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const TermCell& cell = screen.cellAt(row, col);
@@ -275,8 +290,8 @@ struct D3DTextRenderer::Impl {
                 inst.position[0] = col * cellW;
                 inst.position[1] = row * cellH;
 
-                colorFromRGBA(cell.fg_color, inst.fg_color);
-                colorFromRGBA(cell.bg_color, inst.bg_color);
+                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
 
                 if (cell.attributes & AttrInverse) {
                     std::swap(inst.fg_color[0], inst.bg_color[0]);
@@ -285,42 +300,71 @@ struct D3DTextRenderer::Impl {
                     std::swap(inst.fg_color[3], inst.bg_color[3]);
                 }
 
-                inst.flags = 0;
+                inst.flags = 4;  // is_bg_pass
+                cellInstances.push_back(inst);
+            }
+        }
 
-                if (cell.codepoint != ' ' && cell.codepoint != 0) {
-                    CollectionFaceId faceId =
-                        fontCollection->resolveFace(cell.codepoint);
-                    if (faceId != kInvalidCollectionFace) {
-                        FontFaceId rastFace =
-                            fontCollection->rasterizerFaceId(faceId);
-                        uint32_t glyphIdx =
-                            rasterizer->getGlyphIndex(rastFace,
-                                                      cell.codepoint);
-                        if (glyphIdx != 0) {
-                            GlyphKey key{rastFace, glyphIdx, {0, 0}};
-                            auto info = glyphCache->getOrRasterize(
-                                key, fontSize, *rasterizer, *glyphAtlas);
-                            if (info) {
-                                inst.flags |= 1;
-                                if (info->is_color) inst.flags |= 2;
-                                inst.atlas_uv[0] =
-                                    static_cast<float>(info->region.x);
-                                inst.atlas_uv[1] =
-                                    static_cast<float>(info->region.y);
-                                inst.atlas_size[0] =
-                                    static_cast<float>(info->region.width);
-                                inst.atlas_size[1] =
-                                    static_cast<float>(info->region.height);
-                                inst.glyph_offset[0] =
-                                    static_cast<float>(
-                                        info->region.bearing_x);
-                                inst.glyph_offset[1] =
-                                    static_cast<float>(
-                                        info->region.bearing_y);
-                            }
-                        }
-                    }
+        // Pass 2: Glyph quads (glyph-sized, positioned with bearing)
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const TermCell& cell = screen.cellAt(row, col);
+
+                if (cell.codepoint == ' ' || cell.codepoint == 0) {
+                    continue;
                 }
+
+                CollectionFaceId faceId =
+                    fontCollection->resolveFace(cell.codepoint);
+                if (faceId == kInvalidCollectionFace) continue;
+
+                FontFaceId rastFace =
+                    fontCollection->rasterizerFaceId(faceId);
+                uint32_t glyphIdx =
+                    rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+                if (glyphIdx == 0) continue;
+
+                GlyphKey key{rastFace, glyphIdx, {0, 0}};
+                auto info = glyphCache->getOrRasterize(
+                    key, fontSize, *rasterizer, *glyphAtlas);
+                if (!info || info->region.width <= 0 ||
+                    info->region.height <= 0) {
+                    continue;
+                }
+
+                D3DCellInstance inst = {};
+
+                // Position: cell origin + bearing offset
+                // offset_x = bearing_x (horizontal shift from cell left)
+                // offset_y = ascent - bearing_y (distance from cell top)
+                float offsetX = static_cast<float>(info->region.bearing_x);
+                float offsetY = ascent -
+                    static_cast<float>(info->region.bearing_y);
+
+                inst.position[0] = col * cellW + offsetX;
+                inst.position[1] = row * cellH + offsetY;
+
+                inst.atlas_uv[0] =
+                    static_cast<float>(info->region.x);
+                inst.atlas_uv[1] =
+                    static_cast<float>(info->region.y);
+                inst.atlas_size[0] =
+                    static_cast<float>(info->region.width);
+                inst.atlas_size[1] =
+                    static_cast<float>(info->region.height);
+
+                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+
+                if (cell.attributes & AttrInverse) {
+                    std::swap(inst.fg_color[0], inst.bg_color[0]);
+                    std::swap(inst.fg_color[1], inst.bg_color[1]);
+                    std::swap(inst.fg_color[2], inst.bg_color[2]);
+                    std::swap(inst.fg_color[3], inst.bg_color[3]);
+                }
+
+                inst.flags = 1;  // has_glyph
+                if (info->is_color) inst.flags |= 2;
 
                 cellInstances.push_back(inst);
             }

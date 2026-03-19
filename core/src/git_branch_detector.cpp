@@ -4,6 +4,15 @@
 #include <sstream>
 #include <sys/stat.h>
 
+#if defined(_WIN32)
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+#endif
+
 namespace termcore {
 
 static bool fileExists(const std::string& path) {

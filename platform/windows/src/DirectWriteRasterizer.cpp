@@ -167,25 +167,37 @@ public:
             return result;
         }
 
-        // ClearType: 3-channel RGB subpixel
+        // ClearType: 3-channel RGB subpixel -> convert to grayscale
+        // GPU renderers composite on arbitrary backgrounds, so subpixel
+        // rendering is not meaningful. Average the 3 channels into one.
         int32_t width = bounds.right - bounds.left;
         int32_t height = bounds.bottom - bounds.top;
-        size_t byteCount = static_cast<size_t>(width) * height * 3;
-        std::vector<uint8_t> alphaValues(byteCount);
+        size_t rgbByteCount = static_cast<size_t>(width) * height * 3;
+        std::vector<uint8_t> rgbValues(rgbByteCount);
 
         hr = analysis->CreateAlphaTexture(
             DWRITE_TEXTURE_CLEARTYPE_3x1,
             &bounds,
-            alphaValues.data(),
-            static_cast<UINT32>(byteCount));
+            rgbValues.data(),
+            static_cast<UINT32>(rgbByteCount));
         if (FAILED(hr)) return result;
 
-        result.format = PixelFormat::RGB;
+        // Convert RGB to single-channel grayscale
+        size_t pixelCount = static_cast<size_t>(width) * height;
+        std::vector<uint8_t> grayValues(pixelCount);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            uint32_t r = rgbValues[i * 3 + 0];
+            uint32_t g = rgbValues[i * 3 + 1];
+            uint32_t b = rgbValues[i * 3 + 2];
+            grayValues[i] = static_cast<uint8_t>((r + g + b + 1) / 3);
+        }
+
+        result.format = PixelFormat::Grayscale;
         result.width = width;
         result.height = height;
         result.bearing_x = bounds.left;
         result.bearing_y = -bounds.top;
-        result.bitmap = std::move(alphaValues);
+        result.bitmap = std::move(grayValues);
 
         return result;
     }
