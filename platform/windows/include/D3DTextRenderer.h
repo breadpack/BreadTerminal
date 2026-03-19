@@ -25,7 +25,8 @@ struct D3DCellInstance {
     float glyph_offset[2]; // Bearing offset within cell
     float fg_color[4];     // Foreground color (RGBA, 0-1)
     float bg_color[4];     // Background color (RGBA, 0-1)
-    uint32_t flags;        // Bit flags: bit0=has_glyph, bit1=is_color, bit2=is_bg, bit3=is_cursor
+    uint32_t flags;        // Bit flags: bit0=has_glyph, bit1=is_color, bit2=is_bg, bit3=is_cursor, bit4=is_underline
+    uint32_t extra_flags;  // bits 0-2: underline_style (0=none,1=single,2=double,3=curly,4=dotted,5=dashed)
 };
 
 /// D3D11-based terminal text renderer using instanced draw calls.

@@ -17,6 +17,11 @@
 #include "termcore/font/i_font_discovery.h"
 #include "termcore/config.h"
 #include "termcore/search.h"
+#include "termcore/keybinding.h"
+#include "termcore/url_detector.h"
+#include "termcore/mux.h"
+#include "termcore/notification.h"
+#include "termcore/agent.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -26,6 +31,7 @@
 #include <dxgi1_2.h>
 #include <wrl/client.h>
 
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -58,6 +64,18 @@ struct TerminalWindowState {
     // Renderer
     std::unique_ptr<D3DTextRenderer> renderer;
 
+    // Keybinding manager
+    std::unique_ptr<termcore::KeybindingManager> keybindings;
+
+    // URL detection
+    termcore::UrlDetector urlDetector;
+    std::vector<termcore::DetectedUrl> detectedUrls;
+
+    // Mux, notifications, agent tracking
+    std::unique_ptr<termcore::Mux> mux;
+    std::unique_ptr<termcore::NotificationStore> notifications;
+    std::unique_ptr<termcore::AgentTracker> agentTracker;
+
     // Configuration
     termcore::Config config;
     std::string fontFamily = "Consolas";
@@ -72,6 +90,18 @@ struct TerminalWindowState {
     bool needsRender = false;
     bool inLiveResize = false;
     bool cursorBlinkOn = true;
+
+    // Fullscreen state
+    bool isFullscreen = false;
+    WINDOWPLACEMENT savedPlacement = {};
+    LONG savedStyle = 0;
+    LONG savedExStyle = 0;
+
+    // Resize overlay
+    bool showResizeOverlay = false;
+    std::chrono::steady_clock::time_point resizeOverlayStart;
+    int resizeOverlayCols = 0;
+    int resizeOverlayRows = 0;
 
     // Selection state
     struct GridPos { int row = 0; int col = 0; };
@@ -93,6 +123,9 @@ struct TerminalWindowState {
     // --- Font size ---
     void changeFontSize(float delta);
     void resetFontSize();
+
+    // --- Fullscreen ---
+    void toggleFullscreen();
 
     // --- Input ---
     void handleKeyDown(WPARAM wParam, LPARAM lParam);

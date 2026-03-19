@@ -8,13 +8,16 @@ add_library(termcore_windows STATIC
     src/D3DAtlasUploader.cpp
     src/D3DTextRenderer.cpp
     src/D3DCellBuilder.cpp
+    src/ConfigWatcherWin.cpp
+    src/TerminalWindowIME.cpp
+    src/TerminalWindowNotify.cpp
 )
 
 target_include_directories(termcore_windows PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(termcore_windows PUBLIC
-    termcore dwrite d2d1 d3d11 dxgi windowsapp
+    termcore dwrite d2d1 d3d11 dxgi windowsapp imm32
 )
 
 add_executable(BreadTerminal WIN32
@@ -25,4 +28,4 @@ add_executable(BreadTerminal WIN32
     src/TerminalSelection.cpp
     src/TerminalSearch.cpp
 )
-target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32)
+target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32)

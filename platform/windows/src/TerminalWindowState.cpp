@@ -92,6 +92,13 @@ void TerminalWindowState::resizeSwapChain(int width, int height) {
             }
             needsRender = true;
         }
+
+        // Track resize overlay state
+        showResizeOverlay = true;
+        resizeOverlayStart = std::chrono::steady_clock::now();
+        resizeOverlayCols = screen ? screen->cols() : 0;
+        resizeOverlayRows = screen ? screen->rows() : 0;
+        needsRender = true;
     }
 }
 
@@ -145,6 +152,21 @@ void TerminalWindowState::initTerminal() {
     GetClientRect(hwnd, &rc);
     renderer->resize(static_cast<float>(rc.right - rc.left),
                      static_cast<float>(rc.bottom - rc.top));
+
+    // Keybinding manager
+    keybindings = std::make_unique<termcore::KeybindingManager>();
+    if (!config.keybindings.empty()) {
+        std::vector<std::pair<std::string, std::string>> bindings;
+        for (const auto& kb : config.keybindings) {
+            bindings.emplace_back(kb.trigger, kb.action);
+        }
+        keybindings->loadFromConfig(bindings);
+    }
+
+    // Mux, notifications, agent tracking
+    mux = std::make_unique<termcore::Mux>();
+    notifications = std::make_unique<termcore::NotificationStore>();
+    agentTracker = std::make_unique<termcore::AgentTracker>();
 }
 
 void TerminalWindowState::startShell() {
@@ -232,6 +254,11 @@ void TerminalWindowState::pollPty() {
     if (needsRender && wasAtBottom && screen) {
         screen->scrollViewportToBottom();
     }
+
+    // Detect URLs in visible screen content
+    if (needsRender && screen) {
+        detectedUrls = urlDetector.detectInScreen(*screen);
+    }
 }
 
 void TerminalWindowState::renderFrame() {
@@ -259,6 +286,45 @@ void TerminalWindowState::renderFrame() {
 void TerminalWindowState::sendPtyData(const char* data, size_t len) {
     if (pty && pty->isAlive()) {
         pty->write(data, len);
+    }
+}
+
+// --- Fullscreen ---
+
+void TerminalWindowState::toggleFullscreen() {
+    if (!hwnd) return;
+
+    if (!isFullscreen) {
+        savedStyle = GetWindowLong(hwnd, GWL_STYLE);
+        savedExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+        GetWindowPlacement(hwnd, &savedPlacement);
+
+        MONITORINFO mi = { sizeof(mi) };
+        GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+
+        SetWindowLong(hwnd, GWL_STYLE,
+                      savedStyle & ~(WS_CAPTION | WS_THICKFRAME));
+        SetWindowLong(hwnd, GWL_EXSTYLE,
+                      savedExStyle & ~(WS_EX_DLGMODALFRAME |
+                                       WS_EX_WINDOWEDGE |
+                                       WS_EX_CLIENTEDGE |
+                                       WS_EX_STATICEDGE));
+
+        SetWindowPos(hwnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right - mi.rcMonitor.left,
+            mi.rcMonitor.bottom - mi.rcMonitor.top,
+            SWP_NOZORDER | SWP_FRAMECHANGED);
+
+        isFullscreen = true;
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, savedStyle);
+        SetWindowLong(hwnd, GWL_EXSTYLE, savedExStyle);
+        SetWindowPlacement(hwnd, &savedPlacement);
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
+        isFullscreen = false;
     }
 }
 

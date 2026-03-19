@@ -38,8 +38,9 @@ void VtParser::executeC0(uint8_t byte) {
 }
 
 void VtParser::collectParam(uint8_t byte) {
-    if (byte == ';') {
+    if (byte == ';' || byte == ':') {
         // Push current param (or default -1) and start next
+        // Colon is a sub-parameter separator (e.g., SGR 4:3 for curly underline)
         if (param_started_) {
             params_.push_back(current_param_);
         } else {

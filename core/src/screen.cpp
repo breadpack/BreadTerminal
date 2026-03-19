@@ -66,6 +66,8 @@ void Screen::eraseCell(TermCell& cell) const {
     cell.bg_color = pen_.bg_color;
     cell.attributes = 0;
     cell.width = 1;
+    cell.underline_style = 0;
+    cell.underline_color = kColorDefault;
 }
 
 void Screen::clampCursor() {
@@ -136,6 +138,8 @@ void Screen::onPrint(char32_t codepoint) {
     cell.bg_color = pen_.bg_color;
     cell.attributes = pen_.attributes;
     cell.width = static_cast<uint8_t>(char_width);
+    cell.underline_style = pen_.underline_style;
+    cell.underline_color = pen_.underline_color;
 
     // Write continuation cell for wide characters
     if (char_width == 2 && cursor_.col + 1 < cols_) {
@@ -145,6 +149,8 @@ void Screen::onPrint(char32_t codepoint) {
         cont.bg_color = pen_.bg_color;
         cont.attributes = pen_.attributes;
         cont.width = 0;  // continuation cell width=0
+        cont.underline_style = pen_.underline_style;
+        cont.underline_color = pen_.underline_color;
     }
 
     // Advance cursor by the character's display width

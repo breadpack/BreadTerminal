@@ -244,19 +244,81 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     switch (str[0]) {
     case 'A':
         prompt_state_ = PromptState::Prompt;
+        // Record prompt marker at current cursor position
+        {
+            PromptMarker marker;
+            marker.scrollback_offset = static_cast<int>(scrollback_.size());
+            marker.row = cursor_.row;
+            prompt_markers_.push_back(marker);
+        }
+        // If a command was active, fire finish callback
+        if (command_timing_.active) {
+            command_timing_.active = false;
+            if (command_finish_callback_) {
+                auto elapsed = std::chrono::steady_clock::now() - command_timing_.start;
+                float seconds = std::chrono::duration<float>(elapsed).count();
+                if (seconds > 5.0f) {
+                    command_finish_callback_(seconds);
+                }
+            }
+        }
         break;
     case 'B':
         prompt_state_ = PromptState::Input;
         break;
     case 'C':
         prompt_state_ = PromptState::Output;
+        // Command started: record start time
+        command_timing_.start = std::chrono::steady_clock::now();
+        command_timing_.active = true;
         break;
     case 'D':
         prompt_state_ = PromptState::None;
+        // Output end: fire finish callback if command was active
+        if (command_timing_.active) {
+            command_timing_.active = false;
+            if (command_finish_callback_) {
+                auto elapsed = std::chrono::steady_clock::now() - command_timing_.start;
+                float seconds = std::chrono::duration<float>(elapsed).count();
+                if (seconds > 5.0f) {
+                    command_finish_callback_(seconds);
+                }
+            }
+        }
         break;
     default:
         break;
     }
+}
+
+// --- Prompt navigation ---
+int Screen::nextPromptRow(int current_row) const {
+    // Find the nearest prompt marker below current_row
+    int best = -1;
+    for (const auto& marker : prompt_markers_) {
+        // Convert marker to an absolute row relative to current scrollback
+        int abs_row = marker.row - (static_cast<int>(scrollback_.size()) - marker.scrollback_offset);
+        if (abs_row > current_row) {
+            if (best < 0 || abs_row < best) {
+                best = abs_row;
+            }
+        }
+    }
+    return best;
+}
+
+int Screen::prevPromptRow(int current_row) const {
+    // Find the nearest prompt marker above current_row
+    int best = -1;
+    for (const auto& marker : prompt_markers_) {
+        int abs_row = marker.row - (static_cast<int>(scrollback_.size()) - marker.scrollback_offset);
+        if (abs_row < current_row) {
+            if (best < 0 || abs_row > best) {
+                best = abs_row;
+            }
+        }
+    }
+    return best;
 }
 
 // --- OSC 4: Set/query palette color ---

@@ -199,7 +199,25 @@ void Screen::handleSGR(const std::vector<int>& params) {
         } else if (p == 3) {
             pen_.attributes |= AttrItalic;
         } else if (p == 4) {
+            // Check for colon subparameter: CSI 4:x m
+            // The VT parser separates colon subparams as separate params,
+            // so 4:3 arrives as params [4, 3]. We peek at the next param
+            // to see if it looks like a subparam (0-5 range for underline style).
+            if (i + 1 < params.size()) {
+                int sub = params[i + 1];
+                if (sub >= 0 && sub <= 5) {
+                    pen_.underline_style = static_cast<uint8_t>(sub);
+                    if (sub == 0) {
+                        pen_.attributes &= ~AttrUnderline;
+                    } else {
+                        pen_.attributes |= AttrUnderline;
+                    }
+                    ++i;
+                    continue;
+                }
+            }
             pen_.attributes |= AttrUnderline;
+            pen_.underline_style = UnderlineSingle;
         } else if (p == 7) {
             pen_.attributes |= AttrInverse;
         } else if (p == 8) {
@@ -212,6 +230,7 @@ void Screen::handleSGR(const std::vector<int>& params) {
             pen_.attributes &= ~AttrItalic;
         } else if (p == 24) {
             pen_.attributes &= ~AttrUnderline;
+            pen_.underline_style = UnderlineNone;
         } else if (p == 27) {
             pen_.attributes &= ~AttrInverse;
         } else if (p == 28) {
@@ -256,6 +275,23 @@ void Screen::handleSGR(const std::vector<int>& params) {
             }
         } else if (p == 49) {
             pen_.bg_color = kColorDefault;
+        } else if (p == 58) {
+            // Extended underline color: 58;5;n or 58;2;r;g;b
+            if (i + 1 < params.size()) {
+                int sub = params[i + 1];
+                if (sub == 5 && i + 2 < params.size()) {
+                    int idx = params[i + 2];
+                    if (idx >= 0 && idx < 256)
+                        pen_.underline_color = dynamic_colors_.palette[idx];
+                    i += 2;
+                } else if (sub == 2 && i + 4 < params.size()) {
+                    int r = params[i + 2], g = params[i + 3], b = params[i + 4];
+                    pen_.underline_color = ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
+                    i += 4;
+                }
+            }
+        } else if (p == 59) {
+            pen_.underline_color = kColorDefault;
         } else if (p >= 90 && p <= 97) {
             pen_.fg_color = dynamic_colors_.palette[p - 90 + 8];
         } else if (p >= 100 && p <= 107) {

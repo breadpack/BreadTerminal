@@ -12,6 +12,7 @@ set(TERMCORE_SOURCES
     src/termcore_api.cpp
     src/vt_parser.cpp
     src/dynamic_colors.cpp
+    src/contrast.cpp
     src/screen.cpp
     src/screen_csi.cpp
     src/screen_csi_ext.cpp
@@ -26,6 +27,7 @@ set(TERMCORE_SOURCES
     src/font/font_collection.cpp
     src/font/variable_font.cpp
     src/mux.cpp
+    src/mux_layout.cpp
     src/notification.cpp
     src/config.cpp
     src/config_diff.cpp

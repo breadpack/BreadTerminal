@@ -24,7 +24,8 @@ struct CellInstance {
     float2 glyph_offset;
     float4 fg_color;
     float4 bg_color;
-    uint   flags;  // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor
+    uint   flags;        // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor, bit4=is_underline
+    uint   extra_flags;  // bits 0-2: underline_style
 };
 
 StructuredBuffer<CellInstance> cells : register(t2);
@@ -34,7 +35,8 @@ struct VS_OUTPUT {
     float2 texCoord : TEXCOORD0;
     float4 fg_color : COLOR0;
     float4 bg_color : COLOR1;
-    uint   flags    : BLENDINDICES0;
+    uint   flags       : BLENDINDICES0;
+    uint   extra_flags : BLENDINDICES1;
 };
 
 VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID) {
@@ -58,9 +60,11 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 
     output.position = float4(ndc, 0.0, 1.0);
     output.texCoord = (cell.atlas_uv + corner * cell.atlas_size_px) / atlas_size;
-    output.fg_color = cell.fg_color;
+    bool is_underline = (cell.flags & 16u) != 0u;
+    output.fg_color = is_underline ? float4(corner.x, corner.y, 0.0, 0.0) : cell.fg_color;
     output.bg_color = cell.bg_color;
     output.flags = cell.flags;
+    output.extra_flags = cell.extra_flags;
 
     return output;
 }
@@ -77,6 +81,29 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
 
     if (is_cursor) {
         return input.bg_color;
+    }
+
+    bool is_underline = (input.flags & 16u) != 0u;
+    if (is_underline) {
+        uint ul_style = input.extra_flags & 7u;
+        float local_x = input.fg_color.x;  // 0..1 across underline width
+        float local_y = input.fg_color.y;  // 0..1 across underline height
+
+        if (ul_style == 3u) { // curly - sine wave
+            float wave = sin(local_x * 3.14159 * 2.0) * 0.35 + 0.5;
+            float dist = abs(local_y - wave);
+            float alpha = 1.0 - smoothstep(0.0, 0.3, dist);
+            return float4(input.bg_color.rgb, alpha);
+        }
+        if (ul_style == 4u) { // dotted
+            float pattern = step(0.5, frac(local_x * 4.0));
+            return float4(input.bg_color.rgb, pattern);
+        }
+        if (ul_style == 5u) { // dashed
+            float pattern = step(0.33, frac(local_x * 2.0));
+            return float4(input.bg_color.rgb, pattern);
+        }
+        return input.bg_color; // single, double = solid
     }
 
     float4 color = float4(0.0, 0.0, 0.0, 0.0);

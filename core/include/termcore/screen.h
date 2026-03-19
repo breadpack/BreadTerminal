@@ -4,6 +4,7 @@
 #include "termcore/dynamic_colors.h"
 #include "termcore/kitty_keyboard.h"
 #include "termcore/vt_parser.h"
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -23,6 +24,16 @@ enum CellAttribute : uint16_t {
     AttrStrikethrough = 64,
 };
 
+/// Underline style for styled underlines (SGR 4:x).
+enum UnderlineStyle : uint8_t {
+    UnderlineNone = 0,
+    UnderlineSingle = 1,
+    UnderlineDouble = 2,
+    UnderlineCurly = 3,
+    UnderlineDotted = 4,
+    UnderlineDashed = 5,
+};
+
 /// A single cell in the terminal grid.
 struct TermCell {
     char32_t codepoint = ' ';
@@ -30,6 +41,8 @@ struct TermCell {
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
     uint8_t width = 1;
+    uint8_t underline_style = 0;          // UnderlineStyle: 0=none..5=dashed
+    uint32_t underline_color = kColorDefault;  // SGR 58 underline color
 };
 
 /// Cursor shape for DECSCUSR.
@@ -49,6 +62,8 @@ struct Pen {
     uint32_t fg_color = kColorDefault;
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
+    uint8_t underline_style = 0;
+    uint32_t underline_color = kColorDefault;
 };
 
 /// Mouse tracking mode.
@@ -126,6 +141,22 @@ public:
     const std::string& currentHyperlink() const { return current_hyperlink_; }
     PromptState promptState() const { return prompt_state_; }
     const TermNotification& lastNotification() const { return last_notification_; }
+
+    // --- Prompt markers (OSC 133) for jump navigation ---
+    struct PromptMarker {
+        int scrollback_offset;  // distance from bottom of scrollback (0 = most recent)
+        int row;                // row within that context
+    };
+    int nextPromptRow(int current_row) const;
+    int prevPromptRow(int current_row) const;
+
+    // --- Command finish detection ---
+    struct CommandTiming {
+        std::chrono::steady_clock::time_point start;
+        bool active = false;
+    };
+    using CommandFinishCallback = std::function<void(float elapsed_seconds)>;
+    void setCommandFinishCallback(CommandFinishCallback cb) { command_finish_callback_ = std::move(cb); }
 
     // --- Response callback (for writing back to PTY) ---
     using ResponseCallback = std::function<void(const std::string&)>;
@@ -240,6 +271,13 @@ private:
 
     // Security: OSC 52 clipboard write gate (default: denied)
     bool clipboard_write_allowed_ = false;
+
+    // Prompt markers for jump navigation
+    std::vector<PromptMarker> prompt_markers_;
+
+    // Command timing for finish notification
+    CommandTiming command_timing_;
+    CommandFinishCallback command_finish_callback_;
 
     // Alternate screen buffer
     struct ScreenState {

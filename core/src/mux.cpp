@@ -1,6 +1,7 @@
 #include "termcore/mux.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace termcore {
 
@@ -185,6 +186,11 @@ void Mux::closePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id) {
     auto* tab = findTab(ws_id, tab_id);
     if (!tab || !tab->root) return;
 
+    // Unzoom if the zoomed pane is being closed
+    if (tab->zoomed_pane == pane_id) {
+        tab->zoomed_pane = kInvalidPane;
+    }
+
     // If root is the leaf we want to close, destroy the whole tab's tree
     if (tab->root->is_leaf && tab->root->pane_id == pane_id) {
         if (destroy_cb_) destroy_cb_(pane_id);
@@ -238,6 +244,10 @@ void Mux::setActivePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id) {
     if (!tab) return;
     // Verify pane exists in the tree
     if (findNode(tab->root.get(), pane_id)) {
+        // Unzoom when switching active pane while zoomed
+        if (tab->zoomed_pane != kInvalidPane && tab->zoomed_pane != pane_id) {
+            tab->zoomed_pane = kInvalidPane;
+        }
         tab->active_pane = pane_id;
     }
 }
@@ -342,5 +352,7 @@ const SplitNode* Mux::splitRoot(WorkspaceId ws_id, TabId tab_id) const {
     const auto* tab = findTab(ws_id, tab_id);
     return tab ? tab->root.get() : nullptr;
 }
+
+// Zoom, layout presets, and equalize are in mux_layout.cpp
 
 }  // namespace termcore

@@ -4,6 +4,7 @@
 #include "termcore/paste_guard.h"
 
 #include <algorithm>
+#include <shellapi.h>
 
 // --- Selection / mouse helpers ---
 
@@ -76,6 +77,26 @@ void TerminalWindowState::handleMouseUp(int x, int y) {
                     selectionStart.col != selectionEnd.col);
     updateRendererSelection();
     needsRender = true;
+
+    // Ctrl+click to open URL
+    if (GetKeyState(VK_CONTROL) & 0x8000) {
+        int clickRow = pos.row;
+        int clickCol = pos.col;
+        std::string url = urlDetector.urlAt(detectedUrls, clickRow, clickCol);
+        if (!url.empty()) {
+            int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                url.c_str(), static_cast<int>(url.size()),
+                nullptr, 0);
+            if (wlen > 0) {
+                std::wstring wurl(wlen, L'\0');
+                MultiByteToWideChar(CP_UTF8, 0,
+                    url.c_str(), static_cast<int>(url.size()),
+                    &wurl[0], wlen);
+                ShellExecuteW(nullptr, L"open", wurl.c_str(),
+                              nullptr, nullptr, SW_SHOWNORMAL);
+            }
+        }
+    }
 }
 
 void TerminalWindowState::handleDoubleClick(int x, int y) {

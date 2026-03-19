@@ -3,6 +3,7 @@
 #include "TerminalWindowState.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <windowsx.h>
 
@@ -68,6 +69,15 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
         case WM_TIMER:
             if (wParam == kRenderTimerId && state) {
                 state->pollPty();
+                // Auto-hide resize overlay after 1 second
+                if (state->showResizeOverlay) {
+                    auto elapsed = std::chrono::steady_clock::now()
+                                   - state->resizeOverlayStart;
+                    if (elapsed > std::chrono::seconds(1)) {
+                        state->showResizeOverlay = false;
+                        state->needsRender = true;
+                    }
+                }
                 if (state->needsRender) {
                     state->needsRender = false;
                     state->renderFrame();
@@ -166,6 +176,17 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_ERASEBKGND:
             return 1;
+
+        case WM_CLOSE:
+            if (state && state->pty && state->pty->isAlive()) {
+                int result = MessageBoxW(hWnd,
+                    L"A process is still running. Close anyway?",
+                    L"BreadTerminal",
+                    MB_YESNO | MB_ICONWARNING);
+                if (result != IDYES) return 0;
+            }
+            DestroyWindow(hWnd);
+            return 0;
 
         case WM_DESTROY:
             KillTimer(hWnd, kRenderTimerId);

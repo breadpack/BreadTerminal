@@ -209,6 +209,75 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             }
         }
     }
+
+    // Pass 4: Underlines
+    for (int row = 0; row < rows; ++row) {
+        for (int col = 0; col < cols; ++col) {
+            const TermCell& cell = screen.cellAt(row, col);
+
+            // Use underline_style if set, else fall back to AttrUnderline attribute
+            uint8_t ulStyle = cell.underline_style;
+            if (ulStyle == 0 && (cell.attributes & AttrUnderline)) {
+                ulStyle = 1; // default to single underline
+            }
+            if (ulStyle == 0) continue;
+
+            // Determine underline color
+            float ulColor[4];
+            if (cell.underline_color != kColorDefault) {
+                colorFromRGBA(colors.resolveFg(cell.underline_color), ulColor);
+            } else {
+                colorFromRGBA(colors.resolveFg(cell.fg_color), ulColor);
+            }
+
+            // Handle inverse attribute
+            if (cell.attributes & AttrInverse) {
+                // When inverse, fg and bg are swapped; underline should use the swapped fg
+                colorFromRGBA(colors.resolveBg(cell.bg_color), ulColor);
+                if (cell.underline_color != kColorDefault) {
+                    colorFromRGBA(colors.resolveFg(cell.underline_color), ulColor);
+                }
+            }
+
+            auto pushUnderlineRect = [&](float y, float h, uint32_t flags, uint32_t extraFlags) {
+                D3DCellInstance inst = {};
+                inst.position[0] = col * cellW;
+                inst.position[1] = y;
+                inst.atlas_size[0] = cellW;
+                inst.atlas_size[1] = h;
+                inst.bg_color[0] = ulColor[0];
+                inst.bg_color[1] = ulColor[1];
+                inst.bg_color[2] = ulColor[2];
+                inst.bg_color[3] = ulColor[3];
+                inst.flags = flags;
+                inst.extra_flags = extraFlags;
+                cellInstances.push_back(inst);
+            };
+
+            float baseY = row * cellH;
+
+            switch (ulStyle) {
+                case 1: // single - 1px line at bottom
+                    pushUnderlineRect(baseY + cellH - 2.0f, 1.0f, 8, 1);
+                    break;
+                case 2: // double - two 1px lines
+                    pushUnderlineRect(baseY + cellH - 3.0f, 1.0f, 8, 2);
+                    pushUnderlineRect(baseY + cellH - 1.0f, 1.0f, 8, 2);
+                    break;
+                case 3: // curly - 3px high, shader-patterned
+                    pushUnderlineRect(baseY + cellH - 4.0f, 3.0f, 16, 3);
+                    break;
+                case 4: // dotted - 1px, shader-patterned
+                    pushUnderlineRect(baseY + cellH - 2.0f, 1.0f, 16, 4);
+                    break;
+                case 5: // dashed - 1px, shader-patterned
+                    pushUnderlineRect(baseY + cellH - 2.0f, 1.0f, 16, 5);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
 }
 
 } // namespace termcore

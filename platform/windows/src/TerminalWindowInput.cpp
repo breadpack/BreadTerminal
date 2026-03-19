@@ -37,6 +37,70 @@ bool TerminalWindowState::sendMouseEvent(MouseEventType type,
 // --- Keyboard input ---
 
 void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
+    // Try keybinding lookup first
+    if (keybindings) {
+        uint8_t mods = 0;
+        if (GetKeyState(VK_SHIFT) & 0x8000) mods |= termcore::ModShift;
+        if (GetKeyState(VK_CONTROL) & 0x8000) mods |= termcore::ModCtrl;
+        if (GetKeyState(VK_MENU) & 0x8000) mods |= termcore::ModAlt;
+
+        uint32_t keycode = static_cast<uint32_t>(wParam);
+        // Map virtual keycodes to ASCII for printable keys
+        if (keycode >= 'A' && keycode <= 'Z') {
+            keycode = keycode - 'A' + 'a';  // lowercase
+        }
+
+        termcore::KeyCombo combo{keycode, mods};
+        auto action = keybindings->lookup(combo);
+
+        if (action != termcore::Action::None) {
+            switch (action) {
+                case termcore::Action::Copy:
+                    copySelectionToClipboard();
+                    return;
+                case termcore::Action::Paste:
+                    pasteFromClipboard();
+                    return;
+                case termcore::Action::SearchOpen:
+                    openSearch();
+                    return;
+                case termcore::Action::SearchClose:
+                    closeSearch();
+                    return;
+                case termcore::Action::FontIncrease:
+                    changeFontSize(1.0f);
+                    return;
+                case termcore::Action::FontDecrease:
+                    changeFontSize(-1.0f);
+                    return;
+                case termcore::Action::FontReset:
+                    resetFontSize();
+                    return;
+                case termcore::Action::ToggleFullscreen:
+                    toggleFullscreen();
+                    return;
+                case termcore::Action::ScrollPageUp:
+                    if (screen) screen->scrollViewportUp(screen->rows());
+                    needsRender = true;
+                    return;
+                case termcore::Action::ScrollPageDown:
+                    if (screen) screen->scrollViewportDown(screen->rows());
+                    needsRender = true;
+                    return;
+                case termcore::Action::ScrollToTop:
+                    if (screen) screen->scrollViewportToTop();
+                    needsRender = true;
+                    return;
+                case termcore::Action::ScrollToBottom:
+                    if (screen) screen->scrollViewportToBottom();
+                    needsRender = true;
+                    return;
+                default:
+                    break;
+            }
+        }
+    }
+
     bool appCursor = screen && screen->appCursorKeys();
     const char* pfx = appCursor ? "\x1bO" : "\x1b[";
     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
