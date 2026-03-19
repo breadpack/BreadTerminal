@@ -37,6 +37,7 @@ add_executable(termcore_tests
     test_kitty_graphics.cpp
     test_shell_integration.cpp
     test_variable_font.cpp
+    test_bitmap_flip.cpp
 )
 
 target_link_libraries(termcore_tests

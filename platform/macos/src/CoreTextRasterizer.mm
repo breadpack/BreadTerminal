@@ -69,6 +69,18 @@ bool checkColorGlyph(CTFontRef font) {
     return (traits & kCTFontTraitColorGlyphs) != 0;
 }
 
+/// Flip bitmap rows in-place: converts CG Y-up to Metal Y-down.
+void flipBitmapRows(uint8_t* data, int width, int height, int bytesPerPixel) {
+    int rowBytes = width * bytesPerPixel;
+    for (int y = 0; y < height / 2; ++y) {
+        uint8_t* top = data + y * rowBytes;
+        uint8_t* bot = data + (height - 1 - y) * rowBytes;
+        for (int i = 0; i < rowBytes; ++i) {
+            std::swap(top[i], bot[i]);
+        }
+    }
+}
+
 } // namespace
 
 class CoreTextRasterizerImpl : public IFontRasterizer {
@@ -212,6 +224,7 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
         float drawY = -std::min(bboxBottom, 0.0f) + subY;
         CGPoint position = CGPointMake(drawX, drawY);
         CTFontDrawGlyphs(font, &glyphId, &position, 1, ctx.get());
+        flipBitmapRows(result.bitmap.data(), w, h, 4);
     } else {
         result.format = PixelFormat::Grayscale;
         size_t bytesPerRow = static_cast<size_t>(w) * 4;
@@ -232,6 +245,7 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
         float drawY = -std::min(bboxBottom, 0.0f) + subY;
         CGPoint position = CGPointMake(drawX, drawY);
         CTFontDrawGlyphs(font, &glyphId, &position, 1, ctx.get());
+        flipBitmapRows(rgbaBuf.data(), w, h, 4);
 
         // Extract alpha channel as grayscale
         result.bitmap.resize(static_cast<size_t>(w) * static_cast<size_t>(h), 0);
