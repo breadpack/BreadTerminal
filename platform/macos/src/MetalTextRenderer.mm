@@ -92,7 +92,7 @@ struct MetalTextRenderer::Impl {
         desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
         desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
         desc.colorAttachments[0].sourceRGBBlendFactor =
-            MTLBlendFactorSourceAlpha;
+            MTLBlendFactorOne;
         desc.colorAttachments[0].destinationRGBBlendFactor =
             MTLBlendFactorOneMinusSourceAlpha;
         desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
@@ -225,7 +225,7 @@ fragment float4 cell_fragment(
         return float4(glyph.rgb, glyph.a);
     } else {
         float alpha = atlas_gray.sample(s, in.texCoord).r;
-        return float4(in.fg_color.rgb, alpha);
+        return float4(in.fg_color.rgb * alpha, alpha);
     }
 }
 )";

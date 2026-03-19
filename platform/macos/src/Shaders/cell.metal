@@ -102,6 +102,6 @@ fragment float4 cell_fragment(
         return float4(glyph.rgb, glyph.a);
     } else {
         float alpha = atlas_gray.sample(s, in.texCoord).r;
-        return float4(in.fg_color.rgb, alpha);
+        return float4(in.fg_color.rgb * alpha, alpha);
     }
 }
