@@ -56,7 +56,12 @@ private:
     // browser.*
     rpc::Response handleBrowserOpen(std::optional<int64_t> id, const nlohmann::json& p);
     rpc::Response handleBrowserNavigate(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleBrowserExecuteJS(std::optional<int64_t> id, const nlohmann::json& p);
     rpc::Response handleBrowserSnapshot(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleBrowserShow(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleBrowserHide(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleBrowserClick(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleBrowserFill(std::optional<int64_t> id, const nlohmann::json& p);
 
     // query.*
     rpc::Response handleQueryActivePane(std::optional<int64_t> id, const nlohmann::json& p);

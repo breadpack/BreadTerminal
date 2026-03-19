@@ -106,6 +106,8 @@ public:
     struct TabInfo {
         std::string title;
         bool active = false;
+        bool has_unread = false;      // show dot indicator
+        bool needs_attention = false;  // highlight tab background
     };
 
     /// Tab bar displayed at the top of the viewport.
@@ -128,6 +130,10 @@ public:
         float width;   // width in pixels (1 for vertical borders)
         float height;  // height in pixels (1 for horizontal borders)
         bool active;   // true if adjacent to active pane
+        bool needs_attention = false;  // glow border when agent needs input
+        bool has_unread = false;       // subtle dot when unread notifications
+        float ring_intensity = 0.0f;   // 0.0-1.0 pulse animation alpha
+        uint32_t ring_color = 0x007acc; // glow color (blue default, orange critical)
     };
 
     /// Pane border information for split pane rendering.

@@ -44,9 +44,14 @@ rpc::Response CommandDispatcher::dispatch(const rpc::Request& req) {
     if (method == "notify.send") return handleNotifySend(id, p);
 
     // browser.*
-    if (method == "browser.open")     return handleBrowserOpen(id, p);
-    if (method == "browser.navigate") return handleBrowserNavigate(id, p);
-    if (method == "browser.snapshot") return handleBrowserSnapshot(id, p);
+    if (method == "browser.open")      return handleBrowserOpen(id, p);
+    if (method == "browser.navigate")  return handleBrowserNavigate(id, p);
+    if (method == "browser.executeJS") return handleBrowserExecuteJS(id, p);
+    if (method == "browser.snapshot")  return handleBrowserSnapshot(id, p);
+    if (method == "browser.show")      return handleBrowserShow(id, p);
+    if (method == "browser.hide")      return handleBrowserHide(id, p);
+    if (method == "browser.click")     return handleBrowserClick(id, p);
+    if (method == "browser.fill")      return handleBrowserFill(id, p);
 
     // query.*
     if (method == "query.active-pane")  return handleQueryActivePane(id, p);
@@ -88,48 +93,6 @@ rpc::Response CommandDispatcher::handleNotifySend(
 
     auto nid = notifications_.add(pane_id, source, urgency, title, body);
     return rpc::makeResult(id, {{"notification_id", nid}});
-}
-
-// --- browser handlers ---
-
-rpc::Response CommandDispatcher::handleBrowserOpen(
-    std::optional<int64_t> id, const nlohmann::json& p) {
-    if (!p.contains("url") || !p["url"].is_string()) {
-        return rpc::makeError(id, rpc::kInvalidParams, "url required");
-    }
-    if (!webview_cb_) {
-        return rpc::makeError(id, rpc::kNotFound, "No active WebView");
-    }
-    webview_cb_("navigate", {{"url", p["url"].get<std::string>()}});
-    return rpc::makeResult(id, {{"success", true}});
-}
-
-rpc::Response CommandDispatcher::handleBrowserNavigate(
-    std::optional<int64_t> id, const nlohmann::json& p) {
-    if (!webview_cb_) {
-        return rpc::makeError(id, rpc::kNotFound, "No active WebView");
-    }
-    if (p.contains("url") && p["url"].is_string()) {
-        webview_cb_("navigate", {{"url", p["url"].get<std::string>()}});
-    } else if (p.contains("action") && p["action"].is_string()) {
-        auto action = p["action"].get<std::string>();
-        if (action == "back" || action == "forward" ||
-            action == "reload" || action == "stop") {
-            webview_cb_(action, {});
-        } else {
-            return rpc::makeError(id, rpc::kInvalidParams,
-                                  "Invalid action: " + action);
-        }
-    } else {
-        return rpc::makeError(id, rpc::kInvalidParams, "url or action required");
-    }
-    return rpc::makeResult(id, {{"success", true}});
-}
-
-rpc::Response CommandDispatcher::handleBrowserSnapshot(
-    std::optional<int64_t> id, const nlohmann::json& /*p*/) {
-    // Not fully implemented in v1
-    return rpc::makeError(id, rpc::kInternalError, "not_implemented");
 }
 
 // --- query handlers ---

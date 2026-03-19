@@ -2,12 +2,30 @@ if(NOT WIN32)
     return()
 endif()
 
-add_library(termcore_windows STATIC
+# --- WebView2 SDK (optional) ---
+set(HAS_WEBVIEW2 OFF)
+find_path(WEBVIEW2_INCLUDE_DIR WebView2.h
+    HINTS
+        "$ENV{NUGET_PACKAGES}/microsoft.web.webview2/1.0.2903.40/build/native/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/webview2/include"
+)
+if(WEBVIEW2_INCLUDE_DIR)
+    set(HAS_WEBVIEW2 ON)
+    add_library(webview2_sdk INTERFACE)
+    target_include_directories(webview2_sdk INTERFACE "${WEBVIEW2_INCLUDE_DIR}")
+    message(STATUS "WebView2 SDK: FOUND at ${WEBVIEW2_INCLUDE_DIR}")
+else()
+    message(STATUS "WebView2 SDK: NOT FOUND (WebView2Host will be stub)")
+endif()
+
+# --- termcore_windows static library ---
+set(TERMCORE_WIN_SOURCES
     src/DirectWriteRasterizer.cpp
     src/DirectWriteDiscovery.cpp
     src/D3DAtlasUploader.cpp
     src/D3DTextRenderer.cpp
     src/D3DCellBuilder.cpp
+    src/D3DCellBuilderOverlays.cpp
     src/ConfigWatcherWin.cpp
     src/TerminalWindowIME.cpp
     src/TerminalWindowNotify.cpp
@@ -16,13 +34,26 @@ add_library(termcore_windows STATIC
     src/D3DCustomShader.cpp
 )
 
+if(HAS_WEBVIEW2)
+    list(APPEND TERMCORE_WIN_SOURCES src/WebView2Host.cpp)
+endif()
+
+add_library(termcore_windows STATIC ${TERMCORE_WIN_SOURCES})
+
 target_include_directories(termcore_windows PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(termcore_windows PUBLIC
-    termcore dwrite d2d1 d3d11 dxgi d3dcompiler windowsapp imm32 dwmapi
+    termcore dwrite d2d1 d3d11 dxgi d3dcompiler windowsapp imm32 dwmapi shlwapi
 )
 
+if(HAS_WEBVIEW2)
+    target_link_libraries(termcore_windows PUBLIC webview2_sdk)
+    target_compile_definitions(termcore_windows PUBLIC HAS_WEBVIEW2=1)
+endif()
+
+# --- BreadTerminal executable ---
 add_executable(BreadTerminal WIN32
     src/main.cpp
     src/TerminalWindow.cpp

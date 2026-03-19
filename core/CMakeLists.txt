@@ -29,8 +29,10 @@ set(TERMCORE_SOURCES
     src/mux.cpp
     src/mux_layout.cpp
     src/notification.cpp
+    src/notification_visual.cpp
     src/config.cpp
     src/config_diff.cpp
+    src/ghostty_config_import.cpp
     src/config_themes.cpp
     src/theme_loader.cpp
     src/theme_index.cpp
@@ -38,6 +40,8 @@ set(TERMCORE_SOURCES
     src/agent.cpp
     src/keybinding.cpp
     src/git_branch_detector.cpp
+    src/port_detector.cpp
+    src/pr_detector.cpp
     src/workspace_status.cpp
     src/search.cpp
     src/url_detector.cpp
@@ -56,6 +60,7 @@ set(TERMCORE_SOURCES
     src/socket/jsonrpc.cpp
     src/socket/command_dispatcher_mux.cpp
     src/socket/command_dispatcher_misc.cpp
+    src/socket/command_dispatcher_browser.cpp
     src/socket/socket_server.cpp
 )
 

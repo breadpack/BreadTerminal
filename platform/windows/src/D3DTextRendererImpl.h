@@ -100,6 +100,10 @@ struct D3DTextRenderer::Impl {
     bool isCellSelected(int row, int col) const;
     int searchHighlightType(int row, int col) const;
     void buildCellBuffer(const Screen& screen);
+
+    // Overlay passes (implemented in D3DCellBuilderOverlays.cpp)
+    void buildOverlayPasses(const Screen& screen, float cellW, float cellH,
+                            float ascent, float fontSize);
 };
 
 } // namespace termcore
