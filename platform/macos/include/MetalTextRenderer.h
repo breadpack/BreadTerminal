@@ -6,6 +6,7 @@
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/font_collection.h"
+#include <algorithm>
 #include <memory>
 
 #ifdef __OBJC__
@@ -42,6 +43,48 @@ struct CellUniforms {
 };
 static_assert(sizeof(CellUniforms) == 32, "CellUniforms must be exactly 32 bytes");
 
+/// Selection state passed from the view to the renderer.
+struct SelectionState {
+    bool active = false;      // Is a selection in progress?
+    bool block = false;       // Block (rectangular) selection mode?
+    int start_row = 0;
+    int start_col = 0;
+    int end_row = 0;
+    int end_col = 0;
+
+    /// Normalize so start <= end (for line-based selection).
+    void normalize(int& sr, int& sc, int& er, int& ec) const {
+        sr = start_row; sc = start_col;
+        er = end_row;   ec = end_col;
+        if (sr > er || (sr == er && sc > ec)) {
+            std::swap(sr, er);
+            std::swap(sc, ec);
+        }
+    }
+
+    /// Check if cell (row, col) is within the selection.
+    bool contains(int row, int col) const {
+        if (!active) return false;
+        int sr, sc, er, ec;
+        normalize(sr, sc, er, ec);
+        if (block) {
+            // Rectangular: each row uses same column range
+            int minCol = std::min(sc, ec);
+            int maxCol = std::max(sc, ec);
+            // Re-compute row range without column normalization
+            int minRow = std::min(start_row, end_row);
+            int maxRow = std::max(start_row, end_row);
+            return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+        }
+        // Line-based selection
+        if (row < sr || row > er) return false;
+        if (sr == er) return col >= sc && col <= ec;
+        if (row == sr) return col >= sc;
+        if (row == er) return col <= ec;
+        return true; // middle rows are fully selected
+    }
+};
+
 /// Metal-based terminal text renderer.
 /// Reads Screen data and renders cells using instanced draw calls.
 class MetalTextRenderer {
@@ -60,6 +103,9 @@ public:
                       GlyphCache* cache,
                       GlyphAtlas* atlas,
                       IFontRasterizer* rasterizer);
+
+    /// Set the current selection state for rendering.
+    void setSelection(const SelectionState& sel);
 
     /// Render a frame: read Screen data, build cell buffer, draw.
     void render(const Screen& screen);

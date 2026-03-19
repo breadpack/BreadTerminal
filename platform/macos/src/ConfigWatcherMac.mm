@@ -2,12 +2,26 @@
 
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/theme_loader.h"
+
+#import <Cocoa/Cocoa.h>
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <dispatch/dispatch.h>
 
 namespace termcore {
+
+namespace {
+bool detectSystemIsDark() {
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName match = [NSApp.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+        return [match isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return true;  // Pre-Mojave: assume dark
+}
+} // namespace
 
 ConfigWatcherMac::ConfigWatcherMac() = default;
 
@@ -25,7 +39,8 @@ void ConfigWatcherMac::start(const std::string& path, ConfigReloadCallback callb
     try {
         last_good_config_ = parseConfigFile(path_);
         if (!last_good_config_.theme.empty()) {
-            auto* theme = getBuiltinTheme(last_good_config_.theme);
+            std::string resolved = resolveThemeForAppearance(last_good_config_.theme, detectSystemIsDark());
+            auto theme = findTheme(resolved);
             if (theme) applyTheme(last_good_config_, *theme);
         }
     } catch (...) {
@@ -171,7 +186,8 @@ void ConfigWatcherMac::doReload() {
     try {
         Config new_config = parseConfigFile(path_);
         if (!new_config.theme.empty()) {
-            auto* theme = getBuiltinTheme(new_config.theme);
+            std::string resolved = resolveThemeForAppearance(new_config.theme, detectSystemIsDark());
+            auto theme = findTheme(resolved);
             if (theme) applyTheme(new_config, *theme);
         }
 

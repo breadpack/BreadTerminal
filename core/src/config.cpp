@@ -77,6 +77,10 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
         config.clipboard_paste_bracketed_safe = (value == "true" || value == "1" || value == "yes");
     } else if (key == "allow-clipboard-write") {
         config.allow_clipboard_write = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "notify-on-command-finish") {
+        config.notify_on_command_finish = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "notify-after-seconds") {
+        config.notify_after_seconds = std::clamp(std::stof(value), 0.0f, 3600.0f);
     } else if (key == "background-opacity") {
         config.background_opacity = std::clamp(std::stof(value), 0.0f, 1.0f);
     } else if (key == "background-blur") {
@@ -118,7 +122,10 @@ Config parseConfigString(const std::string& content) {
             if (key == "theme") {
                 std::string value = trim(line.substr(eq + 1));
                 config.theme = value;
-                auto theme = findTheme(value);
+                // For adaptive themes, default to dark variant during parsing.
+                // The platform layer will re-resolve based on actual appearance.
+                std::string resolved = resolveThemeForAppearance(value, /*is_dark=*/true);
+                auto theme = findTheme(resolved);
                 if (theme) {
                     applyTheme(config, *theme);
                 }
@@ -277,6 +284,12 @@ std::string serializeConfig(const Config& config) {
     out << "allow-clipboard-write = " << (config.allow_clipboard_write ? "true" : "false") << "\n";
     out << "\n";
 
+    // Command completion notifications
+    out << "# Command completion notifications\n";
+    out << "notify-on-command-finish = " << (config.notify_on_command_finish ? "true" : "false") << "\n";
+    out << "notify-after-seconds = " << config.notify_after_seconds << "\n";
+    out << "\n";
+
     // Background transparency
     out << "# Background transparency\n";
     out << "background-opacity = " << config.background_opacity << "\n";
@@ -343,6 +356,62 @@ void applyTheme(Config& config, const Theme& theme) {
     for (int i = 0; i < 16; ++i) {
         config.palette[i] = theme.palette[i];
     }
+}
+
+bool isAdaptiveTheme(const std::string& theme_str) {
+    return theme_str.find("dark:") != std::string::npos &&
+           theme_str.find("light:") != std::string::npos;
+}
+
+std::optional<AdaptiveTheme> parseAdaptiveTheme(const std::string& theme_str) {
+    if (!isAdaptiveTheme(theme_str)) return std::nullopt;
+
+    AdaptiveTheme result;
+
+    // Split on comma
+    auto comma = theme_str.find(',');
+    std::string part1, part2;
+    if (comma != std::string::npos) {
+        part1 = theme_str.substr(0, comma);
+        part2 = theme_str.substr(comma + 1);
+    } else {
+        return std::nullopt;
+    }
+
+    // Trim parts
+    auto trimPart = [](const std::string& s) -> std::string {
+        auto start = s.find_first_not_of(" \t");
+        if (start == std::string::npos) return "";
+        auto end = s.find_last_not_of(" \t");
+        return s.substr(start, end - start + 1);
+    };
+
+    part1 = trimPart(part1);
+    part2 = trimPart(part2);
+
+    // Parse each part: "dark:name" or "light:name"
+    auto parsePart = [&](const std::string& part) {
+        if (part.substr(0, 5) == "dark:") {
+            result.dark_theme = trimPart(part.substr(5));
+        } else if (part.substr(0, 6) == "light:") {
+            result.light_theme = trimPart(part.substr(6));
+        }
+    };
+
+    parsePart(part1);
+    parsePart(part2);
+
+    if (result.dark_theme.empty() || result.light_theme.empty()) {
+        return std::nullopt;
+    }
+
+    return result;
+}
+
+std::string resolveThemeForAppearance(const std::string& theme_str, bool is_dark) {
+    auto adaptive = parseAdaptiveTheme(theme_str);
+    if (!adaptive) return theme_str;
+    return is_dark ? adaptive->dark_theme : adaptive->light_theme;
 }
 
 } // namespace termcore

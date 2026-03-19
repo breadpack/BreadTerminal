@@ -121,6 +121,7 @@ target_link_libraries(BreadTerminal PRIVATE
     "-framework QuartzCore"
     "-framework CoreText"
     "-framework CoreGraphics"
+    "-framework UserNotifications"
 )
 
 # Enable Objective-C++ with ARC for app source files

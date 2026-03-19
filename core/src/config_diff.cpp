@@ -79,6 +79,12 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
         flags |= ConfigDirtyFlags::Sidebar;
     }
 
+    // --- Notification ---
+    if (old_cfg.notify_on_command_finish != new_cfg.notify_on_command_finish ||
+        std::abs(old_cfg.notify_after_seconds - new_cfg.notify_after_seconds) > 0.001f) {
+        flags |= ConfigDirtyFlags::Notification;
+    }
+
     return flags;
 }
 

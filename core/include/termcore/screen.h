@@ -4,6 +4,7 @@
 #include "termcore/dynamic_colors.h"
 #include "termcore/kitty_keyboard.h"
 #include "termcore/vt_parser.h"
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -114,6 +115,14 @@ public:
     PromptState promptState() const { return prompt_state_; }
     const TermNotification& lastNotification() const { return last_notification_; }
 
+    // --- Prompt navigation (OSC 133) ---
+    const std::vector<int>& promptRows() const { return prompt_rows_; }
+    int previousPromptRow(int from_row) const;
+    int nextPromptRow(int from_row) const;
+    /// Find the output region (start_row, end_row) containing the given row.
+    /// Returns {-1,-1} if no output region found.
+    std::pair<int,int> outputRegionAt(int row) const;
+
     // --- Response callback (for writing back to PTY) ---
     using ResponseCallback = std::function<void(const std::string&)>;
     void setResponseCallback(ResponseCallback cb) { response_callback_ = std::move(cb); }
@@ -137,6 +146,11 @@ public:
 
     /// Control whether OSC 52 clipboard writes are allowed (default: false, secure by default).
     void setClipboardWriteAllowed(bool allowed) { clipboard_write_allowed_ = allowed; }
+
+    // --- Command finish callback (for desktop notifications) ---
+    using CommandFinishCallback = std::function<void(double duration_seconds)>;
+    void setCommandFinishCallback(CommandFinishCallback cb) { command_finish_callback_ = std::move(cb); }
+    void setNotifyAfterSeconds(float seconds) { notify_after_seconds_ = seconds; }
 
     // --- Dynamic colors ---
     struct DynamicColorEvent {
@@ -217,6 +231,16 @@ private:
     PromptState prompt_state_ = PromptState::None;
     TermNotification last_notification_;
 
+    /// Prompt marker positions for navigation.
+    /// Each entry stores the absolute row (scrollback_size + cursor_row at time of marker).
+    /// Stored as: { absolute_row, marker_type } where marker_type matches PromptState.
+    struct PromptMarker {
+        int absolute_row;
+        PromptState type;
+    };
+    std::vector<int> prompt_rows_;            // absolute rows of 'A' markers
+    std::vector<PromptMarker> prompt_markers_; // all markers for region detection
+
     // REP (repeat character)
     char32_t last_printed_ = 0;
 
@@ -232,6 +256,12 @@ private:
     NotificationCallback notification_callback_;
     ClipboardCallback clipboard_callback_;
     DynamicColorCallback dynamic_color_callback_;
+    CommandFinishCallback command_finish_callback_;
+
+    // Command execution timing (for completion notifications)
+    std::chrono::steady_clock::time_point command_start_time_;
+    bool command_running_ = false;
+    float notify_after_seconds_ = 5.0f;
 
     // Security: OSC 52 clipboard write gate (default: denied)
     bool clipboard_write_allowed_ = false;

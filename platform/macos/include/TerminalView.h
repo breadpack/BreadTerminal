@@ -53,6 +53,10 @@ enum class Action : uint16_t;
 /// Show a transient config error banner at the top of the view.
 - (void)showConfigError:(NSString*)message;
 
+/// Apply a named theme (resolves from built-in and user themes).
+/// Updates screen dynamic colors and triggers re-render.
+- (void)applyThemeByName:(const std::string&)themeName;
+
 @property (nonatomic, readonly) int termRows;
 @property (nonatomic, readonly) int termCols;
 

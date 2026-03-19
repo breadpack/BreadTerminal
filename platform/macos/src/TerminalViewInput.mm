@@ -312,6 +312,36 @@ static uint8_t modsFromEvent(NSEvent* event) {
         [[NSNotificationCenter defaultCenter]
             postNotificationName:@"BreadTerminalReloadConfig" object:nil];
         break;
+    case termcore::Action::JumpPromptUp: {
+        if (!_impl->screen) break;
+        // Current top visible absolute row
+        int scrollbackSize = (int)_impl->screen->scrollbackSize();
+        int topAbsRow = scrollbackSize - _scrollOffset;
+        int target = _impl->screen->previousPromptRow(topAbsRow);
+        if (target >= 0) {
+            // Convert absolute row to scroll offset
+            _scrollOffset = std::max(0, scrollbackSize - target);
+            _scrollOffset = std::min(_scrollOffset, scrollbackSize);
+            [self setNeedsRender];
+        }
+        break;
+    }
+    case termcore::Action::JumpPromptDown: {
+        if (!_impl->screen) break;
+        int scrollbackSize = (int)_impl->screen->scrollbackSize();
+        int topAbsRow = scrollbackSize - _scrollOffset;
+        int target = _impl->screen->nextPromptRow(topAbsRow);
+        if (target >= 0) {
+            _scrollOffset = std::max(0, scrollbackSize - target);
+            _scrollOffset = std::min(_scrollOffset, scrollbackSize);
+            [self setNeedsRender];
+        } else {
+            // No next prompt, scroll to bottom
+            _scrollOffset = 0;
+            [self setNeedsRender];
+        }
+        break;
+    }
     default:
         break;
     }
@@ -470,6 +500,34 @@ static uint8_t modsFromEvent(NSEvent* event) {
     if (!_impl->screen || !_selecting) return;
     int sr = (int)_selectionStart.y, er = (int)_selectionEnd.y;
     int sc = (int)_selectionStart.x, ec = (int)_selectionEnd.x;
+
+    if (_blockSelection) {
+        // Block (rectangular) selection: each row uses same column range
+        int minRow = std::min(sr, er);
+        int maxRow = std::max(sr, er);
+        int minCol = std::min(sc, ec);
+        int maxCol = std::max(sc, ec);
+        NSMutableString* result = [NSMutableString string];
+        for (int r = minRow; r <= maxRow; r++) {
+            auto lt = _impl->screen->getLineText(r);
+            NSString* line = [NSString stringWithUTF8String:lt.c_str()];
+            if (!line) continue;
+            NSUInteger from = std::min((NSUInteger)minCol, line.length);
+            NSUInteger to = std::min((NSUInteger)(maxCol + 1), line.length);
+            if (to > from) {
+                [result appendString:[line substringWithRange:NSMakeRange(from, to - from)]];
+            }
+            if (r < maxRow) [result appendString:@"\n"];
+        }
+        if (result.length > 0) {
+            NSPasteboard* pb = [NSPasteboard generalPasteboard];
+            [pb clearContents];
+            [pb setString:result forType:NSPasteboardTypeString];
+        }
+        return;
+    }
+
+    // Line-based selection
     if (sr > er || (sr == er && sc > ec)) { std::swap(sr, er); std::swap(sc, ec); }
     NSMutableString* result = [NSMutableString string];
     for (int r = sr; r <= er; r++) {
@@ -547,6 +605,15 @@ static uint8_t modsFromEvent(NSEvent* event) {
     [self setNeedsRender];
 }
 
+#pragma mark - Word boundary detection
+
+static bool isWordChar(char32_t cp) {
+    return cp > ' ' && cp != '"' && cp != '\'' && cp != '(' && cp != ')'
+        && cp != '[' && cp != ']' && cp != '{' && cp != '}'
+        && cp != '<' && cp != '>' && cp != '`' && cp != '|'
+        && cp != ';' && cp != '&';
+}
+
 #pragma mark - Mouse events
 
 - (NSPoint)cellPositionForEvent:(NSEvent*)event {
@@ -558,6 +625,52 @@ static uint8_t modsFromEvent(NSEvent* event) {
     int col = std::max(0, std::min((int)(loc.x * scale / _cellWidth), self.termCols - 1));
     int row = std::max(0, std::min((int)(flippedY * scale / _cellHeight), self.termRows - 1));
     return NSMakePoint(col, row);
+}
+
+- (void)selectWordAtRow:(int)row col:(int)col {
+    if (!_impl->screen) return;
+    int cols = _impl->screen->cols();
+
+    // Find left boundary
+    int left = col;
+    while (left > 0) {
+        char32_t cp = _impl->screen->cellAt(row, left - 1).codepoint;
+        if (!isWordChar(cp)) break;
+        left--;
+    }
+
+    // Find right boundary
+    int right = col;
+    while (right < cols - 1) {
+        char32_t cp = _impl->screen->cellAt(row, right + 1).codepoint;
+        if (!isWordChar(cp)) break;
+        right++;
+    }
+
+    _selectionStart = NSMakePoint(left, row);
+    _selectionEnd = NSMakePoint(right, row);
+    _selecting = YES;
+    _blockSelection = NO;
+    _impl->needsRender = true;
+}
+
+- (void)selectLineAtRow:(int)row {
+    if (!_impl->screen) return;
+    int cols = _impl->screen->cols();
+
+    // Find last non-space column
+    int lastCol = cols - 1;
+    while (lastCol > 0) {
+        char32_t cp = _impl->screen->cellAt(row, lastCol).codepoint;
+        if (cp != ' ' && cp != 0) break;
+        lastCol--;
+    }
+
+    _selectionStart = NSMakePoint(0, row);
+    _selectionEnd = NSMakePoint(lastCol, row);
+    _selecting = YES;
+    _blockSelection = NO;
+    _impl->needsRender = true;
 }
 
 - (int)modifierBitsForEvent:(NSEvent*)event {
@@ -590,6 +703,28 @@ static uint8_t modsFromEvent(NSEvent* event) {
     if (self.window.firstResponder != self) {
         [self.window makeFirstResponder:self];
     }
+
+    // Cmd+triple-click: select command output region
+    if ((event.modifierFlags & NSEventModifierFlagCommand) &&
+        event.clickCount == 3 && _impl->screen) {
+        NSPoint cell = [self cellPositionForEvent:event];
+        int visibleRow = (int)cell.y;
+        int scrollbackSize = (int)_impl->screen->scrollbackSize();
+        int absoluteRow = scrollbackSize - _scrollOffset + visibleRow;
+        auto [startRow, endRow] = _impl->screen->outputRegionAt(absoluteRow);
+        if (startRow >= 0) {
+            // Convert absolute rows back to visible rows
+            int visStart = startRow - (scrollbackSize - _scrollOffset);
+            int visEnd   = endRow   - (scrollbackSize - _scrollOffset);
+            _selectionStart = NSMakePoint(0, visStart);
+            _selectionEnd   = NSMakePoint(_impl->screen->cols() - 1, visEnd - 1);
+            _selecting = YES;
+            _blockSelection = NO;
+            [self setNeedsRender];
+            return;
+        }
+    }
+
     // Cmd+click to open URL
     if (event.modifierFlags & NSEventModifierFlagCommand) {
         NSPoint cell = [self cellPositionForEvent:event];
@@ -606,9 +741,28 @@ static uint8_t modsFromEvent(NSEvent* event) {
     }
 
     if ([self sendMouseEvent:0 button:0 event:event]) return;
-    _selectionStart = [self cellPositionForEvent:event];
-    _selectionEnd = _selectionStart;
+
+    NSPoint cell = [self cellPositionForEvent:event];
+    int clickCount = (int)event.clickCount;
+
+    // Triple-click: select entire line
+    if (clickCount == 3) {
+        [self selectLineAtRow:(int)cell.y];
+        return;
+    }
+
+    // Double-click: select word at cursor
+    if (clickCount == 2) {
+        [self selectWordAtRow:(int)cell.y col:(int)cell.x];
+        return;
+    }
+
+    // Single click: start normal or block selection
+    _selectionStart = cell;
+    _selectionEnd = cell;
     _selecting = YES;
+    _blockSelection = (event.modifierFlags & NSEventModifierFlagOption) != 0;
+    _impl->needsRender = true;
 }
 
 - (void)mouseUp:(NSEvent*)event {
@@ -618,7 +772,12 @@ static uint8_t modsFromEvent(NSEvent* event) {
 
 - (void)mouseDragged:(NSEvent*)event {
     if ([self sendMouseEvent:2 button:0 event:event]) return;
-    if (_selecting) { _selectionEnd = [self cellPositionForEvent:event]; _impl->needsRender = true; }
+    if (_selecting) {
+        _selectionEnd = [self cellPositionForEvent:event];
+        // Allow toggling block selection during drag if Alt is pressed/released
+        _blockSelection = (event.modifierFlags & NSEventModifierFlagOption) != 0;
+        _impl->needsRender = true;
+    }
 }
 
 - (void)rightMouseDown:(NSEvent*)event {

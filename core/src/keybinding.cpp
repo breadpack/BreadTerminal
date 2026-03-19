@@ -82,6 +82,8 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"clear_scrollback", Action::ClearScrollback},
         {"show_notifications", Action::ShowNotifications},
         {"reload_config", Action::ReloadConfig},
+        {"jump_prompt_up", Action::JumpPromptUp},
+        {"jump_prompt_down", Action::JumpPromptDown},
         {"toggle_sidebar", Action::ToggleSidebar},
         {"switch_workspace_1", Action::SwitchWorkspace1},
         {"switch_workspace_2", Action::SwitchWorkspace2},
@@ -230,6 +232,8 @@ void KeybindingManager::initDefaults() {
     b("cmd+-",       Action::FontDecrease);
     b("cmd+0",       Action::FontReset);
     b("cmd+k",       Action::ClearScrollback);
+    b("cmd+up",      Action::JumpPromptUp);
+    b("cmd+down",    Action::JumpPromptDown);
     b("cmd+n",       Action::NewWindow);
     b("cmd+shift+,", Action::ReloadConfig);
     b("cmd+shift+b", Action::ToggleSidebar);

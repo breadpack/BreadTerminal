@@ -9,6 +9,7 @@
 
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/theme_loader.h"
 #include "termcore/socket/socket_server.h"
 #include "termcore/socket/command_dispatcher.h"
 #include "termcore/socket/socket_transport.h"
@@ -39,7 +40,15 @@
     std::string configPath = termcore::defaultConfigPath();
     termcore::Config config = termcore::parseConfigFile(configPath);
     if (!config.theme.empty()) {
-        auto* theme = termcore::getBuiltinTheme(config.theme);
+        // Detect current system appearance for adaptive theme resolution
+        BOOL isDark = YES;
+        if (@available(macOS 10.14, *)) {
+            NSAppearanceName appearance = [NSApp.effectiveAppearance
+                bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+            isDark = [appearance isEqualToString:NSAppearanceNameDarkAqua];
+        }
+        std::string resolved = termcore::resolveThemeForAppearance(config.theme, isDark);
+        auto theme = termcore::findTheme(resolved);
         if (theme) termcore::applyTheme(config, *theme);
     }
 

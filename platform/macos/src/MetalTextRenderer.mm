@@ -60,6 +60,9 @@ struct MetalTextRenderer::Impl {
     bool lastBlinkState = true;
     size_t cellCountBeforeCursor = 0; // index where cursor instances begin
 
+    // Selection state
+    SelectionState selection;
+
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;
     id<MTLTexture> dummyBGRA;
@@ -299,6 +302,10 @@ fragment float4 cell_fragment(
 
         uint8_t bgAlpha = static_cast<uint8_t>(255.0f * backgroundOpacity);
 
+        // Selection highlight color (use highlight_bg from dynamic colors, with fg as contrast)
+        uint32_t selBg = dc.highlight_bg;
+        uint32_t selFg = dc.background; // dark text on highlight
+
         // Pass 1: Background quads
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
@@ -307,6 +314,13 @@ fragment float4 cell_fragment(
                 uint32_t fg = dc.resolveFg(cell.fg_color);
                 uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
+
+                // Apply selection highlight: swap fg/bg for selected cells
+                bool selected = selection.contains(row, col);
+                if (selected) {
+                    bg = selBg;
+                    fg = selFg;
+                }
 
                 CellInstance inst = {};
                 inst.grid_col = static_cast<uint16_t>(col);
@@ -375,6 +389,9 @@ fragment float4 cell_fragment(
                         uint32_t fg = dc.resolveFg(cell.fg_color);
                         uint32_t bg = dc.resolveBg(cell.bg_color);
                         if (cell.attributes & AttrInverse) std::swap(fg, bg);
+                        if (selection.contains(row, col)) {
+                            fg = selFg; bg = selBg;
+                        }
 
                         CellInstance inst = {};
                         inst.grid_col = static_cast<uint16_t>(col);
@@ -418,6 +435,9 @@ fragment float4 cell_fragment(
                 uint32_t fg = dc.resolveFg(cell.fg_color);
                 uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
+                if (selection.contains(row, col)) {
+                    fg = selFg; bg = selBg;
+                }
 
                 bool is_wide = (cell.width == 2);
 
@@ -596,6 +616,10 @@ void MetalTextRenderer::setFontStack(FontCollection* collection,
             }
         }
     }
+}
+
+void MetalTextRenderer::setSelection(const SelectionState& sel) {
+    impl_->selection = sel;
 }
 
 void MetalTextRenderer::render(const Screen& screen) {

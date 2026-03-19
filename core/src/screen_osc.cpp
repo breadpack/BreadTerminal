@@ -265,19 +265,39 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     //          C (input end/output start), D (output end)
     if (str.empty()) return;
 
+    int absolute_row = static_cast<int>(scrollback_.size()) + cursor_.row;
+
     switch (str[0]) {
     case 'A':
         prompt_state_ = PromptState::Prompt;
+        prompt_rows_.push_back(absolute_row);
+        prompt_markers_.push_back({absolute_row, PromptState::Prompt});
         break;
     case 'B':
         prompt_state_ = PromptState::Input;
+        prompt_markers_.push_back({absolute_row, PromptState::Input});
         break;
     case 'C':
         prompt_state_ = PromptState::Output;
+        prompt_markers_.push_back({absolute_row, PromptState::Output});
+        // Record command start time for completion notifications
+        command_start_time_ = std::chrono::steady_clock::now();
+        command_running_ = true;
         break;
-    case 'D':
+    case 'D': {
         prompt_state_ = PromptState::None;
+        prompt_markers_.push_back({absolute_row, PromptState::None});
+        // Compute command duration and fire callback if threshold exceeded
+        if (command_running_ && command_finish_callback_) {
+            auto now = std::chrono::steady_clock::now();
+            double duration = std::chrono::duration<double>(now - command_start_time_).count();
+            if (duration >= static_cast<double>(notify_after_seconds_)) {
+                command_finish_callback_(duration);
+            }
+        }
+        command_running_ = false;
         break;
+    }
     default:
         break;
     }
@@ -441,6 +461,57 @@ void Screen::handleOscResetColor(int osc_number, const std::string& str) {
             dynamic_color_callback_({slot, 0});
         }
     }
+}
+
+// --- Prompt navigation methods ---
+
+int Screen::previousPromptRow(int from_row) const {
+    // from_row is an absolute row (scrollback + visible).
+    // Search prompt_rows_ for the nearest row strictly above from_row.
+    int best = -1;
+    for (int r : prompt_rows_) {
+        if (r < from_row) {
+            best = r;
+        }
+    }
+    return best;
+}
+
+int Screen::nextPromptRow(int from_row) const {
+    // Search prompt_rows_ for the nearest row strictly below from_row.
+    for (int r : prompt_rows_) {
+        if (r > from_row) {
+            return r;
+        }
+    }
+    return -1;
+}
+
+std::pair<int,int> Screen::outputRegionAt(int row) const {
+    // Find the output region containing or nearest to the given absolute row.
+    // Output region: from a 'C' marker to the next 'A' marker (or end of content).
+    int output_start = -1;
+    int output_end = -1;
+
+    for (size_t i = 0; i < prompt_markers_.size(); ++i) {
+        if (prompt_markers_[i].type == PromptState::Output &&
+            prompt_markers_[i].absolute_row <= row) {
+            output_start = prompt_markers_[i].absolute_row;
+            // Find the end: next A marker or end of content
+            output_end = static_cast<int>(scrollback_.size()) + rows_;
+            for (size_t j = i + 1; j < prompt_markers_.size(); ++j) {
+                if (prompt_markers_[j].type == PromptState::Prompt) {
+                    output_end = prompt_markers_[j].absolute_row;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (output_start >= 0 && row < output_end) {
+        return {output_start, output_end};
+    }
+    return {-1, -1};
 }
 
 } // namespace termcore

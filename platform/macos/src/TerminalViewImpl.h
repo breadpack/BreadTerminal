@@ -45,6 +45,8 @@ struct TerminalViewImpl {
     __strong dispatch_source_t ptyReadSource = nullptr;
     NSTimer* renderTimer = nil;
     bool needsRender = false;
+    bool notifyOnCommandFinish = true;
+    std::string currentThemeString;  // Stores the raw theme config value (may be adaptive)
 
     ~TerminalViewImpl() {
         if (ptyReadSource) {
@@ -67,6 +69,7 @@ struct TerminalViewImpl {
     NSPoint _selectionStart;
     NSPoint _selectionEnd;
     BOOL _selecting;
+    BOOL _blockSelection;   // Alt+drag rectangular selection
     int _scrollOffset;
     BOOL _searchActive;
     NSTextField* _searchField;
@@ -86,6 +89,9 @@ struct TerminalViewImpl {
 - (termcore::NotificationStore&)notifications;
 - (termcore::AgentTracker&)agentTracker;
 - (termcore::Pty*)pty;
+
+/// Post a macOS desktop notification for command completion.
+- (void)postCommandFinishNotification:(double)duration;
 
 @end
 

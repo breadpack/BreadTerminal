@@ -15,7 +15,9 @@
 #include "CoreTextRasterizer.h"
 #include "CoreTextDiscovery.h"
 #include "TerminalViewImpl.h"
+#include "termcore/theme_loader.h"
 
+#import <UserNotifications/UserNotifications.h>
 #include <dispatch/dispatch.h>
 #include <memory>
 
@@ -152,11 +154,63 @@
     // Cursor blink interval
     _impl->renderer->setCursorBlinkInterval(config.cursor_blink_interval);
 
+    // Command completion notification settings
+    _impl->notifyOnCommandFinish = config.notify_on_command_finish;
+    _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
+
+    // Store the raw theme string for adaptive theme switching
+    if (!config.theme.empty()) {
+        _impl->currentThemeString = config.theme;
+    }
+
+    // Initialize screen dynamic colors from the (already theme-resolved) config
+    _impl->screen->initDynamicColors(config);
+
     // Background transparency & blur
     [self applyTransparencyConfig:config];
 
     // Recalculate grid with potentially new font metrics
     [self updateGridSize];
+}
+
+- (void)applyThemeByName:(const std::string&)themeName {
+    auto theme = termcore::findTheme(themeName);
+    if (!theme) return;
+
+    // Build a temporary config with the theme colors applied
+    termcore::Config tempConfig;
+    termcore::applyTheme(tempConfig, *theme);
+
+    // Update the screen's dynamic colors
+    _impl->screen->initDynamicColors(tempConfig);
+
+    // Update transparency config (background color may have changed)
+    [self applyTransparencyConfig:tempConfig];
+
+    // Trigger re-render
+    _impl->needsRender = true;
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+
+    // Only react if we have an adaptive theme configured
+    if (_impl->currentThemeString.empty() ||
+        !termcore::isAdaptiveTheme(_impl->currentThemeString)) {
+        return;
+    }
+
+    // Detect current appearance
+    BOOL isDark = YES;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName match = [self.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+        isDark = [match isEqualToString:NSAppearanceNameDarkAqua];
+    }
+
+    // Resolve and apply the appropriate theme variant
+    std::string resolved = termcore::resolveThemeForAppearance(_impl->currentThemeString, isDark);
+    [self applyThemeByName:resolved];
 }
 
 - (void)applyTransparencyConfig:(const termcore::Config&)config {
@@ -279,10 +333,28 @@
         NSLog(@"BreadTerminal: failed to spawn shell");
         return;
     }
+
+    // Wire command finish callback for desktop notifications
+    __weak TerminalView* weakSelf = self;
+    _impl->screen->setCommandFinishCallback([weakSelf](double duration_seconds) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TerminalView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            // Check if notifications are enabled
+            if (!strongSelf->_impl->notifyOnCommandFinish) return;
+
+            // Only notify if the window is NOT the key window (app not focused)
+            NSWindow* window = strongSelf.window;
+            if (window && [window isKeyWindow] && [NSApp isActive]) return;
+
+            [strongSelf postCommandFinishNotification:duration_seconds];
+        });
+    });
+
     int fd = _impl->pty->fd();
     dispatch_source_t src = dispatch_source_create(
         DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
-    __weak TerminalView* weakSelf = self;
     dispatch_source_set_event_handler(src, ^{
         TerminalView* s = weakSelf;
         if (s) [s readPtyData];
@@ -419,6 +491,18 @@
         }
     }
 
+    // Pass selection state to renderer
+    {
+        termcore::SelectionState sel;
+        sel.active = _selecting;
+        sel.block = _blockSelection;
+        sel.start_row = (int)_selectionStart.y;
+        sel.start_col = (int)_selectionStart.x;
+        sel.end_row = (int)_selectionEnd.y;
+        sel.end_col = (int)_selectionEnd.x;
+        _impl->renderer->setSelection(sel);
+    }
+
     _impl->renderer->render(*_impl->screen);
 
     // Restore original cells
@@ -451,6 +535,14 @@
     }
 
     if (hasFlag(dirty, ConfigDirtyFlags::Colors) || hasFlag(dirty, ConfigDirtyFlags::Theme)) {
+        // Update stored theme string for adaptive theme switching
+        if (!config.theme.empty()) {
+            _impl->currentThemeString = config.theme;
+        }
+
+        // Update screen dynamic colors from the new config
+        _impl->screen->initDynamicColors(config);
+
         // Re-apply transparency/background settings
         [self applyTransparencyConfig:config];
     }
@@ -465,7 +557,39 @@
         }
     }
 
+    if (hasFlag(dirty, ConfigDirtyFlags::Notification)) {
+        _impl->notifyOnCommandFinish = config.notify_on_command_finish;
+        _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
+    }
+
     [self setNeedsRender];
+}
+
+#pragma mark - Command finish notification
+
+- (void)postCommandFinishNotification:(double)duration {
+    UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+
+    // Request permission if needed (no-op if already granted)
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError* _Nullable error) {
+        if (!granted) return;
+
+        UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
+        content.title = @"Command finished";
+        content.body = [NSString stringWithFormat:@"Completed in %.1fs", duration];
+        content.sound = [UNNotificationSound defaultSound];
+
+        UNNotificationRequest* request =
+            [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
+                                                 content:content
+                                                 trigger:nil];
+        [center addNotificationRequest:request withCompletionHandler:^(NSError* _Nullable err) {
+            if (err) {
+                NSLog(@"BreadTerminal: notification error: %@", err.localizedDescription);
+            }
+        }];
+    }];
 }
 
 #pragma mark - Socket API accessors
