@@ -67,8 +67,7 @@ vertex VertexOut cell_vertex(
         float2 glyph_origin = cell_origin + bearing;
         pixel_pos = glyph_origin + corner * glyph_size;
 
-        float2 atlas_sz = max(u.atlas_size, float2(1.0));
-        tex_coord = (float2(cell.glyph_uv) + corner * glyph_size) / atlas_sz;
+        tex_coord = float2(cell.glyph_uv) + corner * glyph_size;
     }
 
     // Pixel coords -> NDC
@@ -94,14 +93,14 @@ fragment float4 cell_fragment(
         return in.bg_color;
     }
 
-    constexpr sampler s(mag_filter::linear, min_filter::linear);
     bool is_color = (in.flags & 2) != 0;
 
     if (is_color) {
-        float4 glyph = atlas_color.sample(s, in.texCoord);
-        return float4(glyph.rgb, glyph.a);
+        constexpr sampler emojiSampler(coord::pixel, address::clamp_to_edge, filter::linear);
+        return atlas_color.sample(emojiSampler, in.texCoord);
     } else {
-        float alpha = atlas_gray.sample(s, in.texCoord).r;
+        constexpr sampler textSampler(coord::pixel, address::clamp_to_edge, filter::nearest);
+        float alpha = atlas_gray.sample(textSampler, in.texCoord).r;
         return float4(in.fg_color.rgb * alpha, alpha);
     }
 }
