@@ -94,8 +94,10 @@ public:
     FontMetrics getMetrics(FontFaceId face, float size) override;
     bool isColorGlyph(FontFaceId face, uint32_t glyph_index) override;
     uint32_t getGlyphIndex(FontFaceId face, char32_t codepoint) override;
+    void setScaleFactor(float scale) override { scaleFactor_ = scale; }
 
 private:
+    float scaleFactor_ = 2.0f;
     CTFontRef getFontRef(FontFaceId face) const;
     CFPtr<CTFontRef> createFontFromFile(const std::string& path, int face_index, float size);
     CFPtr<CTFontRef> getSizedFont(FontFaceId face, float size);
@@ -181,7 +183,7 @@ RasterizedGlyph CoreTextRasterizerImpl::rasterize(FontFaceId face,
     CGRect bbox;
     CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationDefault, &glyphId, &bbox, 1);
 
-    float scale = 2.0f; // Retina scale factor
+    float scale = scaleFactor_;
 
     float subX = static_cast<float>(offset.x) * 0.25f;
     float subY = static_cast<float>(offset.y) * 0.25f;
@@ -271,7 +273,7 @@ FontMetrics CoreTextRasterizerImpl::getMetrics(FontFaceId face, float size) {
     CTFontRef font = fontPtr.get();
     if (!font) return metrics;
 
-    float scale = 2.0f; // Retina scale factor
+    float scale = scaleFactor_;
 
     // All metrics in physical pixels
     metrics.ascent = static_cast<float>(CTFontGetAscent(font)) * scale;

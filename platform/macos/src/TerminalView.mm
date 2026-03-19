@@ -41,6 +41,8 @@
 
     // Font stack
     _impl->rasterizer = termcore::createCoreTextRasterizer();
+    CGFloat scale = self.window.backingScaleFactor ?: 2.0;
+    _impl->rasterizer->setScaleFactor(static_cast<float>(scale));
     _impl->discovery  = termcore::createCoreTextDiscovery();
     _impl->shaper     = std::make_unique<termcore::FontShaper>();
     _impl->fontCollection = std::make_unique<termcore::FontCollection>(
@@ -79,7 +81,6 @@
     _searchActive = NO;
 
     // Set initial drawable size and viewport — both in physical pixels
-    CGFloat scale = 2.0;  // Retina default
     _metalLayer.drawableSize = NSMakeSize(frame.size.width * scale, frame.size.height * scale);
     _impl->renderer->resize(frame.size.width * scale, frame.size.height * scale);
     _impl->needsRender = true;
@@ -142,7 +143,13 @@
 
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    if (self.window) _metalLayer.contentsScale = self.window.backingScaleFactor;
+    if (self.window) {
+        _metalLayer.contentsScale = self.window.backingScaleFactor;
+        _impl->rasterizer->setScaleFactor(
+            static_cast<float>(self.window.backingScaleFactor));
+        _impl->cache->clear();
+        _impl->needsRender = true;
+    }
 }
 
 - (void)setFrameSize:(NSSize)newSize {

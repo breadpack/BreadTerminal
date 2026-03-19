@@ -45,6 +45,9 @@ public:
 
     /// Get glyph index for a codepoint (for fallback checking).
     virtual uint32_t getGlyphIndex(FontFaceId face, char32_t codepoint) = 0;
+
+    /// Set display scale factor (1.0 for standard, 2.0 for Retina).
+    virtual void setScaleFactor(float scale) { (void)scale; }
 };
 
 } // namespace termcore
