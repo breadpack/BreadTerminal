@@ -380,6 +380,14 @@ void D3DTextRenderer::setResizeOverlay(bool visible, int cols, int rows) {
     impl_->resizeOverlayRows = rows;
 }
 
+void D3DTextRenderer::setTabBar(const TabBarInfo& info) {
+    impl_->tabBar = info;
+}
+
+void D3DTextRenderer::setPaneBorders(const PaneBorderInfo& info) {
+    impl_->paneBorders = info;
+}
+
 } // namespace termcore
 
 #endif // _WIN32

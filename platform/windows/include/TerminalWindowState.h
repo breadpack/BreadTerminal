@@ -149,6 +149,7 @@ struct TerminalWindowState {
     void handleMouseMove(int x, int y);
     void handleMouseUp(int x, int y);
     void handleDoubleClick(int x, int y);
+    std::string handleClickToMoveCursor(int row, int col, const Screen& scr);
 
     // --- Mouse protocol reporting ---
     bool sendMouseEvent(MouseEventType type, MouseButton button,

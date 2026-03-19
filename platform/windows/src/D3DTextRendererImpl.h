@@ -38,6 +38,12 @@ struct D3DTextRenderer::Impl {
     // Status bar state
     D3DTextRenderer::StatusBarInfo statusBar;
 
+    // Tab bar state
+    D3DTextRenderer::TabBarInfo tabBar;
+
+    // Pane border state
+    D3DTextRenderer::PaneBorderInfo paneBorders;
+
     // Resize overlay state
     bool resizeOverlayVisible = false;
     int resizeOverlayCols = 0;

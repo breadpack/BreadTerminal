@@ -46,11 +46,13 @@ set(TERMCORE_SOURCES
     src/kitty_graphics.cpp
     src/shell_integration.cpp
     src/paste_guard.cpp
+    src/vi_copy_mode.cpp
     src/webview_stub.cpp
     src/terminfo.cpp
     src/session_paths.cpp
     src/session_serializer.cpp
     src/session_deserializer.cpp
+    src/session_manager.cpp
     src/socket/jsonrpc.cpp
     src/socket/command_dispatcher_mux.cpp
     src/socket/command_dispatcher_misc.cpp

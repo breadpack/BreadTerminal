@@ -12,6 +12,8 @@ add_library(termcore_windows STATIC
     src/TerminalWindowIME.cpp
     src/TerminalWindowNotify.cpp
     src/D3DImageRenderer.cpp
+    src/D3DBackgroundImage.cpp
+    src/D3DCustomShader.cpp
 )
 
 target_include_directories(termcore_windows PUBLIC

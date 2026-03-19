@@ -136,6 +136,50 @@ void TerminalWindowState::handleDoubleClick(int x, int y) {
     needsRender = true;
 }
 
+// --- Click-to-move cursor (shell integration) ---
+
+std::string TerminalWindowState::handleClickToMoveCursor(int row, int col,
+                                                          const Screen& scr) {
+    // Only move cursor when we're at a shell prompt (OSC 133 state)
+    PromptState state = scr.promptState();
+    if (state != PromptState::Prompt && state != PromptState::Input)
+        return {};
+
+    int curRow = scr.cursorRow();
+    int curCol = scr.cursorCol();
+
+    // Clamp target to valid grid
+    int maxCol = scr.cols() - 1;
+    int maxRow = scr.rows() - 1;
+    if (col < 0) col = 0;
+    if (col > maxCol) col = maxCol;
+    if (row < 0) row = 0;
+    if (row > maxRow) row = maxRow;
+
+    // Only allow horizontal movement on the cursor's current row.
+    // Moving vertically past prompt boundaries could navigate into output,
+    // so we restrict to the same line.
+    if (row != curRow)
+        return {};
+
+    int delta = col - curCol;
+    if (delta == 0)
+        return {};
+
+    std::string seq;
+    if (delta > 0) {
+        // Move right
+        for (int i = 0; i < delta; ++i)
+            seq += "\x1b[C";
+    } else {
+        // Move left
+        for (int i = 0; i < -delta; ++i)
+            seq += "\x1b[D";
+    }
+
+    return seq;
+}
+
 // --- Clipboard ---
 
 std::string TerminalWindowState::getSelectedText() const {

@@ -435,6 +435,112 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             cellInstances.push_back(inst);
         }
     }
+    // Pass 8: Tab Bar
+    const auto& tabBar = this->tabBar;
+    if (tabBar.visible && !tabBar.tabs.empty()) {
+        float tabBarY = 0.0f;
+        int totalCols = static_cast<int>(viewportWidth / cellW);
+
+        // Full-width tab bar background
+        D3DCellInstance tabBarBg = {};
+        tabBarBg.position[0] = 0;
+        tabBarBg.position[1] = tabBarY;
+        tabBarBg.atlas_size[0] = viewportWidth;
+        tabBarBg.atlas_size[1] = cellH;
+        colorFromRGBA(tabBar.bg_color | 0xFF000000, tabBarBg.bg_color);
+        tabBarBg.flags = 4;  // is_bg_pass
+        cellInstances.push_back(tabBarBg);
+
+        // Each tab gets an equal share of columns, capped at a reasonable width
+        int tabCount = static_cast<int>(tabBar.tabs.size());
+        int maxTabWidth = 20;  // max columns per tab
+        int tabWidth = (std::min)(maxTabWidth, totalCols / (std::max)(1, tabCount));
+
+        for (int t = 0; t < tabCount; ++t) {
+            const auto& tab = tabBar.tabs[t];
+            int tabStartCol = t * tabWidth;
+            if (tabStartCol >= totalCols) break;
+
+            uint32_t tabBgColor = tab.active
+                ? tabBar.active_bg_color
+                : tabBar.inactive_bg_color;
+
+            // Tab background
+            D3DCellInstance tabBg = {};
+            tabBg.position[0] = tabStartCol * cellW;
+            tabBg.position[1] = tabBarY;
+            tabBg.atlas_size[0] = tabWidth * cellW;
+            tabBg.atlas_size[1] = cellH;
+            colorFromRGBA(tabBgColor | 0xFF000000, tabBg.bg_color);
+            tabBg.flags = 4;  // is_bg_pass
+            cellInstances.push_back(tabBg);
+
+            // Tab title text (with 1-col padding)
+            const std::string& title = tab.title;
+            int textStart = tabStartCol + 1;
+            int textEnd = tabStartCol + tabWidth - 1;
+            for (size_t i = 0; i < title.size(); ++i) {
+                int col = textStart + static_cast<int>(i);
+                if (col >= textEnd || col >= totalCols) break;
+
+                char32_t cp = static_cast<char32_t>(
+                    static_cast<unsigned char>(title[i]));
+                if (cp == ' ' || cp == 0) continue;
+
+                CollectionFaceId faceId = fontCollection->resolveFace(cp);
+                if (faceId == kInvalidCollectionFace) continue;
+                FontFaceId rastFace =
+                    fontCollection->rasterizerFaceId(faceId);
+                uint32_t glyphIdx =
+                    rasterizer->getGlyphIndex(rastFace, cp);
+                if (glyphIdx == 0) continue;
+
+                GlyphKey key{rastFace, glyphIdx, {0, 0}};
+                auto info = glyphCache->getOrRasterize(
+                    key, fontSize, *rasterizer, *glyphAtlas);
+                if (!info || info->region.width <= 0) continue;
+
+                D3DCellInstance inst = {};
+                float offsetX =
+                    static_cast<float>(info->region.bearing_x);
+                float offsetY =
+                    ascent - static_cast<float>(info->region.bearing_y);
+                inst.position[0] = col * cellW + offsetX;
+                inst.position[1] = tabBarY + offsetY;
+                inst.atlas_uv[0] =
+                    static_cast<float>(info->region.x);
+                inst.atlas_uv[1] =
+                    static_cast<float>(info->region.y);
+                inst.atlas_size[0] =
+                    static_cast<float>(info->region.width);
+                inst.atlas_size[1] =
+                    static_cast<float>(info->region.height);
+                colorFromRGBA(tabBar.fg_color | 0xFF000000,
+                              inst.fg_color);
+                inst.flags = 1;  // has_glyph
+                cellInstances.push_back(inst);
+            }
+        }
+    }
+
+    // Pass 9: Pane Borders
+    const auto& paneBorders = this->paneBorders;
+    if (paneBorders.visible && !paneBorders.segments.empty()) {
+        for (const auto& seg : paneBorders.segments) {
+            D3DCellInstance inst = {};
+            inst.position[0] = seg.x;
+            inst.position[1] = seg.y;
+            inst.atlas_size[0] = seg.width;
+            inst.atlas_size[1] = seg.height;
+
+            uint32_t borderColor = seg.active
+                ? paneBorders.active_color
+                : paneBorders.inactive_color;
+            colorFromRGBA(borderColor | 0xFF000000, inst.bg_color);
+            inst.flags = 8;  // is_cursor (solid color rect)
+            cellInstances.push_back(inst);
+        }
+    }
 }
 
 } // namespace termcore

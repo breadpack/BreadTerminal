@@ -102,6 +102,45 @@ public:
     void setSearchHighlights(const std::vector<SearchHighlight>& highlights,
                              int currentIndex);
 
+    /// Tab information for the tab bar.
+    struct TabInfo {
+        std::string title;
+        bool active = false;
+    };
+
+    /// Tab bar displayed at the top of the viewport.
+    struct TabBarInfo {
+        std::vector<TabInfo> tabs;
+        uint32_t bg_color = 0x1e1e1e;         // tab bar background
+        uint32_t active_bg_color = 0x2d2d2d;   // active tab background
+        uint32_t inactive_bg_color = 0x1e1e1e; // inactive tab background
+        uint32_t fg_color = 0xcccccc;          // text color
+        bool visible = false;
+    };
+
+    /// Set tab bar content for rendering.
+    void setTabBar(const TabBarInfo& info);
+
+    /// A single border segment between panes.
+    struct BorderSegment {
+        float x;       // start x in pixels
+        float y;       // start y in pixels
+        float width;   // width in pixels (1 for vertical borders)
+        float height;  // height in pixels (1 for horizontal borders)
+        bool active;   // true if adjacent to active pane
+    };
+
+    /// Pane border information for split pane rendering.
+    struct PaneBorderInfo {
+        std::vector<BorderSegment> segments;
+        uint32_t active_color = 0x007acc;    // accent blue
+        uint32_t inactive_color = 0x3c3c3c;  // dark gray
+        bool visible = false;
+    };
+
+    /// Set pane border segments for rendering.
+    void setPaneBorders(const PaneBorderInfo& info);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
