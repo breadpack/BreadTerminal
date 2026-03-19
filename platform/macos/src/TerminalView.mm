@@ -33,7 +33,7 @@
     self.wantsLayer = YES;
     _metalLayer = [CAMetalLayer layer];
     _metalLayer.device = _device;
-    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
     _metalLayer.framebufferOnly = YES;
     _metalLayer.frame = self.bounds;
     _metalLayer.contentsScale = self.window.backingScaleFactor ?: 2.0;
@@ -135,7 +135,7 @@
     if (!_metalLayer) {
         _metalLayer = [CAMetalLayer layer];
         _metalLayer.device = _device;
-        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
     }
     return _metalLayer;
 }
