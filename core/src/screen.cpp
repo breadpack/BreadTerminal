@@ -11,6 +11,8 @@ Screen::Screen(int rows, int cols)
     : rows_(rows), cols_(cols), scroll_bottom_(rows - 1)
 {
     grid_.resize(rows_, makeRow());
+    row_dirty_.assign(rows_, true);
+    screen_dirty_ = true;
     initTabStops();
 }
 
@@ -36,12 +38,37 @@ TermCell& Screen::mutableCellAt(int row, int col) {
     return grid_[row][col];
 }
 
+// --- Dirty tracking ---
+bool Screen::isRowDirty(int row) const {
+    if (row < 0 || row >= rows_) return false;
+    return row_dirty_[row];
+}
+
+void Screen::clearDirty() {
+    std::fill(row_dirty_.begin(), row_dirty_.end(), false);
+    screen_dirty_ = false;
+}
+
+void Screen::markRowDirty(int row) {
+    if (row >= 0 && row < rows_) {
+        row_dirty_[row] = true;
+        screen_dirty_ = true;
+    }
+}
+
+void Screen::markAllDirty() {
+    std::fill(row_dirty_.begin(), row_dirty_.end(), true);
+    screen_dirty_ = true;
+}
+
 void Screen::eraseCell(TermCell& cell) const {
     cell.codepoint = ' ';
     cell.fg_color = pen_.fg_color;
     cell.bg_color = pen_.bg_color;
     cell.attributes = 0;
     cell.width = 1;
+    cell.underline_style = UnderlineNone;
+    cell.underline_color = kColorDefault;
 }
 
 void Screen::clampCursor() {
@@ -51,6 +78,10 @@ void Screen::clampCursor() {
 
 void Screen::scrollUp(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
+
+    // Mark affected rows dirty
+    for (int r = top; r <= bottom; ++r)
+        markRowDirty(r);
 
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
     if (top == 0 && bottom == rows_ - 1) {
@@ -85,6 +116,10 @@ void Screen::scrollUp(int top, int bottom, int count) {
 void Screen::scrollDown(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
 
+    // Mark affected rows dirty
+    for (int r = top; r <= bottom; ++r)
+        markRowDirty(r);
+
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
     if (top == 0 && bottom == rows_ - 1) {
         for (int i = 0; i < count; ++i) {
@@ -110,6 +145,9 @@ void Screen::onPrint(char32_t codepoint) {
     int char_width = codepoint_width(codepoint);
     if (char_width < 1) char_width = 1;  // treat zero-width as single-width for grid
 
+    // Mark the current row dirty (scroll operations mark their own rows)
+    markRowDirty(cursor_.row);
+
     if (wrap_pending_) {
         wrap_pending_ = false;
         cursor_.col = 0;
@@ -118,6 +156,7 @@ void Screen::onPrint(char32_t codepoint) {
         } else if (cursor_.row < rows_ - 1) {
             cursor_.row++;
         }
+        markRowDirty(cursor_.row);
     }
 
     // For a wide character that would start at the last column, force wrap first
@@ -129,7 +168,19 @@ void Screen::onPrint(char32_t codepoint) {
             } else if (cursor_.row < rows_ - 1) {
                 cursor_.row++;
             }
+            markRowDirty(cursor_.row);
         }
+    }
+
+    // Insert mode (IRM): shift chars right before writing
+    if (insert_mode_) {
+        auto& row = grid_[cursor_.row];
+        int shift = char_width;
+        shift = std::min(shift, cols_ - cursor_.col);
+        for (int s = 0; s < shift; ++s) {
+            row.insert(row.begin() + cursor_.col, TermCell{});
+        }
+        row.resize(cols_);
     }
 
     TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
@@ -138,6 +189,8 @@ void Screen::onPrint(char32_t codepoint) {
     cell.bg_color = pen_.bg_color;
     cell.attributes = pen_.attributes;
     cell.width = static_cast<uint8_t>(char_width);
+    cell.underline_style = pen_.underline_style;
+    cell.underline_color = pen_.underline_color;
 
     // Write continuation cell for wide characters
     if (char_width == 2 && cursor_.col + 1 < cols_) {
@@ -147,6 +200,8 @@ void Screen::onPrint(char32_t codepoint) {
         cont.bg_color = pen_.bg_color;
         cont.attributes = pen_.attributes;
         cont.width = 0;  // continuation cell width=0
+        cont.underline_style = pen_.underline_style;
+        cont.underline_color = pen_.underline_color;
     }
 
     // Advance cursor by the character's display width
@@ -195,6 +250,7 @@ void Screen::onExecute(uint8_t byte) {
             scrollUp(scroll_top_, scroll_bottom_);
         } else if (cursor_.row < rows_ - 1) {
             cursor_.row++;
+            markRowDirty(cursor_.row);
         }
         break;
     case 0x0D: // CR
@@ -217,6 +273,7 @@ void Screen::onEscDispatch(char32_t final_char,
             scrollUp(scroll_top_, scroll_bottom_);
         } else if (cursor_.row < rows_ - 1) {
             cursor_.row++;
+            markRowDirty(cursor_.row);
         }
         break;
     case 'M': // RI - reverse index
@@ -224,6 +281,7 @@ void Screen::onEscDispatch(char32_t final_char,
             scrollDown(scroll_top_, scroll_bottom_);
         } else if (cursor_.row > 0) {
             cursor_.row--;
+            markRowDirty(cursor_.row);
         }
         break;
     case 'E': // NEL - next line
@@ -232,6 +290,7 @@ void Screen::onEscDispatch(char32_t final_char,
             scrollUp(scroll_top_, scroll_bottom_);
         } else if (cursor_.row < rows_ - 1) {
             cursor_.row++;
+            markRowDirty(cursor_.row);
         }
         break;
     case '7': // DECSC - save cursor
@@ -302,7 +361,7 @@ void Screen::onOscDispatch(int osc_number,
 
 // --- onDcsDispatch ---
 void Screen::onDcsDispatch(char32_t final_char,
-                           const std::vector<int>& params,
+                           const std::vector<VtParam>& params,
                            const std::string& intermediates,
                            const std::string& data) {
     (void)final_char;
@@ -360,6 +419,8 @@ void Screen::resize(int rows, int cols) {
     cols_ = cols;
     scroll_bottom_ = rows_ - 1;
     scroll_top_ = 0;
+    row_dirty_.assign(rows_, true);
+    screen_dirty_ = true;
     initTabStops();
     clampCursor();
     wrap_pending_ = false;
@@ -441,6 +502,7 @@ void Screen::switchToAltScreen(bool save_cursor) {
     saved_primary_.scroll_bottom = scroll_bottom_;
     saved_primary_.autowrap = autowrap_;
     saved_primary_.wrap_pending = wrap_pending_;
+    saved_primary_.origin_mode = origin_mode_;
 
     // Create fresh alt screen
     grid_.clear();
@@ -454,6 +516,7 @@ void Screen::switchToAltScreen(bool save_cursor) {
     scroll_bottom_ = rows_ - 1;
     wrap_pending_ = false;
     alt_screen_active_ = true;
+    markAllDirty();
 }
 
 void Screen::switchToPrimaryScreen(bool restore_cursor) {
@@ -467,6 +530,7 @@ void Screen::switchToPrimaryScreen(bool restore_cursor) {
     scroll_bottom_ = saved_primary_.scroll_bottom;
     autowrap_ = saved_primary_.autowrap;
     wrap_pending_ = saved_primary_.wrap_pending;
+    origin_mode_ = saved_primary_.origin_mode;
 
     if (restore_cursor) {
         cursor_ = saved_cursor_;
@@ -474,12 +538,14 @@ void Screen::switchToPrimaryScreen(bool restore_cursor) {
     }
     alt_screen_active_ = false;
     clampCursor();
+    markAllDirty();
 }
 
 void Screen::clearScreen() {
     for (int r = 0; r < rows_; ++r)
         for (int c = 0; c < cols_; ++c)
             eraseCell(mutableCellAt(r, c));
+    markAllDirty();
 }
 
 void Screen::initDynamicColors(const Config& cfg) {

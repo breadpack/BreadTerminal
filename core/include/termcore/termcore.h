@@ -68,6 +68,13 @@ int tc_pane_scrollback_size(TermPane* pane);
 /// Pointer valid until next call on same pane.
 const char* tc_pane_get_scrollback_line(TermPane* pane, int line);
 
+/// Get multiple scrollback lines at once. line_offset=0 is most recent.
+/// Calls callback for each line with (line_index, text, user_data).
+/// Returns number of lines retrieved.
+typedef void (*tc_scrollback_line_callback)(int line_index, const char* text, void* user_data);
+int tc_pane_get_scrollback_lines(TermPane* pane, int count, int offset,
+                                  tc_scrollback_line_callback callback, void* user_data);
+
 /// Check if alternate screen is active
 int tc_pane_alt_screen_active(TermPane* pane);
 

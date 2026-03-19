@@ -6,12 +6,14 @@ CommandDispatcher::CommandDispatcher(Mux& mux,
                                      NotificationStore& notifications,
                                      AgentTracker& agent_tracker,
                                      PaneWriteCallback write_cb,
-                                     WebViewCallback webview_cb)
+                                     WebViewCallback webview_cb,
+                                     ScrollbackReadCallback scrollback_cb)
     : mux_(mux)
     , notifications_(notifications)
     , agent_tracker_(agent_tracker)
     , write_cb_(std::move(write_cb))
     , webview_cb_(std::move(webview_cb))
+    , scrollback_cb_(std::move(scrollback_cb))
 {
 }
 
@@ -52,6 +54,7 @@ rpc::Response CommandDispatcher::dispatch(const rpc::Request& req) {
     if (method == "query.active-pane")  return handleQueryActivePane(id, p);
     if (method == "query.pane-info")    return handleQueryPaneInfo(id, p);
     if (method == "query.agent-state")  return handleQueryAgentState(id, p);
+    if (method == "query.scrollback")  return handleQueryScrollback(id, p);
 
     return rpc::makeError(id, rpc::kMethodNotFound,
                           "Method not found: " + method);
@@ -232,6 +235,52 @@ rpc::Response CommandDispatcher::handleQueryAgentState(
         });
     }
     return rpc::makeResult(id, {{"agents", arr}});
+}
+
+rpc::Response CommandDispatcher::handleQueryScrollback(
+    std::optional<int64_t> id, const nlohmann::json& p) {
+    if (!scrollback_cb_) {
+        return rpc::makeError(id, rpc::kInternalError,
+                              "No scrollback callback configured");
+    }
+
+    PaneId pane_id = 0;
+    if (p.contains("pane_id") && p["pane_id"].is_number()) {
+        pane_id = p["pane_id"].get<PaneId>();
+    } else {
+        // Use active pane if no pane_id specified
+        auto ws_id = mux_.activeWorkspaceId();
+        if (ws_id != kInvalidWorkspace) {
+            auto* tab = mux_.activeTab(ws_id);
+            if (tab) {
+                pane_id = mux_.activePaneId(ws_id, tab->id);
+            }
+        }
+    }
+
+    if (pane_id == kInvalidPane) {
+        return rpc::makeError(id, rpc::kNotFound, "No pane found");
+    }
+
+    int line_count = 50;  // default
+    if (p.contains("lines") && p["lines"].is_number()) {
+        line_count = p["lines"].get<int>();
+        if (line_count <= 0) line_count = 50;
+        if (line_count > 10000) line_count = 10000;  // cap
+    }
+
+    auto lines = scrollback_cb_(pane_id, line_count);
+
+    nlohmann::json lines_arr = nlohmann::json::array();
+    for (const auto& line : lines) {
+        lines_arr.push_back(line);
+    }
+
+    return rpc::makeResult(id, {
+        {"pane_id", pane_id},
+        {"lines", lines_arr},
+        {"count", static_cast<int>(lines.size())}
+    });
 }
 
 }  // namespace termcore

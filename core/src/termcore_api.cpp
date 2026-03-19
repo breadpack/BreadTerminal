@@ -218,6 +218,41 @@ const char* tc_pane_get_scrollback_line(TermPane* pane, int line) {
     return pane->scrollback_buf.c_str();
 }
 
+int tc_pane_get_scrollback_lines(TermPane* pane, int count, int offset,
+                                  tc_scrollback_line_callback callback,
+                                  void* user_data) {
+    if (!pane || !pane->screen || !callback || count <= 0) return 0;
+
+    int sb_size = static_cast<int>(pane->screen->scrollbackSize());
+    int screen_rows = pane->screen->rows();
+
+    // Total available lines = scrollback + visible screen
+    int total_available = sb_size + screen_rows;
+    if (offset >= total_available) return 0;
+
+    int actual_count = std::min(count, total_available - offset);
+    int retrieved = 0;
+
+    for (int i = 0; i < actual_count; ++i) {
+        int line_idx = offset + i;
+        std::string text;
+
+        if (line_idx < sb_size) {
+            // Scrollback region (0 = most recent scrollback line)
+            text = pane->screen->getScrollbackLineText(line_idx);
+        } else {
+            // Visible screen region
+            int screen_row = line_idx - sb_size;
+            text = pane->screen->getLineText(screen_row);
+        }
+
+        callback(i, text.c_str(), user_data);
+        ++retrieved;
+    }
+
+    return retrieved;
+}
+
 int tc_pane_alt_screen_active(TermPane* pane) {
     if (!pane || !pane->screen) return 0;
     return pane->screen->altScreenActive() ? 1 : 0;

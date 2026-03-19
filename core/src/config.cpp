@@ -59,6 +59,12 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
         config.window_width = std::stoi(value);
     } else if (key == "window-height") {
         config.window_height = std::stoi(value);
+    } else if (key == "window-padding") {
+        config.window_padding = std::clamp(std::stoi(value), 0, 200);
+    } else if (key == "minimum-contrast") {
+        config.minimum_contrast = std::clamp(std::stof(value), 1.0f, 21.0f);
+    } else if (key == "quick-terminal-hotkey") {
+        config.quick_terminal_hotkey = value;
     } else if (key == "scrollback-limit") {
         config.scrollback_limit = std::stoi(value);
     } else if (key == "cursor-style") {
@@ -264,7 +270,20 @@ std::string serializeConfig(const Config& config) {
     out << "# Window\n";
     out << "window-width = " << config.window_width << "\n";
     out << "window-height = " << config.window_height << "\n";
+    if (config.window_padding > 0) {
+        out << "window-padding = " << config.window_padding << "\n";
+    }
     out << "\n";
+
+    // Minimum contrast
+    if (config.minimum_contrast > 1.0f) {
+        out << "minimum-contrast = " << config.minimum_contrast << "\n\n";
+    }
+
+    // Quick terminal hotkey
+    if (!config.quick_terminal_hotkey.empty()) {
+        out << "quick-terminal-hotkey = " << config.quick_terminal_hotkey << "\n\n";
+    }
 
     // Terminal
     out << "# Terminal\n";

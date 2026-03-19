@@ -24,6 +24,16 @@ enum CellAttribute : uint16_t {
     AttrStrikethrough = 64,
 };
 
+/// Underline style values (SGR 4:x).
+enum UnderlineStyle : uint8_t {
+    UnderlineNone   = 0,
+    UnderlineSingle = 1,
+    UnderlineDouble = 2,
+    UnderlineCurly  = 3,
+    UnderlineDotted = 4,
+    UnderlineDashed = 5,
+};
+
 /// A single cell in the terminal grid.
 struct TermCell {
     char32_t codepoint = ' ';
@@ -31,6 +41,8 @@ struct TermCell {
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
     uint8_t width = 1;
+    uint8_t underline_style = UnderlineNone;
+    uint32_t underline_color = kColorDefault;
 };
 
 /// Cursor shape for DECSCUSR.
@@ -50,6 +62,8 @@ struct Pen {
     uint32_t fg_color = kColorDefault;
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
+    uint8_t underline_style = UnderlineNone;
+    uint32_t underline_color = kColorDefault;
 };
 
 /// Mouse tracking mode.
@@ -103,6 +117,7 @@ public:
     MouseEncoding mouseEncoding() const { return mouse_encoding_; }
     bool focusEvents() const { return focus_events_; }
     bool syncUpdate() const { return sync_update_; }
+    std::chrono::steady_clock::time_point syncStartTime() const { return sync_start_time_; }
     KittyKeyboardState& kittyKeyboard() { return kitty_keyboard_; }
 
     // --- OSC state accessors ---
@@ -163,6 +178,18 @@ public:
     const DynamicColors& dynamicColors() const { return dynamic_colors_; }
     void initDynamicColors(const Config& cfg);
 
+    // --- Dirty tracking ---
+    /// Returns true if any row has been modified since the last clearDirty().
+    bool isDirty() const { return screen_dirty_; }
+    /// Returns true if the specific row has been modified since clearDirty().
+    bool isRowDirty(int row) const;
+    /// Clear all dirty flags (call after rendering).
+    void clearDirty();
+    /// Mark a specific row as dirty.
+    void markRowDirty(int row);
+    /// Mark all rows dirty (e.g. after resize, alt-screen switch).
+    void markAllDirty();
+
     // --- Utility ---
     std::string getLineText(int row) const;
     std::string getScrollbackLineText(int line) const;  // line 0 = most recent
@@ -171,14 +198,14 @@ public:
     void onPrint(char32_t codepoint) override;
     void onExecute(uint8_t byte) override;
     void onCsiDispatch(char32_t final_char,
-                       const std::vector<int>& params,
+                       const std::vector<VtParam>& params,
                        const std::string& intermediates) override;
     void onEscDispatch(char32_t final_char,
                        const std::string& intermediates) override;
     void onOscDispatch(int osc_number,
                        const std::string& osc_string) override;
     void onDcsDispatch(char32_t final_char,
-                       const std::vector<int>& params,
+                       const std::vector<VtParam>& params,
                        const std::string& intermediates,
                        const std::string& data) override;
 
@@ -210,9 +237,12 @@ private:
 
     // Mode flags
     bool app_cursor_keys_ = false;   // DECCKM ?1
+    bool origin_mode_ = false;       // DECOM ?6
+    bool insert_mode_ = false;       // IRM mode 4
     bool bracketed_paste_ = false;   // ?2004
     bool focus_events_ = false;      // ?1004
     bool sync_update_ = false;       // ?2026
+    std::chrono::steady_clock::time_point sync_start_time_; // when ?2026 was set
     bool alt_screen_active_ = false;
 
     // Mouse mode
@@ -266,6 +296,10 @@ private:
     // Security: OSC 52 clipboard write gate (default: denied)
     bool clipboard_write_allowed_ = false;
 
+    // Dirty tracking
+    std::vector<bool> row_dirty_;
+    bool screen_dirty_ = true;
+
     // Alternate screen buffer
     struct ScreenState {
         std::deque<Row> grid;
@@ -275,6 +309,7 @@ private:
         int scroll_bottom = 0;
         bool autowrap = true;
         bool wrap_pending = false;
+        bool origin_mode = false;
     };
     ScreenState saved_primary_;
 
@@ -288,36 +323,38 @@ private:
 
     // CSI handlers (defined in screen_csi.cpp)
     void handleCursorMovement(char32_t final_char,
-                              const std::vector<int>& params);
-    void handleEraseDisplay(const std::vector<int>& params);
-    void handleEraseLine(const std::vector<int>& params);
-    void handleSGR(const std::vector<int>& params);
-    void handleScrollRegion(const std::vector<int>& params);
+                              const std::vector<VtParam>& params);
+    void handleEraseDisplay(const std::vector<VtParam>& params);
+    void handleEraseLine(const std::vector<VtParam>& params);
+    void handleSGR(const std::vector<VtParam>& params);
+    void handleScrollRegion(const std::vector<VtParam>& params);
     void handleMode(char32_t final_char,
-                    const std::vector<int>& params,
+                    const std::vector<VtParam>& params,
                     const std::string& intermediates);
     void handleInsertDeleteLines(char32_t final_char,
-                                 const std::vector<int>& params);
+                                 const std::vector<VtParam>& params);
     void handleInsertDeleteChars(char32_t final_char,
-                                 const std::vector<int>& params);
+                                 const std::vector<VtParam>& params);
     void handleScrollUpDown(char32_t final_char,
-                            const std::vector<int>& params);
-    void handleEraseChars(const std::vector<int>& params);
+                            const std::vector<VtParam>& params);
+    void handleEraseChars(const std::vector<VtParam>& params);
     void handleAbsolutePosition(char32_t final_char,
-                                const std::vector<int>& params);
+                                const std::vector<VtParam>& params);
 
     // CSI ext handlers (defined in screen_csi_ext.cpp)
-    void handleDeviceStatusReport(const std::vector<int>& params,
+    void handleDeviceStatusReport(const std::vector<VtParam>& params,
                                   const std::string& intermediates);
-    void handleDeviceAttributes(const std::vector<int>& params,
+    void handleDeviceAttributes(const std::vector<VtParam>& params,
                                 const std::string& intermediates);
-    void handleCursorStyle(const std::vector<int>& params);
-    void handleRepeatChar(const std::vector<int>& params);
+    void handleCursorStyle(const std::vector<VtParam>& params);
+    void handleRepeatChar(const std::vector<VtParam>& params);
     void handleCursorNextPrevLine(char32_t final_char,
-                                  const std::vector<int>& params);
+                                  const std::vector<VtParam>& params);
     void handleTabMovement(char32_t final_char,
-                           const std::vector<int>& params);
-    void handleTabClear(const std::vector<int>& params);
+                           const std::vector<VtParam>& params);
+    void handleTabClear(const std::vector<VtParam>& params);
+    void handleModeQuery(const std::vector<VtParam>& params,
+                         const std::string& intermediates);
     void initTabStops();
 
     // OSC handlers (defined in screen_osc.cpp)

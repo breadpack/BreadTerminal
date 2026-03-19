@@ -2,25 +2,57 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
-namespace breadterminal {
+namespace bread {
 
 static void printUsage() {
-    std::cerr << "Usage: breadterminal [options] <resource> <action> [flags...]\n"
+    std::cerr << "Usage: bread [options] <resource> <action> [flags...]\n"
               << "\nResources:\n"
               << "  workspace  create|list|switch|destroy\n"
               << "  tab        create|list|switch|close\n"
               << "  pane       split|close|focus|list|send-text|send-keys\n"
               << "  notify     send\n"
               << "  browser    open|navigate|snapshot\n"
-              << "  query      active-pane|pane-info|agent-state\n"
+              << "  query      active-pane|pane-info|agent-state|scrollback\n"
+              << "\nLocal commands:\n"
+              << "  hooks      install — install Claude Code hook scripts\n"
+              << "  identify   — print terminal name and version\n"
+              << "  capabilities — list supported features\n"
+              << "  get-text   --pane N --lines M — read last M lines from pane scrollback\n"
               << "\nGlobal options:\n"
               << "  --socket <path>    Socket path\n"
               << "  --token <token>    Auth token\n"
               << "  --json             Raw JSON output\n"
+              << "  --ref <ref>        Ref ID (e.g. ws:1/tab:1/pane:1)\n"
               << "  --timeout <ms>     Timeout in milliseconds (default: 3000)\n";
+}
+
+bool parseRefId(const std::string& ref, nlohmann::json& params) {
+    // Parse "ws:1/tab:2/pane:3" format
+    std::istringstream stream(ref);
+    std::string segment;
+    while (std::getline(stream, segment, '/')) {
+        auto colon = segment.find(':');
+        if (colon == std::string::npos) return false;
+        auto key = segment.substr(0, colon);
+        auto val = segment.substr(colon + 1);
+        int num = std::atoi(val.c_str());
+        if (num <= 0) return false;
+
+        if (key == "ws") {
+            params["workspace_id"] = num;
+        } else if (key == "tab") {
+            params["tab_id"] = num;
+        } else if (key == "pane") {
+            params["pane_id"] = num;
+        } else {
+            return false;
+        }
+    }
+    return true;
 }
 
 ParsedArgs parseArgs(int argc, char* argv[]) {
@@ -74,6 +106,57 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         positional.push_back(arg);
     }
 
+    if (positional.empty()) {
+        result.error = "Expected: <resource> <action>";
+        printUsage();
+        return result;
+    }
+
+    // Check for local commands first
+    if (positional[0] == "hooks") {
+        if (positional.size() >= 2 && positional[1] == "install") {
+            result.type = CommandType::LocalCommand;
+            result.local_cmd = LocalCmd::HooksInstall;
+            result.valid = true;
+            return result;
+        }
+        result.error = "Unknown hooks subcommand. Try: bread hooks install";
+        return result;
+    }
+
+    if (positional[0] == "identify") {
+        result.type = CommandType::LocalCommand;
+        result.local_cmd = LocalCmd::Identify;
+        result.json_output = flags.count("json") || result.json_output;
+        result.valid = true;
+        return result;
+    }
+
+    if (positional[0] == "capabilities") {
+        result.type = CommandType::LocalCommand;
+        result.local_cmd = LocalCmd::Capabilities;
+        result.json_output = flags.count("json") || result.json_output;
+        result.valid = true;
+        return result;
+    }
+
+    if (positional[0] == "get-text") {
+        result.type = CommandType::LocalCommand;
+        result.local_cmd = LocalCmd::GetText;
+        if (flags.count("pane")) {
+            result.pane_id = std::atoi(flags["pane"].c_str());
+        }
+        if (flags.count("lines")) {
+            result.line_count = std::atoi(flags["lines"].c_str());
+        }
+        if (flags.count("ref")) {
+            result.ref_id = flags["ref"];
+        }
+        result.valid = true;
+        return result;
+    }
+
+    // Remote RPC commands require at least 2 positional args
     if (positional.size() < 2) {
         result.error = "Expected: <resource> <action>";
         printUsage();
@@ -94,6 +177,14 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
     // Build params from flags
     nlohmann::json params = nlohmann::json::object();
 
+    // If --ref is provided, parse it into params first
+    if (flags.count("ref")) {
+        if (!parseRefId(flags["ref"], params)) {
+            result.error = "Invalid ref ID format. Expected: ws:N/tab:N/pane:N";
+            return result;
+        }
+    }
+
     // Map CLI flags to JSON params based on method
     auto setInt = [&](const std::string& flag, const std::string& param) {
         if (flags.count(flag)) {
@@ -107,14 +198,21 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         }
     };
 
-    // Common ID params
-    setInt("workspace", "workspace_id");
-    setInt("id", "workspace_id");  // --id for workspace commands
-    setInt("tab", "tab_id");
-    setInt("pane", "pane_id");
+    // Common ID params (only set if not already set by --ref)
+    if (!params.contains("workspace_id")) {
+        setInt("workspace", "workspace_id");
+        setInt("id", "workspace_id");
+    }
+    if (!params.contains("tab_id")) {
+        setInt("tab", "tab_id");
+    }
+    if (!params.contains("pane_id")) {
+        setInt("pane", "pane_id");
+    }
     setStr("name", "name");
     setInt("rows", "rows");
     setInt("cols", "cols");
+    setInt("lines", "lines");
 
     // Direction handling
     if (flags.count("direction")) {
@@ -175,4 +273,4 @@ std::string buildRequestJson(const ParsedArgs& args) {
     return req.dump();
 }
 
-}  // namespace breadterminal
+}  // namespace bread

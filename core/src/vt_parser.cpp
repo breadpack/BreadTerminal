@@ -23,6 +23,8 @@ void VtParser::clear() {
     intermediates_.clear();
     current_param_ = -1;
     param_started_ = false;
+    in_sub_param_ = false;
+    current_subs_.clear();
     osc_number_ = -1;
     osc_number_done_ = false;
     osc_string_.clear();
@@ -41,11 +43,33 @@ void VtParser::executeC0(uint8_t byte) {
 
 void VtParser::collectParam(uint8_t byte) {
     if (byte == ';') {
-        // Push current param (or default -1) and start next
-        if (param_started_) {
-            params_.push_back(current_param_);
+        // Semicolon: finish current param (with any sub-params) and start next
+        if (in_sub_param_) {
+            // Push final sub-param value
+            current_subs_.push_back(param_started_ ? current_param_ : -1);
+            in_sub_param_ = false;
+        }
+        VtParam vp;
+        if (!current_subs_.empty()) {
+            // First sub is the main param value
+            vp.value = current_subs_[0];
+            vp.sub.assign(current_subs_.begin() + 1, current_subs_.end());
         } else {
-            params_.push_back(-1);
+            vp.value = param_started_ ? current_param_ : -1;
+        }
+        params_.push_back(std::move(vp));
+        current_param_ = -1;
+        param_started_ = false;
+        current_subs_.clear();
+    } else if (byte == ':') {
+        // Colon: start/continue sub-parameter collection
+        if (!in_sub_param_) {
+            // First colon: the current_param_ becomes the first sub-value (main value)
+            current_subs_.push_back(param_started_ ? current_param_ : -1);
+            in_sub_param_ = true;
+        } else {
+            // Subsequent colon: push the current sub-value
+            current_subs_.push_back(param_started_ ? current_param_ : -1);
         }
         current_param_ = -1;
         param_started_ = false;
@@ -64,9 +88,21 @@ void VtParser::collectIntermediate(uint8_t byte) {
 }
 
 void VtParser::csiDispatch(uint8_t byte) {
-    // Push last param if any
-    if (param_started_) {
-        params_.push_back(current_param_);
+    // Finalize last param (with any pending sub-params)
+    if (param_started_ || in_sub_param_ || !current_subs_.empty()) {
+        if (in_sub_param_) {
+            current_subs_.push_back(param_started_ ? current_param_ : -1);
+            in_sub_param_ = false;
+        }
+        VtParam vp;
+        if (!current_subs_.empty()) {
+            vp.value = current_subs_[0];
+            vp.sub.assign(current_subs_.begin() + 1, current_subs_.end());
+        } else {
+            vp.value = param_started_ ? current_param_ : -1;
+        }
+        params_.push_back(std::move(vp));
+        current_subs_.clear();
     }
     handler_.onCsiDispatch(static_cast<char32_t>(byte), params_, intermediates_);
 }
@@ -177,8 +213,20 @@ void VtParser::handleEscape(uint8_t byte) {
         dcs_pending_ = false;
         if (byte == '\\') {
             // ST received: dispatch the collected DCS sequence.
-            if (param_started_) {
-                params_.push_back(current_param_);
+            if (param_started_ || in_sub_param_ || !current_subs_.empty()) {
+                if (in_sub_param_) {
+                    current_subs_.push_back(param_started_ ? current_param_ : -1);
+                    in_sub_param_ = false;
+                }
+                VtParam vp;
+                if (!current_subs_.empty()) {
+                    vp.value = current_subs_[0];
+                    vp.sub.assign(current_subs_.begin() + 1, current_subs_.end());
+                } else {
+                    vp.value = current_param_;
+                }
+                params_.push_back(std::move(vp));
+                current_subs_.clear();
                 param_started_ = false;
             }
             handler_.onDcsDispatch(dcs_final_char_, params_, intermediates_, dcs_data_);
@@ -273,10 +321,7 @@ void VtParser::handleCsiParam(uint8_t byte) {
         return;
     }
     if (byte == 0x7F) return;
-    if ((byte >= '0' && byte <= '9') || byte == ';') {
-        collectParam(byte);
-    } else if (byte == ':') {
-        // Sub-parameter separator - treat like param for now
+    if ((byte >= '0' && byte <= '9') || byte == ';' || byte == ':') {
         collectParam(byte);
     } else if (byte >= 0x3C && byte <= 0x3F) {
         // Invalid: parameter marker after params started -> ignore
@@ -412,8 +457,20 @@ void VtParser::handleDcsPassthrough(uint8_t byte) {
     // ST (0x9C) or ESC \ terminates
     if (byte == 0x9C) {
         // Push last param
-        if (param_started_) {
-            params_.push_back(current_param_);
+        if (param_started_ || in_sub_param_ || !current_subs_.empty()) {
+            if (in_sub_param_) {
+                current_subs_.push_back(param_started_ ? current_param_ : -1);
+                in_sub_param_ = false;
+            }
+            VtParam vp;
+            if (!current_subs_.empty()) {
+                vp.value = current_subs_[0];
+                vp.sub.assign(current_subs_.begin() + 1, current_subs_.end());
+            } else {
+                vp.value = current_param_;
+            }
+            params_.push_back(std::move(vp));
+            current_subs_.clear();
             param_started_ = false;
         }
         handler_.onDcsDispatch(dcs_final_char_, params_, intermediates_, dcs_data_);

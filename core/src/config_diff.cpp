@@ -52,8 +52,14 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
 
     // --- WindowSize ---
     if (old_cfg.window_width != new_cfg.window_width ||
-        old_cfg.window_height != new_cfg.window_height) {
+        old_cfg.window_height != new_cfg.window_height ||
+        old_cfg.window_padding != new_cfg.window_padding) {
         flags |= ConfigDirtyFlags::WindowSize;
+    }
+
+    // --- Minimum contrast ---
+    if (std::abs(old_cfg.minimum_contrast - new_cfg.minimum_contrast) > 0.001f) {
+        flags |= ConfigDirtyFlags::Colors;
     }
 
     // --- Theme ---

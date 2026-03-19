@@ -38,6 +38,13 @@ struct Config {
     // Window
     int window_width = 800;
     int window_height = 600;
+    int window_padding = 0;           // pixels, all sides
+
+    // Minimum contrast ratio (WCAG 2.0): 1.0 = disabled, up to 21.0
+    float minimum_contrast = 1.0f;
+
+    // Quick terminal / visor mode hotkey (e.g., "ctrl+`")
+    std::string quick_terminal_hotkey;
 
     // Terminal
     int scrollback_limit = 10000;

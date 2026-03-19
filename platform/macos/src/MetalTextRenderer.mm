@@ -11,8 +11,83 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <vector>
 #import <cstring>
+#import <cmath>
 
 namespace termcore {
+
+// ---------------------------------------------------------------------------
+// WCAG 2.0 minimum contrast helpers
+// ---------------------------------------------------------------------------
+namespace {
+
+float linearize(float srgb) {
+    return srgb <= 0.04045f ? srgb / 12.92f : std::pow((srgb + 0.055f) / 1.055f, 2.4f);
+}
+
+float relativeLuminance(uint32_t color) {
+    float r = linearize(((color >> 16) & 0xFF) / 255.0f);
+    float g = linearize(((color >> 8) & 0xFF) / 255.0f);
+    float b = linearize((color & 0xFF) / 255.0f);
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+}
+
+float contrastRatio(uint32_t fg, uint32_t bg) {
+    float l1 = relativeLuminance(fg);
+    float l2 = relativeLuminance(bg);
+    if (l1 < l2) std::swap(l1, l2);
+    return (l1 + 0.05f) / (l2 + 0.05f);
+}
+
+uint32_t ensureContrast(uint32_t fg, uint32_t bg, float minRatio) {
+    if (contrastRatio(fg, bg) >= minRatio) return fg;
+
+    float bgL = relativeLuminance(bg);
+
+    // Try lightening the foreground first, then darkening
+    // We adjust the foreground luminance to meet the contrast requirement
+    // Target luminance: (targetL + 0.05) / (bgL + 0.05) = minRatio
+    //   => targetL = minRatio * (bgL + 0.05) - 0.05
+    // Or for darker fg: (bgL + 0.05) / (targetL + 0.05) = minRatio
+    //   => targetL = (bgL + 0.05) / minRatio - 0.05
+
+    // Determine if we should lighten or darken
+    float lightTarget = minRatio * (bgL + 0.05f) - 0.05f;
+    float darkTarget = (bgL + 0.05f) / minRatio - 0.05f;
+
+    // Pick the adjustment direction that requires less change
+    float fgL = relativeLuminance(fg);
+    bool lighten = (std::abs(lightTarget - fgL) <= std::abs(darkTarget - fgL));
+
+    // Clamp target luminance to [0, 1]
+    float targetL = lighten ? lightTarget : darkTarget;
+    targetL = std::clamp(targetL, 0.0f, 1.0f);
+
+    // If lightening leads to > 1.0, try darkening instead and vice versa
+    if (lighten && lightTarget > 1.0f) {
+        targetL = std::clamp(darkTarget, 0.0f, 1.0f);
+    } else if (!lighten && darkTarget < 0.0f) {
+        targetL = std::clamp(lightTarget, 0.0f, 1.0f);
+    }
+
+    // Scale RGB channels uniformly to reach target luminance
+    if (fgL < 0.001f) {
+        // Nearly black fg: just set to gray
+        uint8_t v = static_cast<uint8_t>(std::sqrt(targetL) * 255.0f);
+        return (v << 16) | (v << 8) | v;
+    }
+    float scale = targetL / fgL;
+    auto scaleChannel = [&](int shift) -> uint8_t {
+        float c = ((fg >> shift) & 0xFF) / 255.0f;
+        c = std::clamp(c * std::sqrt(scale), 0.0f, 1.0f);
+        return static_cast<uint8_t>(c * 255.0f);
+    };
+    uint8_t r = scaleChannel(16);
+    uint8_t g = scaleChannel(8);
+    uint8_t b = scaleChannel(0);
+    return (r << 16) | (g << 8) | b;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Impl -- private implementation
@@ -62,6 +137,17 @@ struct MetalTextRenderer::Impl {
 
     // Selection state
     SelectionState selection;
+
+    // Grid padding (physical pixels, all sides)
+    float gridPadding = 0.0f;
+
+    // Minimum contrast ratio (1.0 = disabled)
+    float minimumContrast = 1.0f;
+
+    // URL highlight (Cmd+hover underline)
+    int urlHighlightRow = -1;
+    int urlHighlightStartCol = -1;
+    int urlHighlightEndCol = -1;
 
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;
@@ -315,6 +401,11 @@ fragment float4 cell_fragment(
                 uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
 
+                // Minimum contrast adjustment
+                if (minimumContrast > 1.0f) {
+                    fg = ensureContrast(fg, bg, minimumContrast);
+                }
+
                 // Apply selection highlight: swap fg/bg for selected cells
                 bool selected = selection.contains(row, col);
                 if (selected) {
@@ -389,6 +480,9 @@ fragment float4 cell_fragment(
                         uint32_t fg = dc.resolveFg(cell.fg_color);
                         uint32_t bg = dc.resolveBg(cell.bg_color);
                         if (cell.attributes & AttrInverse) std::swap(fg, bg);
+                        if (minimumContrast > 1.0f) {
+                            fg = ensureContrast(fg, bg, minimumContrast);
+                        }
                         if (selection.contains(row, col)) {
                             fg = selFg; bg = selBg;
                         }
@@ -435,6 +529,9 @@ fragment float4 cell_fragment(
                 uint32_t fg = dc.resolveFg(cell.fg_color);
                 uint32_t bg = dc.resolveBg(cell.bg_color);
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
+                if (minimumContrast > 1.0f) {
+                    fg = ensureContrast(fg, bg, minimumContrast);
+                }
                 if (selection.contains(row, col)) {
                     fg = selFg; bg = selBg;
                 }
@@ -504,6 +601,28 @@ fragment float4 cell_fragment(
                 ulInst.grid_row = static_cast<uint16_t>(row);
                 ulInst.flags = 4; // bg pass (solid rect)
                 // Position underline at bottom of cell, 2px thick
+                ulInst.offset_y = static_cast<int16_t>(cellH - 2);
+                ulInst.glyph_width = static_cast<uint16_t>(cellW);
+                ulInst.glyph_height = 2;
+                ulInst.bg_r = (fg >> 16) & 0xFF;
+                ulInst.bg_g = (fg >> 8) & 0xFF;
+                ulInst.bg_b = fg & 0xFF;
+                ulInst.bg_a = 255;
+                cellInstances.push_back(ulInst);
+            }
+        }
+
+        // --- Pass 3b: URL highlight underline (Cmd+hover) ---
+        if (urlHighlightRow >= 0 && urlHighlightRow < rows &&
+            urlHighlightStartCol >= 0 && urlHighlightEndCol > urlHighlightStartCol) {
+            int endC = std::min(urlHighlightEndCol, cols);
+            for (int col = urlHighlightStartCol; col < endC; ++col) {
+                const TermCell& cell = screen.cellAt(urlHighlightRow, col);
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                CellInstance ulInst = {};
+                ulInst.grid_col = static_cast<uint16_t>(col);
+                ulInst.grid_row = static_cast<uint16_t>(urlHighlightRow);
+                ulInst.flags = 4; // bg pass (solid rect)
                 ulInst.offset_y = static_cast<int16_t>(cellH - 2);
                 ulInst.glyph_width = static_cast<uint16_t>(cellW);
                 ulInst.glyph_height = 2;
@@ -693,7 +812,9 @@ void MetalTextRenderer::render(const Screen& screen) {
             }
         }
 
-        // grid_padding left at 0,0
+        // Grid padding (same on all sides)
+        uniforms.grid_padding[0] = impl_->gridPadding;
+        uniforms.grid_padding[1] = impl_->gridPadding;
 
         id<MTLBuffer> uniformBuf = [impl_->device
             newBufferWithBytes:&uniforms
@@ -770,6 +891,20 @@ void MetalTextRenderer::setCursorBlinkInterval(float seconds) {
 
 void MetalTextRenderer::setIMEActive(bool active) {
     impl_->imeActive = active;
+}
+
+void MetalTextRenderer::setGridPadding(float padding) {
+    impl_->gridPadding = std::max(0.0f, padding);
+}
+
+void MetalTextRenderer::setMinimumContrast(float ratio) {
+    impl_->minimumContrast = std::clamp(ratio, 1.0f, 21.0f);
+}
+
+void MetalTextRenderer::setUrlHighlight(int row, int startCol, int endCol) {
+    impl_->urlHighlightRow = row;
+    impl_->urlHighlightStartCol = startCol;
+    impl_->urlHighlightEndCol = endCol;
 }
 
 } // namespace termcore

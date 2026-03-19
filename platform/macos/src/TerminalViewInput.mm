@@ -85,6 +85,12 @@ static uint8_t modsFromEvent(NSEvent* event) {
         }
     }
 
+    // If copy mode is active, intercept ALL keys (don't send to PTY)
+    if (_impl->copyModeActive) {
+        [self handleCopyModeKey:event];
+        return;
+    }
+
     // If search field is active and Escape is pressed, close search.
     if (_searchActive && event.keyCode == 53) {
         [self closeSearch];
@@ -306,6 +312,9 @@ static uint8_t modsFromEvent(NSEvent* event) {
         break;
     case termcore::Action::ToggleFullscreen:
         [self.window toggleFullScreen:nil];
+        break;
+    case termcore::Action::EnterCopyMode:
+        [self enterCopyMode];
         break;
     case termcore::Action::ReloadConfig:
         // Notify AppDelegate to trigger config reload via the watcher
@@ -614,6 +623,10 @@ static bool isWordChar(char32_t cp) {
         && cp != ';' && cp != '&';
 }
 
+static bool isCopyModeWordChar(char32_t cp) {
+    return isWordChar(cp);
+}
+
 #pragma mark - Mouse events
 
 - (NSPoint)cellPositionForEvent:(NSEvent*)event {
@@ -622,8 +635,9 @@ static bool isWordChar(char32_t cp) {
     // loc is in points; _cellWidth/_cellHeight are in physical pixels.
     // Scale points to physical pixels before dividing by cell dimensions.
     CGFloat scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0;
-    int col = std::max(0, std::min((int)(loc.x * scale / _cellWidth), self.termCols - 1));
-    int row = std::max(0, std::min((int)(flippedY * scale / _cellHeight), self.termRows - 1));
+    float padding = _impl->windowPadding;  // logical pixels
+    int col = std::max(0, std::min((int)((loc.x - padding) * scale / _cellWidth), self.termCols - 1));
+    int row = std::max(0, std::min((int)((flippedY - padding) * scale / _cellHeight), self.termRows - 1));
     return NSMakePoint(col, row);
 }
 
@@ -810,13 +824,38 @@ static bool isWordChar(char32_t cp) {
     int row = (int)cell.y;
     int col = (int)cell.x;
 
-    auto urls = _impl->urlDetector->detectInScreen(*_impl->screen);
-    std::string url = _impl->urlDetector->urlAt(urls, row, col);
+    bool cmdHeld = (event.modifierFlags & NSEventModifierFlagCommand) != 0;
 
-    if (!url.empty()) {
-        [[NSCursor pointingHandCursor] set];
-    } else {
+    if (cmdHeld && _impl->screen) {
+        auto urls = _impl->urlDetector->detectInScreen(*_impl->screen);
+        std::string url = _impl->urlDetector->urlAt(urls, row, col);
+
+        if (!url.empty()) {
+            // Find the matching URL range for underline highlighting
+            for (const auto& u : urls) {
+                if (u.row == row && col >= u.start_col && col < u.end_col) {
+                    _impl->renderer->setUrlHighlight(row, u.start_col, u.end_col);
+                    break;
+                }
+            }
+            [[NSCursor pointingHandCursor] set];
+            _impl->needsRender = true;
+            return;
+        }
+    }
+
+    // Clear URL highlight
+    _impl->renderer->setUrlHighlight(-1, -1, -1);
+    [[NSCursor IBeamCursor] set];
+    _impl->needsRender = true;
+}
+
+- (void)flagsChanged:(NSEvent*)event {
+    // When Cmd is released, clear URL highlight
+    if (!(event.modifierFlags & NSEventModifierFlagCommand)) {
+        _impl->renderer->setUrlHighlight(-1, -1, -1);
         [[NSCursor IBeamCursor] set];
+        _impl->needsRender = true;
     }
 }
 
@@ -837,6 +876,370 @@ static bool isWordChar(char32_t cp) {
     int delta = (int)(dy > 0 ? ceil(dy) : floor(dy));
     int maxScroll = (int)_impl->screen->scrollbackSize();
     _scrollOffset = std::max(0, std::min(_scrollOffset + delta, maxScroll));
+}
+
+#pragma mark - Copy mode
+
+- (void)enterCopyMode {
+    if (_impl->copyModeActive || !_impl->screen) return;
+
+    _impl->copyModeActive = true;
+    _impl->copyModeCursorRow = _impl->screen->cursorRow();
+    _impl->copyModeCursorCol = _impl->screen->cursorCol();
+    _impl->copyModeSelecting = false;
+    _impl->copyModeLineSelect = false;
+    _impl->copyModeSearchMode = false;
+    _impl->copyModeWaitingG = false;
+
+    // Show "-- COPY --" indicator at the bottom of the terminal
+    CGFloat labelHeight = 22.0;
+    CGFloat labelWidth = 120.0;
+    CGFloat x = (self.bounds.size.width - labelWidth) / 2.0;
+    NSRect labelRect = NSMakeRect(x, 4.0, labelWidth, labelHeight);
+
+    _copyModeLabel = [[NSTextField alloc] initWithFrame:labelRect];
+    _copyModeLabel.stringValue = @"-- COPY --";
+    _copyModeLabel.editable = NO;
+    _copyModeLabel.bordered = NO;
+    _copyModeLabel.selectable = NO;
+    _copyModeLabel.drawsBackground = YES;
+    _copyModeLabel.backgroundColor = [NSColor colorWithRed:0.8 green:0.7 blue:0.0 alpha:0.9];
+    _copyModeLabel.textColor = [NSColor blackColor];
+    _copyModeLabel.font = [NSFont boldSystemFontOfSize:12.0];
+    _copyModeLabel.alignment = NSTextAlignmentCenter;
+    _copyModeLabel.autoresizingMask = NSViewMinXMargin | NSViewMaxXMargin | NSViewMaxYMargin;
+    [self addSubview:_copyModeLabel];
+
+    _impl->needsRender = true;
+}
+
+- (void)exitCopyMode {
+    if (!_impl->copyModeActive) return;
+
+    _impl->copyModeActive = false;
+    _impl->copyModeSelecting = false;
+    _impl->copyModeLineSelect = false;
+    _impl->copyModeSearchMode = false;
+    _impl->copyModeWaitingG = false;
+
+    // Remove selection
+    _selecting = NO;
+
+    // Remove indicator label
+    if (_copyModeLabel) {
+        [_copyModeLabel removeFromSuperview];
+        _copyModeLabel = nil;
+    }
+
+    _impl->needsRender = true;
+}
+
+/// Ensure the copy mode cursor is visible by adjusting scroll offset.
+- (void)copyModeEnsureCursorVisible {
+    if (!_impl->screen) return;
+    int rows = _impl->screen->rows();
+    int scrollbackSize = (int)_impl->screen->scrollbackSize();
+
+    // copyModeCursorRow is a visible row (0..rows-1 = visible, negative = above visible)
+    // Convert to absolute row: absRow = scrollbackSize - _scrollOffset + visibleRow
+    int visRow = _impl->copyModeCursorRow;
+
+    if (visRow < 0) {
+        // Cursor is above visible area, scroll up
+        _scrollOffset = std::min(_scrollOffset - visRow, scrollbackSize);
+        _impl->copyModeCursorRow = 0;
+    } else if (visRow >= rows) {
+        // Cursor is below visible area, scroll down
+        int excess = visRow - (rows - 1);
+        _scrollOffset = std::max(0, _scrollOffset - excess);
+        _impl->copyModeCursorRow = rows - 1;
+    }
+}
+
+/// Update the selection state based on copy mode cursor position.
+- (void)copyModeUpdateSelection {
+    if (!_impl->copyModeSelecting) return;
+
+    if (_impl->copyModeLineSelect) {
+        // Line selection: full rows between start and current
+        int cols = _impl->screen ? _impl->screen->cols() : 80;
+        _selectionStart = NSMakePoint(0, _impl->copyModeSelectStartRow);
+        _selectionEnd = NSMakePoint(cols - 1, _impl->copyModeCursorRow);
+    } else {
+        _selectionStart = NSMakePoint(_impl->copyModeSelectStartCol,
+                                       _impl->copyModeSelectStartRow);
+        _selectionEnd = NSMakePoint(_impl->copyModeCursorCol,
+                                     _impl->copyModeCursorRow);
+    }
+    _selecting = YES;
+    _blockSelection = NO;
+    _impl->needsRender = true;
+}
+
+/// Get the codepoint at a given (visible) row and column, handling scrollback.
+- (char32_t)copyModeCellAt:(int)row col:(int)col {
+    if (!_impl->screen) return ' ';
+    int rows = _impl->screen->rows();
+    int cols = _impl->screen->cols();
+    if (col < 0 || col >= cols) return ' ';
+    // The visible row is in range [0, rows-1]. With scrollback offset,
+    // the actual screen row maps directly if row is in [0, rows-1].
+    if (row >= 0 && row < rows) {
+        return _impl->screen->cellAt(row, col).codepoint;
+    }
+    // For scrollback rows (when _scrollOffset > 0 and row maps to scrollback),
+    // we can use getScrollbackLineText, but cellAt only works for visible rows.
+    // In copy mode, cursor stays in visible range after ensureCursorVisible.
+    return ' ';
+}
+
+- (BOOL)handleCopyModeKey:(NSEvent*)event {
+    if (!_impl->copyModeActive || !_impl->screen) return NO;
+
+    // If search mode is active, route to search
+    if (_impl->copyModeSearchMode) {
+        if (event.keyCode == 53) { // Escape - cancel search
+            _impl->copyModeSearchMode = false;
+            [self closeSearch];
+            return YES;
+        }
+        if (event.keyCode == 36 || event.keyCode == 76) { // Enter - accept search
+            _impl->copyModeSearchMode = false;
+            // Jump cursor to current search match if any
+            if (_impl->search->isActive() && _impl->search->matchCount() > 0) {
+                auto* match = _impl->search->currentMatch();
+                if (match) {
+                    _impl->copyModeCursorRow = match->row;
+                    _impl->copyModeCursorCol = match->start_col;
+                    [self copyModeEnsureCursorVisible];
+                    [self copyModeUpdateSelection];
+                }
+            }
+            // Keep search highlights visible but return focus to copy mode
+            if (_searchField) {
+                [self.window makeFirstResponder:self];
+            }
+            return YES;
+        }
+        // Let the search field handle the key
+        return NO;
+    }
+
+    NSString* chars = event.charactersIgnoringModifiers;
+    if (!chars || chars.length == 0) return YES;
+    unichar ch = [chars characterAtIndex:0];
+    uint8_t mods = modsFromEvent(event);
+
+    int rows = _impl->screen->rows();
+    int cols = _impl->screen->cols();
+    int scrollbackSize = (int)_impl->screen->scrollbackSize();
+
+    // Handle 'gg' sequence
+    if (_impl->copyModeWaitingG) {
+        _impl->copyModeWaitingG = false;
+        if (ch == 'g') {
+            // gg: go to top of scrollback
+            _scrollOffset = scrollbackSize;
+            _impl->copyModeCursorRow = 0;
+            _impl->copyModeCursorCol = 0;
+            [self copyModeUpdateSelection];
+            _impl->needsRender = true;
+            return YES;
+        }
+        // Not 'g', fall through to handle the new key normally
+    }
+
+    switch (ch) {
+        // --- Navigation ---
+        case 'h': // left
+            _impl->copyModeCursorCol = std::max(0, _impl->copyModeCursorCol - 1);
+            break;
+
+        case 'j': // down
+            _impl->copyModeCursorRow++;
+            [self copyModeEnsureCursorVisible];
+            break;
+
+        case 'k': // up
+            _impl->copyModeCursorRow--;
+            [self copyModeEnsureCursorVisible];
+            break;
+
+        case 'l': // right
+            _impl->copyModeCursorCol = std::min(cols - 1, _impl->copyModeCursorCol + 1);
+            break;
+
+        case 'w': { // next word
+            int r = _impl->copyModeCursorRow;
+            int c = _impl->copyModeCursorCol;
+            // Skip current word
+            while (c < cols - 1 && isCopyModeWordChar([self copyModeCellAt:r col:c])) c++;
+            // Skip whitespace
+            while (c < cols - 1 && !isCopyModeWordChar([self copyModeCellAt:r col:c])) c++;
+            if (c >= cols - 1 && r < rows - 1) {
+                // Wrap to next line
+                r++;
+                c = 0;
+                while (c < cols - 1 && !isCopyModeWordChar([self copyModeCellAt:r col:c])) c++;
+            }
+            _impl->copyModeCursorRow = r;
+            _impl->copyModeCursorCol = c;
+            [self copyModeEnsureCursorVisible];
+            break;
+        }
+
+        case 'b': { // previous word
+            int r = _impl->copyModeCursorRow;
+            int c = _impl->copyModeCursorCol;
+            // Move back one
+            if (c > 0) c--;
+            // Skip whitespace
+            while (c > 0 && !isCopyModeWordChar([self copyModeCellAt:r col:c])) c--;
+            if (c == 0 && !isCopyModeWordChar([self copyModeCellAt:r col:c]) && r > 0) {
+                r--;
+                c = cols - 1;
+                while (c > 0 && !isCopyModeWordChar([self copyModeCellAt:r col:c])) c--;
+            }
+            // Go to start of word
+            while (c > 0 && isCopyModeWordChar([self copyModeCellAt:r col:c - 1])) c--;
+            _impl->copyModeCursorRow = r;
+            _impl->copyModeCursorCol = c;
+            [self copyModeEnsureCursorVisible];
+            break;
+        }
+
+        case '0': // line start
+            _impl->copyModeCursorCol = 0;
+            break;
+
+        case '$': // line end
+            _impl->copyModeCursorCol = cols - 1;
+            // Find last non-space
+            while (_impl->copyModeCursorCol > 0) {
+                char32_t cp = [self copyModeCellAt:_impl->copyModeCursorRow
+                                               col:_impl->copyModeCursorCol];
+                if (cp != ' ' && cp != 0) break;
+                _impl->copyModeCursorCol--;
+            }
+            break;
+
+        case 'g': // first 'g' of 'gg'
+            _impl->copyModeWaitingG = true;
+            return YES; // Don't update selection yet
+
+        case 'G': // bottom of scrollback (current content)
+            _scrollOffset = 0;
+            _impl->copyModeCursorRow = rows - 1;
+            _impl->copyModeCursorCol = 0;
+            break;
+
+        case 'd': // Ctrl+d: half page down
+            if (mods & termcore::ModCtrl) {
+                int halfPage = rows / 2;
+                _impl->copyModeCursorRow += halfPage;
+                [self copyModeEnsureCursorVisible];
+            }
+            break;
+
+        case 'u': // Ctrl+u: half page up
+            if (mods & termcore::ModCtrl) {
+                int halfPage = rows / 2;
+                _impl->copyModeCursorRow -= halfPage;
+                [self copyModeEnsureCursorVisible];
+            }
+            break;
+
+        case '/': // Search mode
+            _impl->copyModeSearchMode = true;
+            [self openSearch];
+            return YES;
+
+        case 'n': // next search match
+            if (_impl->search->isActive()) {
+                _impl->search->next();
+                if (_impl->search->matchCount() > 0) {
+                    auto* match = _impl->search->currentMatch();
+                    if (match) {
+                        _impl->copyModeCursorRow = match->row;
+                        _impl->copyModeCursorCol = match->start_col;
+                        [self copyModeEnsureCursorVisible];
+                    }
+                }
+            }
+            break;
+
+        case 'N': // previous search match
+            if (_impl->search->isActive()) {
+                _impl->search->prev();
+                if (_impl->search->matchCount() > 0) {
+                    auto* match = _impl->search->currentMatch();
+                    if (match) {
+                        _impl->copyModeCursorRow = match->row;
+                        _impl->copyModeCursorCol = match->start_col;
+                        [self copyModeEnsureCursorVisible];
+                    }
+                }
+            }
+            break;
+
+        case 'v': // visual selection
+            if (!_impl->copyModeSelecting) {
+                _impl->copyModeSelecting = true;
+                _impl->copyModeLineSelect = false;
+                _impl->copyModeSelectStartRow = _impl->copyModeCursorRow;
+                _impl->copyModeSelectStartCol = _impl->copyModeCursorCol;
+                // Update label
+                if (_copyModeLabel) _copyModeLabel.stringValue = @"-- VISUAL --";
+            } else {
+                // Toggle off
+                _impl->copyModeSelecting = false;
+                _selecting = NO;
+                if (_copyModeLabel) _copyModeLabel.stringValue = @"-- COPY --";
+            }
+            break;
+
+        case 'V': // visual line selection
+            if (!_impl->copyModeSelecting || !_impl->copyModeLineSelect) {
+                _impl->copyModeSelecting = true;
+                _impl->copyModeLineSelect = true;
+                _impl->copyModeSelectStartRow = _impl->copyModeCursorRow;
+                _impl->copyModeSelectStartCol = 0;
+                if (_copyModeLabel) _copyModeLabel.stringValue = @"-- VISUAL LINE --";
+            } else {
+                _impl->copyModeSelecting = false;
+                _impl->copyModeLineSelect = false;
+                _selecting = NO;
+                if (_copyModeLabel) _copyModeLabel.stringValue = @"-- COPY --";
+            }
+            break;
+
+        case 'y': // yank
+            if (_impl->copyModeSelecting) {
+                [self copyModeYank];
+                [self exitCopyMode];
+                return YES;
+            }
+            break;
+
+        default:
+            // Check for Escape (keyCode 53) or 'q'
+            if (event.keyCode == 53 || ch == 'q') {
+                [self exitCopyMode];
+                return YES;
+            }
+            return YES; // Consume all keys in copy mode
+    }
+
+    [self copyModeUpdateSelection];
+    _impl->needsRender = true;
+    return YES;
+}
+
+- (void)copyModeYank {
+    if (!_impl->screen || !_selecting) return;
+
+    // Delegate to the existing copy: method which reads _selectionStart/_selectionEnd
+    [self copy:nil];
 }
 
 @end

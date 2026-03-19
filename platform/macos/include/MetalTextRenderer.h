@@ -122,6 +122,16 @@ public:
     /// Hide cursor during IME composition.
     void setIMEActive(bool active);
 
+    /// Set grid padding in physical pixels (all sides).
+    void setGridPadding(float padding);
+
+    /// Set minimum contrast ratio (WCAG 2.0). 1.0 = disabled, up to 21.0.
+    void setMinimumContrast(float ratio);
+
+    /// Set the URL highlight range for Cmd+hover underline rendering.
+    /// row=-1 means no highlight.
+    void setUrlHighlight(int row, int startCol, int endCol);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

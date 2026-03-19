@@ -8,6 +8,21 @@
 
 namespace termcore {
 
+/// A single CSI/DCS parameter with optional colon-separated sub-parameters.
+struct VtParam {
+    int value = -1;              ///< Main parameter value (-1 = default/omitted)
+    std::vector<int> sub;        ///< Colon-separated sub-parameters
+
+    /// Check if this param has sub-parameters.
+    bool hasSub() const { return !sub.empty(); }
+
+    /// Get sub-parameter at index, or default value.
+    int subOr(size_t idx, int def) const {
+        if (idx < sub.size() && sub[idx] >= 0) return sub[idx];
+        return def;
+    }
+};
+
 /// Handler interface for VT parser events.
 class VtParserHandler {
 public:
@@ -21,7 +36,7 @@ public:
 
     /// Called when a CSI sequence is complete.
     virtual void onCsiDispatch(char32_t final_char,
-                               const std::vector<int>& params,
+                               const std::vector<VtParam>& params,
                                const std::string& intermediates) = 0;
 
     /// Called when an ESC sequence is complete.
@@ -34,7 +49,7 @@ public:
 
     /// Called when a DCS sequence is complete (stub).
     virtual void onDcsDispatch(char32_t final_char,
-                               const std::vector<int>& params,
+                               const std::vector<VtParam>& params,
                                const std::string& intermediates,
                                const std::string& data) {
         (void)final_char;
@@ -109,10 +124,12 @@ private:
     VtParserState state_ = VtParserState::Ground;
 
     // CSI/ESC parameter collection
-    std::vector<int> params_;
+    std::vector<VtParam> params_;
     std::string intermediates_;
     int current_param_ = -1;
     bool param_started_ = false;
+    bool in_sub_param_ = false;        ///< Currently collecting colon sub-params
+    std::vector<int> current_subs_;    ///< Sub-params for current param
 
     // OSC collection
     int osc_number_ = -1;

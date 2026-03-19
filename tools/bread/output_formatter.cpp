@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace breadterminal {
+namespace bread {
 
 static std::string formatTable(const nlohmann::json& result) {
     std::ostringstream oss;
@@ -94,6 +94,16 @@ static std::string formatTable(const nlohmann::json& result) {
         return oss.str();
     }
 
+    // scrollback lines
+    if (result.contains("lines") && result["lines"].is_array()) {
+        for (const auto& line : result["lines"]) {
+            if (line.is_string()) {
+                oss << line.get<std::string>() << "\n";
+            }
+        }
+        return oss.str();
+    }
+
     // Fallback: dump as JSON
     return result.dump(2) + "\n";
 }
@@ -129,4 +139,4 @@ std::string formatResponse(const nlohmann::json& response, bool json_mode, int& 
     return response.dump(2) + "\n";
 }
 
-}  // namespace breadterminal
+}  // namespace bread

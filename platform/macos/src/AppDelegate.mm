@@ -5,6 +5,7 @@
 #import "SidebarViewController.h"
 #import "TerminalContentViewController.h"
 #import "PreferencesWindowController.h"
+#import "QuickTerminalPanel.h"
 #import <Metal/Metal.h>
 
 #include "termcore/config.h"
@@ -30,6 +31,9 @@
 
     // Preferences
     PreferencesWindowController* _prefsController;
+
+    // Quick Terminal (visor mode)
+    QuickTerminalPanel* _quickTerminalPanel;
 
     // Notification observer token (must be removed on termination)
     id _reloadConfigObserver;
@@ -116,12 +120,40 @@
         termcore::WebViewCallback webviewCb = [](const std::string& /*method*/,
                                                   const nlohmann::json& /*params*/) {};
 
+        // ScrollbackReadCallback: read scrollback + visible lines from the pane's Screen
+        termcore::ScrollbackReadCallback scrollbackCb =
+            [weakTV](termcore::PaneId /*pane_id*/, int line_count) -> std::vector<std::string> {
+            TerminalView* tv = weakTV;
+            if (!tv || !tv->_impl || !tv->_impl->screen) return {};
+
+            auto* screen = tv->_impl->screen.get();
+            int sb_size = static_cast<int>(screen->scrollbackSize());
+            int screen_rows = screen->rows();
+            int total = sb_size + screen_rows;
+            int count = std::min(line_count, total);
+
+            std::vector<std::string> result;
+            result.reserve(count);
+
+            // Read from most recent scrollback lines + visible screen
+            // line 0 = most recent scrollback line (just above visible area)
+            for (int i = 0; i < count; ++i) {
+                if (i < sb_size) {
+                    result.push_back(screen->getScrollbackLineText(i));
+                } else {
+                    result.push_back(screen->getLineText(i - sb_size));
+                }
+            }
+            return result;
+        };
+
         auto dispatcher = std::make_shared<termcore::CommandDispatcher>(
             [_terminalView mux],
             [_terminalView notifications],
             [_terminalView agentTracker],
             std::move(writeCb),
-            std::move(webviewCb));
+            std::move(webviewCb),
+            std::move(scrollbackCb));
 
         _socketServer = std::make_unique<termcore::SocketServer>(
             std::move(transport), std::move(dispatcher));
@@ -212,6 +244,16 @@
     _prefsController = [[PreferencesWindowController alloc]
         initWithConfigPath:_configPath
              configWatcher:_configWatcher.get()];
+
+    // --- Quick Terminal (visor mode) ---
+    if (!config.quick_terminal_hotkey.empty()) {
+        _quickTerminalPanel = [[QuickTerminalPanel alloc] initWithDevice:device];
+        [_quickTerminalPanel.terminalView applyConfig:config];
+        [_quickTerminalPanel.terminalView startShell];
+        NSString* hotkey = [NSString stringWithUTF8String:
+                            config.quick_terminal_hotkey.c_str()];
+        [_quickTerminalPanel registerGlobalHotkey:hotkey];
+    }
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
@@ -223,6 +265,12 @@
     // Destroy preferences controller first — it holds a raw IConfigWatcher* that
     // will become dangling once _configWatcher is destroyed.
     _prefsController = nil;
+
+    // Tear down quick terminal
+    if (_quickTerminalPanel) {
+        [_quickTerminalPanel unregisterGlobalHotkey];
+        _quickTerminalPanel = nil;
+    }
 
     // Stop socket server
     [_socketDrainTimer invalidate];

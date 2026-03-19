@@ -8,7 +8,7 @@
 #include <cstring>
 #endif
 
-namespace breadterminal {
+namespace bread {
 
 bool CliClient::connect(const std::string& socket_path, int timeout_ms) {
 #ifndef _WIN32
@@ -120,4 +120,4 @@ void CliClient::close() {
 #endif
 }
 
-}  // namespace breadterminal
+}  // namespace bread

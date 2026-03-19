@@ -19,7 +19,35 @@
 
 #import <UserNotifications/UserNotifications.h>
 #include <dispatch/dispatch.h>
+#include <mach/mach_time.h>
 #include <memory>
+
+// CVDisplayLink callback (fallback for < macOS 14)
+static CVReturn displayLinkCallback(CVDisplayLinkRef /*displayLink*/,
+                                     const CVTimeStamp* /*now*/,
+                                     const CVTimeStamp* /*outputTime*/,
+                                     CVOptionFlags /*flagsIn*/,
+                                     CVOptionFlags* /*flagsOut*/,
+                                     void* context) {
+    TerminalView* view = (__bridge TerminalView*)context;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [view renderFrame];
+    });
+    return kCVReturnSuccess;
+}
+
+// Idle downclock constants
+static const double kIdleTimeoutSeconds = 1.0;
+static const NSTimeInterval kIdleCheckInterval = 0.1; // 10 fps when idle
+
+// Convert mach_absolute_time to seconds
+static double machTimeToSeconds(uint64_t elapsed) {
+    static mach_timebase_info_data_t sTimebaseInfo = {0, 0};
+    if (sTimebaseInfo.denom == 0) {
+        mach_timebase_info(&sTimebaseInfo);
+    }
+    return (double)(elapsed * sTimebaseInfo.numer) / (double)(sTimebaseInfo.denom * 1000000000ULL);
+}
 
 @implementation TerminalView
 
@@ -98,20 +126,91 @@
     _impl->renderer->resize(frame.size.width * scale, frame.size.height * scale);
     _impl->needsRender = true;
 
-    // Render timer (60 fps)
+    // Create PTY serial queue
+    _impl->ptyQueue = dispatch_queue_create("com.breadterminal.pty", DISPATCH_QUEUE_SERIAL);
+
+    // Initialize idle tracking
+    _impl->lastActivityTime = mach_absolute_time();
+    _impl->idleMode = false;
+
+    // Set up display link (replaces NSTimer for frame pacing)
+    [self setupDisplayLink];
+
+    return self;
+}
+
+#pragma mark - Display link management
+
+- (void)setupDisplayLink {
+    // Try CADisplayLink first (macOS 14+)
+    if (@available(macOS 14.0, *)) {
+        _impl->useCADisplayLink = true;
+        _impl->displayLink = [self displayLinkWithTarget:self selector:@selector(renderFrame)];
+        [_impl->displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+        return;
+    }
+
+    // Fallback: CVDisplayLink for older macOS
+    _impl->useCADisplayLink = false;
+    CVDisplayLinkCreateWithActiveCGDisplays(&_impl->cvDisplayLink);
+    CVDisplayLinkSetOutputCallback(_impl->cvDisplayLink, displayLinkCallback, (__bridge void*)self);
+    CVDisplayLinkStart(_impl->cvDisplayLink);
+}
+
+- (void)stopDisplayLink {
+    if (@available(macOS 14.0, *)) {
+        if (_impl->useCADisplayLink && _impl->displayLink) {
+            [_impl->displayLink invalidate];
+            _impl->displayLink = nil;
+        }
+    }
+    if (_impl->cvDisplayLink) {
+        CVDisplayLinkStop(_impl->cvDisplayLink);
+        CVDisplayLinkRelease(_impl->cvDisplayLink);
+        _impl->cvDisplayLink = nullptr;
+    }
+}
+
+- (void)enterIdleMode {
+    if (_impl->idleMode) return;
+    _impl->idleMode = true;
+
+    // Stop the display link to save power
+    [self stopDisplayLink];
+
+    // Start a low-frequency idle timer instead
     __weak TerminalView* weakSelf = self;
-    _impl->renderTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
-                                                         repeats:YES
-                                                           block:^(NSTimer* _Nonnull timer) {
+    _impl->idleTimer = [NSTimer scheduledTimerWithTimeInterval:kIdleCheckInterval
+                                                       repeats:YES
+                                                         block:^(NSTimer* _Nonnull timer) {
         TerminalView* s = weakSelf;
         if (!s) { [timer invalidate]; return; }
         [s renderFrame];
     }];
-    return self;
+}
+
+- (void)exitIdleMode {
+    if (!_impl->idleMode) return;
+    _impl->idleMode = false;
+
+    // Stop idle timer
+    [_impl->idleTimer invalidate];
+    _impl->idleTimer = nil;
+
+    // Restart display link at full vsync rate
+    [self setupDisplayLink];
+}
+
+- (void)markActivity {
+    _impl->lastActivityTime = mach_absolute_time();
+    if (_impl->idleMode) {
+        [self exitIdleMode];
+    }
 }
 
 - (void)dealloc {
-    // TerminalViewImpl destructor handles ptyReadSource cancel and renderTimer invalidation
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    // TerminalViewImpl destructor handles ptyReadSource cancel and display link cleanup
     delete _impl;
 }
 
@@ -168,6 +267,16 @@
 
     // Background transparency & blur
     [self applyTransparencyConfig:config];
+
+    // Grid padding
+    _impl->windowPadding = config.window_padding;
+    {
+        CGFloat padScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0;
+        _impl->renderer->setGridPadding(config.window_padding * padScale);
+    }
+
+    // Minimum contrast
+    _impl->renderer->setMinimumContrast(config.minimum_contrast);
 
     // Recalculate grid with potentially new font metrics
     [self updateGridSize];
@@ -302,9 +411,10 @@
     // Cell dimensions are in physical pixels; convert view bounds to pixels
     float cw = _cellWidth  > 0 ? _cellWidth  : 16;
     float ch = _cellHeight > 0 ? _cellHeight : 32;
-    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
-    float viewWidthPx  = self.bounds.size.width  * scale;
-    float viewHeightPx = self.bounds.size.height * scale;
+    float gridScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    float paddingPx = _impl->windowPadding * gridScale;
+    float viewWidthPx  = self.bounds.size.width  * gridScale - paddingPx * 2;
+    float viewHeightPx = self.bounds.size.height * gridScale - paddingPx * 2;
     int cols = std::max(1, (int)(viewWidthPx  / cw));
     int rows = std::max(1, (int)(viewHeightPx / ch));
     return {rows, cols};
@@ -318,9 +428,9 @@
     _impl->screen->resize(rows, cols);
     if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
     // Viewport in physical pixels (matches drawableSize)
-    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
-    float w = self.bounds.size.width * scale;
-    float h = self.bounds.size.height * scale;
+    float gridScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    float w = self.bounds.size.width * gridScale;
+    float h = self.bounds.size.height * gridScale;
     _impl->renderer->resize(w, h);
     _impl->needsRender = true;
 }
@@ -334,8 +444,17 @@
         return;
     }
 
-    // Wire command finish callback for desktop notifications
+    // Wire response callback so Screen can write back to PTY (DA, DSR, DECRPM, etc.)
     __weak TerminalView* weakSelf = self;
+    _impl->screen->setResponseCallback([weakSelf](const std::string& response) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TerminalView* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf->_impl->pty) return;
+            strongSelf->_impl->pty->write(response.data(), response.size());
+        });
+    });
+
+    // Wire command finish callback for desktop notifications
     _impl->screen->setCommandFinishCallback([weakSelf](double duration_seconds) {
         dispatch_async(dispatch_get_main_queue(), ^{
             TerminalView* strongSelf = weakSelf;
@@ -352,43 +471,69 @@
         });
     });
 
+    // Register for focus event notifications (CSI I / CSI O)
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(windowDidBecomeKey:)
+        name:NSWindowDidBecomeKeyNotification object:self.window];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(windowDidResignKey:)
+        name:NSWindowDidResignKeyNotification object:self.window];
+
+    // Dispatch PTY reads on a dedicated serial queue
     int fd = _impl->pty->fd();
     dispatch_source_t src = dispatch_source_create(
-        DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
+        DISPATCH_SOURCE_TYPE_READ, fd, 0, _impl->ptyQueue);
     dispatch_source_set_event_handler(src, ^{
         TerminalView* s = weakSelf;
-        if (s) [s readPtyData];
+        if (s) [s readPtyDataOnQueue];
     });
     dispatch_source_set_cancel_handler(src, ^{});
     _impl->ptyReadSource = src;
     dispatch_resume(src);
 }
 
-- (void)readPtyData {
+- (void)readPtyDataOnQueue {
+    // Called on ptyQueue — read from PTY and feed parser under lock
     char buf[65536];
     for (;;) {
         int n = _impl->pty->read(buf, sizeof(buf));
         if (n > 0) {
+            std::lock_guard<std::mutex> lock(_impl->screenMutex);
             _impl->parser->feed(buf, static_cast<size_t>(n));
         } else if (n < 0) {
-            if (_impl->ptyReadSource) {
-                dispatch_source_cancel(_impl->ptyReadSource);
-                _impl->ptyReadSource = nullptr;
-            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (_impl->ptyReadSource) {
+                    dispatch_source_cancel(_impl->ptyReadSource);
+                    _impl->ptyReadSource = nullptr;
+                }
+            });
             return;
         } else {
             // n == 0: no more data available right now
             break;
         }
     }
-    _impl->needsRender = true;
-    // Update window title from OSC sequences
-    auto title = _impl->screen->title();
-    if (!title.empty()) {
-        NSString* t = [NSString stringWithUTF8String:title.c_str()];
-        if (t && ![self.window.title isEqualToString:t])
-            self.window.title = t;
-    }
+
+    // Signal main thread that rendering is needed
+    __weak TerminalView* weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        TerminalView* s = weakSelf;
+        if (!s) return;
+        s->_impl->needsRender = true;
+        [s markActivity];
+
+        // Update window title from OSC sequences
+        std::string title;
+        {
+            std::lock_guard<std::mutex> lock(s->_impl->screenMutex);
+            title = s->_impl->screen->title();
+        }
+        if (!title.empty()) {
+            NSString* t = [NSString stringWithUTF8String:title.c_str()];
+            if (t && ![s.window.title isEqualToString:t])
+                s.window.title = t;
+        }
+    });
 }
 
 #pragma mark - Text I/O
@@ -407,29 +552,81 @@
     if (_impl->pty) _impl->pty->write(str, strlen(str));
 }
 
+#pragma mark - Focus Events
+
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
+        const char* seq = "\033[I";
+        _impl->pty->write(seq, 3);
+    }
+    // Trigger render on focus gain (e.g. cursor blink state)
+    _impl->needsRender = true;
+    [self markActivity];
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification {
+    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
+        const char* seq = "\033[O";
+        _impl->pty->write(seq, 3);
+    }
+    _impl->needsRender = true;
+}
+
 #pragma mark - Rendering
 
-- (void)setNeedsRender { _impl->needsRender = true; }
+- (void)setNeedsRender {
+    _impl->needsRender = true;
+    [self markActivity];
+}
 
 - (void)renderFrame {
-    // Always render when cursor is visible (blink requires continuous redraw)
-    // But NOT during IME composition — cursor is hidden, no blink needed
+    // Synchronized output (mode ?2026): defer rendering while active,
+    // unless the safety timeout (500ms) has elapsed.
+    if (_impl->screen && _impl->screen->syncUpdate()) {
+        auto elapsed = std::chrono::steady_clock::now() - _impl->screen->syncStartTime();
+        if (elapsed < std::chrono::milliseconds(500)) {
+            // Sync mode active and under timeout — skip render, keep needsRender set
+            return;
+        }
+        // Safety timeout expired — render anyway (app forgot to reset sync mode)
+    }
+
+    // --- Idle downclock: check if we should transition to idle mode ---
+    bool screenDirty = false;
+    {
+        std::lock_guard<std::mutex> lock(_impl->screenMutex);
+        screenDirty = _impl->screen ? _impl->screen->isDirty() : false;
+    }
+
     bool imeActive = _markedText != nil && _markedText.length > 0;
     bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
-    if (!_impl->needsRender && !cursorNeedsRedraw) return;
+
+    // If nothing needs rendering, check whether to enter idle mode
+    if (!_impl->needsRender && !cursorNeedsRedraw && !screenDirty) {
+        uint64_t now = mach_absolute_time();
+        double elapsed = machTimeToSeconds(now - _impl->lastActivityTime);
+        if (elapsed > kIdleTimeoutSeconds && !_impl->idleMode) {
+            [self enterIdleMode];
+        }
+        return;
+    }
+
     _impl->needsRender = false;
 
     // Ensure drawable size is valid
     if (_metalLayer.drawableSize.width <= 0 || _metalLayer.drawableSize.height <= 0) {
-        CGFloat scale = self.window.backingScaleFactor ?: 2.0;
+        CGFloat drawScale = self.window.backingScaleFactor ?: 2.0;
         NSSize sz = self.bounds.size;
         if (sz.width > 0 && sz.height > 0) {
-            float pxW = sz.width * scale;
-            float pxH = sz.height * scale;
+            float pxW = sz.width * drawScale;
+            float pxH = sz.height * drawScale;
             _metalLayer.drawableSize = NSMakeSize(pxW, pxH);
             _impl->renderer->resize(pxW, pxH);
         }
     }
+
+    // Lock screen for rendering
+    std::lock_guard<std::mutex> lock(_impl->screenMutex);
 
     // Inject IME marked text into screen cells before render, restore after
     struct IMESavedCell { int row, col; termcore::TermCell cell; };
@@ -504,6 +701,11 @@
     }
 
     _impl->renderer->render(*_impl->screen);
+
+    // Clear dirty flags after successful render
+    if (_impl->screen) {
+        _impl->screen->clearDirty();
+    }
 
     // Restore original cells
     for (const auto& sc : imeSaved) {
