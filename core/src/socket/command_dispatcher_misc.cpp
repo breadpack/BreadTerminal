@@ -12,6 +12,7 @@ CommandDispatcher::CommandDispatcher(Mux& mux,
     , agent_tracker_(agent_tracker)
     , write_cb_(std::move(write_cb))
     , webview_cb_(std::move(webview_cb))
+    , orchestrator_(mux)
 {
 }
 
@@ -33,12 +34,23 @@ rpc::Response CommandDispatcher::dispatch(const rpc::Request& req) {
     if (method == "tab.close")  return handleTabClose(id, p);
 
     // pane.*
-    if (method == "pane.split")     return handlePaneSplit(id, p);
-    if (method == "pane.close")     return handlePaneClose(id, p);
-    if (method == "pane.focus")     return handlePaneFocus(id, p);
-    if (method == "pane.list")      return handlePaneList(id, p);
-    if (method == "pane.send-text") return handlePaneSendText(id, p);
-    if (method == "pane.send-keys") return handlePaneSendKeys(id, p);
+    if (method == "pane.split")       return handlePaneSplit(id, p);
+    if (method == "pane.close")       return handlePaneClose(id, p);
+    if (method == "pane.focus")       return handlePaneFocus(id, p);
+    if (method == "pane.list")        return handlePaneList(id, p);
+    if (method == "pane.send-text")   return handlePaneSendText(id, p);
+    if (method == "pane.send-keys")   return handlePaneSendKeys(id, p);
+    if (method == "pane.read-screen") return handlePaneReadScreen(id, p);
+    if (method == "pane.set-status")  return handlePaneSetStatus(id, p);
+    if (method == "pane.set-progress") return handlePaneSetProgress(id, p);
+
+    // agent.*
+    if (method == "agent.log")         return handleAgentLog(id, p);
+    if (method == "agent.launch")      return handleAgentLaunch(id, p);
+    if (method == "agent.orchestrate") return handleAgentOrchestrate(id, p);
+    if (method == "agent.readAll")     return handleAgentReadAll(id, p);
+    if (method == "agent.getIdle")     return handleAgentGetIdle(id, p);
+    if (method == "agent.closeAll")    return handleAgentCloseAll(id, p);
 
     // notify.*
     if (method == "notify.send") return handleNotifySend(id, p);

@@ -41,6 +41,16 @@ static std::string formatTable(const nlohmann::json& result) {
         return oss.str();
     }
 
+    // pane.read-screen
+    if (result.contains("lines") && result["lines"].is_array() && result.contains("line_count")) {
+        for (const auto& line : result["lines"]) {
+            if (line.is_string()) {
+                oss << line.get<std::string>() << "\n";
+            }
+        }
+        return oss.str();
+    }
+
     // agent-state list
     if (result.contains("agents") && result["agents"].is_array()) {
         oss << "Pane\tType\tState\tName\tPID\n";
@@ -102,7 +112,6 @@ std::string formatResponse(const nlohmann::json& response, bool json_mode, int& 
     exit_code = 0;
 
     if (json_mode) {
-        // Raw JSON mode
         if (response.contains("error")) {
             exit_code = 1;
         }

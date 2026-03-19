@@ -388,6 +388,23 @@ void D3DTextRenderer::setPaneBorders(const PaneBorderInfo& info) {
     impl_->paneBorders = info;
 }
 
+void D3DTextRenderer::setPaneProgress(PaneId pane_id, const PaneProgressInfo& info) {
+    if (info.progress < 0.0f) {
+        impl_->paneProgress.erase(pane_id);
+    } else {
+        impl_->paneProgress[pane_id] = info;
+    }
+}
+
+void D3DTextRenderer::setPaneStatusPills(PaneId pane_id,
+                                          const std::vector<StatusPillInfo>& pills) {
+    if (pills.empty()) {
+        impl_->paneStatusPills.erase(pane_id);
+    } else {
+        impl_->paneStatusPills[pane_id] = pills;
+    }
+}
+
 } // namespace termcore
 
 #endif // _WIN32

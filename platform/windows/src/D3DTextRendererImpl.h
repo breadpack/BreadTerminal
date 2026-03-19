@@ -10,6 +10,7 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 #include <algorithm>
 
@@ -43,6 +44,12 @@ struct D3DTextRenderer::Impl {
 
     // Pane border state
     D3DTextRenderer::PaneBorderInfo paneBorders;
+
+    // Per-pane progress bars
+    std::unordered_map<PaneId, D3DTextRenderer::PaneProgressInfo> paneProgress;
+
+    // Per-pane status pills
+    std::unordered_map<PaneId, std::vector<D3DTextRenderer::StatusPillInfo>> paneStatusPills;
 
     // Resize overlay state
     bool resizeOverlayVisible = false;
@@ -104,6 +111,10 @@ struct D3DTextRenderer::Impl {
     // Overlay passes (implemented in D3DCellBuilderOverlays.cpp)
     void buildOverlayPasses(const Screen& screen, float cellW, float cellH,
                             float ascent, float fontSize);
+
+    // Pane status overlays (implemented in D3DCellBuilderPaneStatus.cpp)
+    void buildPaneStatusOverlays(float cellW, float cellH,
+                                 float ascent, float fontSize);
 };
 
 } // namespace termcore

@@ -17,7 +17,8 @@ public:
     bool spawn(const std::string& command,
                const std::vector<std::string>& args,
                const std::string& working_dir,
-               int rows, int cols) override {
+               int rows, int cols,
+               const std::vector<std::pair<std::string, std::string>>& env_vars = {}) override {
         // 1. Create pipes for PTY I/O
         HANDLE input_read = NULL, input_write = NULL;
         HANDLE output_read = NULL, output_write = NULL;
@@ -81,7 +82,33 @@ public:
             }
         }
 
-        // 5. Create process
+        // 5. Build environment block with additional env vars
+        std::wstring env_block;
+        LPVOID env_ptr = NULL;
+        DWORD create_flags = EXTENDED_STARTUPINFO_PRESENT;
+        if (!env_vars.empty()) {
+            // Inherit current environment
+            LPWCH current_env = GetEnvironmentStringsW();
+            if (current_env) {
+                LPWCH p = current_env;
+                while (*p) {
+                    std::wstring entry(p);
+                    env_block += entry;
+                    env_block += L'\0';
+                    p += entry.size() + 1;
+                }
+                FreeEnvironmentStringsW(current_env);
+            }
+            // Append custom env vars
+            for (const auto& [key, value] : env_vars) {
+                env_block += toWide(key) + L"=" + toWide(value) + L'\0';
+            }
+            env_block += L'\0';  // Double null terminator
+            env_ptr = env_block.data();
+            create_flags |= CREATE_UNICODE_ENVIRONMENT;
+        }
+
+        // 6. Create process
         std::wstring wdir = working_dir.empty() ? L"" : toWide(working_dir);
 
         PROCESS_INFORMATION pi = {};
@@ -89,8 +116,8 @@ public:
             NULL,
             cmd_line.data(),
             NULL, NULL, FALSE,
-            EXTENDED_STARTUPINFO_PRESENT,
-            NULL,
+            create_flags,
+            env_ptr,
             wdir.empty() ? NULL : wdir.c_str(),
             &si.StartupInfo,
             &pi

@@ -31,7 +31,8 @@ public:
     bool spawn(const std::string& command,
                const std::vector<std::string>& args,
                const std::string& working_dir,
-               int rows, int cols) override {
+               int rows, int cols,
+               const std::vector<std::pair<std::string, std::string>>& env_vars = {}) override {
         if (master_fd_ >= 0) {
             // Already spawned
             return false;
@@ -56,7 +57,7 @@ public:
 
         if (child == 0) {
             // --- Child process ---
-            setupChild(command, args, working_dir, s_terminfo);
+            setupChild(command, args, working_dir, s_terminfo, env_vars);
             // setupChild calls execvp; if we reach here, exec failed.
             _exit(127);
         }
@@ -209,7 +210,8 @@ private:
     static void setupChild(const std::string& command,
                             const std::vector<std::string>& args,
                             const std::string& working_dir,
-                            const TerminfoInstallResult& terminfo) {
+                            const TerminfoInstallResult& terminfo,
+                            const std::vector<std::pair<std::string, std::string>>& env_vars = {}) {
         // Change working directory if specified
         if (!working_dir.empty()) {
             if (chdir(working_dir.c_str()) != 0) {
@@ -231,6 +233,11 @@ private:
 
         // Shell integration environment variables
         for (const auto& [key, value] : getShellEnvVars()) {
+            setenv(key.c_str(), value.c_str(), 1);
+        }
+
+        // Additional environment variables (e.g., pane environment for agents)
+        for (const auto& [key, value] : env_vars) {
             setenv(key.c_str(), value.c_str(), 1);
         }
 

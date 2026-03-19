@@ -2,12 +2,14 @@
 #define TERMCORE_D3D_TEXT_RENDERER_H
 
 #include "termcore/screen.h"
+#include "termcore/mux.h"
 #include "termcore/font/glyph_cache.h"
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/i_font_rasterizer.h"
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #if defined(_WIN32)
 struct ID3D11Device;
@@ -146,6 +148,26 @@ public:
 
     /// Set pane border segments for rendering.
     void setPaneBorders(const PaneBorderInfo& info);
+
+    /// Per-pane progress bar information.
+    struct PaneProgressInfo {
+        float progress = -1.0f;   // -1 = hidden, 0.0-1.0 = percentage
+        std::string label;
+        uint32_t color = 0x007acc; // accent blue
+    };
+
+    /// Set progress bar for a specific pane.
+    void setPaneProgress(PaneId pane_id, const PaneProgressInfo& info);
+
+    /// A status pill displayed in the status bar area.
+    struct StatusPillInfo {
+        std::string text;         // "key: value"
+        uint32_t bg_color = 0x007acc;
+        uint32_t fg_color = 0xffffff;
+    };
+
+    /// Set status pills for a specific pane.
+    void setPaneStatusPills(PaneId pane_id, const std::vector<StatusPillInfo>& pills);
 
 private:
     struct Impl;

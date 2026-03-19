@@ -77,6 +77,7 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
         if (centerStart > 0) {
             renderStatusText(statusBar.center_text, centerStart);
         }
+
     }
 
     // Pass 6: Scrollbar indicator (when scrolled up)
@@ -281,6 +282,9 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             }
         }
     }
+
+    // Pane progress bars and status pills (delegated to D3DCellBuilderPaneStatus.cpp)
+    buildPaneStatusOverlays(cellW, cellH, ascent, fontSize);
 
     // Pass 9: Pane Borders (with notification glow and unread dots)
     const auto& paneBorders = this->paneBorders;

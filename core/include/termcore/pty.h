@@ -14,10 +14,12 @@ public:
 
     /// Spawn a process in the PTY. Returns true on success.
     /// If command is empty, spawns the user's default shell.
+    /// env_vars: additional environment variables to set (key=value pairs).
     virtual bool spawn(const std::string& command = "",
                        const std::vector<std::string>& args = {},
                        const std::string& working_dir = "",
-                       int rows = 24, int cols = 80) = 0;
+                       int rows = 24, int cols = 80,
+                       const std::vector<std::pair<std::string, std::string>>& env_vars = {}) = 0;
 
     /// Read from PTY (non-blocking). Returns bytes read, 0 if nothing
     /// available, -1 on error/closed.

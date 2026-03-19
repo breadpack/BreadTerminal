@@ -38,6 +38,7 @@ set(TERMCORE_SOURCES
     src/theme_index.cpp
     src/font_index.cpp
     src/agent.cpp
+    src/agent_orchestrator.cpp
     src/keybinding.cpp
     src/git_branch_detector.cpp
     src/port_detector.cpp
@@ -56,12 +57,17 @@ set(TERMCORE_SOURCES
     src/session_paths.cpp
     src/session_serializer.cpp
     src/session_deserializer.cpp
+    src/pane_status.cpp
     src/session_manager.cpp
     src/socket/jsonrpc.cpp
     src/socket/command_dispatcher_mux.cpp
     src/socket/command_dispatcher_misc.cpp
     src/socket/command_dispatcher_browser.cpp
+    src/socket/command_dispatcher_agent.cpp
+    src/socket/command_dispatcher_orchestrator.cpp
     src/socket/socket_server.cpp
+    src/screen_capture.cpp
+    src/mcp_server_spec.cpp
 )
 
 if(UNIX)
