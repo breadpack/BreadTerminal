@@ -289,6 +289,10 @@ fragment float4 cell_fragment(
                 const TermCell& cell = screen.cellAt(row, col);
                 if (cell.codepoint <= ' ') continue;
 
+                // Skip continuation cells (second cell of a wide character,
+                // marked with width=0 and codepoint=0)
+                if (cell.width == 0) continue;
+
                 char32_t cp = cell.codepoint;
 
                 // Check for procedural box drawing
@@ -374,6 +378,8 @@ fragment float4 cell_fragment(
                 uint32_t bg = cell.bg_color;
                 if (cell.attributes & AttrInverse) std::swap(fg, bg);
 
+                bool is_wide = (cell.width == 2);
+
                 CellInstance inst = {};
                 inst.grid_col = static_cast<uint16_t>(col);
                 inst.grid_row = static_cast<uint16_t>(row);
@@ -386,13 +392,28 @@ fragment float4 cell_fragment(
                 inst.glyph_height =
                     static_cast<uint16_t>(info->region.height);
 
-                // offset_x = bearing_x (signed, from cell left edge)
-                inst.offset_x =
-                    static_cast<int16_t>(info->region.bearing_x);
                 // offset_y = ascent - bearing_y (distance from cell top
                 // to glyph top)
                 inst.offset_y = static_cast<int16_t>(
                     static_cast<int>(ascent) - info->region.bearing_y);
+
+                if (is_wide) {
+                    // Center glyph horizontally across the 2-cell span
+                    float spanWidth = cellW * 2.0f;
+                    if (info->region.width < static_cast<int>(spanWidth)) {
+                        int16_t center_offset = static_cast<int16_t>(
+                            (spanWidth - info->region.width) / 2.0f);
+                        inst.offset_x = static_cast<int16_t>(
+                            center_offset + info->region.bearing_x);
+                    } else {
+                        inst.offset_x =
+                            static_cast<int16_t>(info->region.bearing_x);
+                    }
+                } else {
+                    // offset_x = bearing_x (signed, from cell left edge)
+                    inst.offset_x =
+                        static_cast<int16_t>(info->region.bearing_x);
+                }
 
                 inst.fg_r = (fg >> 16) & 0xFF;
                 inst.fg_g = (fg >> 8) & 0xFF;

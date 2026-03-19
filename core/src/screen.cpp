@@ -1,5 +1,6 @@
 #include "termcore/screen.h"
 #include "screen_colors.h"
+#include "termcore/font/unicode_width.h"
 #include <algorithm>
 #include <cassert>
 
@@ -78,6 +79,10 @@ void Screen::scrollDown(int top, int bottom, int count) {
 // --- onPrint ---
 void Screen::onPrint(char32_t codepoint) {
     last_printed_ = codepoint;
+
+    int char_width = codepoint_width(codepoint);
+    if (char_width < 1) char_width = 1;  // treat zero-width as single-width for grid
+
     if (wrap_pending_) {
         wrap_pending_ = false;
         cursor_.col = 0;
@@ -88,14 +93,44 @@ void Screen::onPrint(char32_t codepoint) {
         }
     }
 
+    // For a wide character that would start at the last column, force wrap first
+    if (char_width == 2 && cursor_.col == cols_ - 1) {
+        if (autowrap_) {
+            cursor_.col = 0;
+            if (cursor_.row == scroll_bottom_) {
+                scrollUp(scroll_top_, scroll_bottom_);
+            } else if (cursor_.row < rows_ - 1) {
+                cursor_.row++;
+            }
+        }
+    }
+
     TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
     cell.codepoint = codepoint;
     cell.fg_color = pen_.fg_color;
     cell.bg_color = pen_.bg_color;
     cell.attributes = pen_.attributes;
-    cell.width = 1;
+    cell.width = static_cast<uint8_t>(char_width);
 
-    advanceCursorAfterPrint();
+    // Write continuation cell for wide characters
+    if (char_width == 2 && cursor_.col + 1 < cols_) {
+        TermCell& cont = mutableCellAt(cursor_.row, cursor_.col + 1);
+        cont.codepoint = 0;  // continuation marker: codepoint=0
+        cont.fg_color = pen_.fg_color;
+        cont.bg_color = pen_.bg_color;
+        cont.attributes = pen_.attributes;
+        cont.width = 0;  // continuation cell width=0
+    }
+
+    // Advance cursor by the character's display width
+    int new_col = cursor_.col + char_width;
+    if (new_col < cols_) {
+        cursor_.col = new_col;
+    } else if (autowrap_) {
+        wrap_pending_ = true;
+    } else {
+        cursor_.col = cols_ - 1;
+    }
 }
 
 void Screen::advanceCursorAfterPrint() {
