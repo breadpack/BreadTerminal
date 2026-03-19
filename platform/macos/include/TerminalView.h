@@ -24,7 +24,7 @@ class UrlDetector;
 enum class Action : uint16_t;
 } // namespace termcore
 
-@interface TerminalView : NSView
+@interface TerminalView : NSView <NSTextInputClient>
 
 - (instancetype)initWithFrame:(NSRect)frame device:(id<MTLDevice>)device;
 

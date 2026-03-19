@@ -98,12 +98,74 @@ static uint8_t modsFromEvent(NSEvent* event) {
         return;
     }
 
-    // Existing special key handling.
+    // Existing special key handling (arrows, function keys, etc.)
     if ([self handleSpecialKey:event]) return;
 
-    // Normal text input.
-    NSString* chars = event.characters;
-    if (chars.length > 0) [self sendText:chars];
+    // Route through IME system for proper CJK/Korean composition.
+    // interpretKeyEvents: calls back into NSTextInputClient methods
+    // (insertText:replacementRange:, setMarkedText:, etc.)
+    [self interpretKeyEvents:@[event]];
+}
+
+#pragma mark - NSTextInputClient
+
+- (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
+    NSString* text = [string isKindOfClass:[NSAttributedString class]]
+        ? [(NSAttributedString*)string string] : (NSString*)string;
+    if (text.length > 0) {
+        [self sendText:text];
+    }
+}
+
+- (void)setMarkedText:(id)string selectedRange:(NSRange)selectedRange
+     replacementRange:(NSRange)replacementRange {
+    // Marked text = IME composition in progress (e.g., Korean jamo being combined).
+    // We don't display inline composition preview in the terminal;
+    // text is sent when composition completes via insertText:.
+}
+
+- (void)unmarkText {
+    // Composition cancelled or completed — nothing to clean up.
+}
+
+- (BOOL)hasMarkedText {
+    return NO;
+}
+
+- (NSRange)markedRange {
+    return NSMakeRange(NSNotFound, 0);
+}
+
+- (NSRange)selectedRange {
+    return NSMakeRange(NSNotFound, 0);
+}
+
+- (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange {
+    // Return the cursor position for IME candidate window placement.
+    // Convert terminal cursor position to screen coordinates.
+    NSRect viewRect = NSMakeRect(0, 0, 100, 20);  // Default fallback
+    if (_impl->screen) {
+        int cursorCol = _impl->screen->cursorCol();
+        int cursorRow = _impl->screen->cursorRow();
+        float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+        float cellW = _cellWidth / scale;
+        float cellH = _cellHeight / scale;
+        viewRect = NSMakeRect(cursorCol * cellW, cursorRow * cellH, cellW, cellH);
+    }
+    return [self.window convertRectToScreen:[self convertRect:viewRect toView:nil]];
+}
+
+- (NSAttributedString*)attributedSubstringForProposedRange:(NSRange)range
+                                              actualRange:(NSRangePointer)actualRange {
+    return nil;
+}
+
+- (NSUInteger)characterIndexForPoint:(NSPoint)point {
+    return NSNotFound;
+}
+
+- (NSArray<NSAttributedStringKey>*)validAttributesForMarkedText {
+    return @[];
 }
 
 - (BOOL)handleSpecialKey:(NSEvent*)event {
