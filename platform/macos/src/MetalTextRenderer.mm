@@ -10,6 +10,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <vector>
+#import <cstring>
 
 namespace termcore {
 
@@ -42,9 +43,22 @@ struct MetalTextRenderer::Impl {
     CFAbsoluteTime lastBlinkToggle = CFAbsoluteTimeGetCurrent();
     bool cursorBlinkOn = true;
     double blinkInterval = 0.5; // seconds, configurable
+    bool imeActive = false; // hide cursor during IME composition
 
-    // Reusable instance buffer
+    // Reusable instance buffer (CPU side)
     std::vector<CellInstance> cellInstances;
+
+    // Triple-buffered GPU instance buffers
+    static constexpr int kBufferCount = 3;
+    static constexpr size_t kInitialMaxInstances = 30000; // 200*50*3
+    id<MTLBuffer> instanceBuffers[kBufferCount] = {};
+    size_t instanceBufferCapacity = 0; // in number of CellInstance entries
+    int currentBufferIndex = 0;
+    dispatch_semaphore_t frameSemaphore;
+
+    // Cursor blink dirty tracking -- avoid full rebuild on blink toggle
+    bool lastBlinkState = true;
+    size_t cellCountBeforeCursor = 0; // index where cursor instances begin
 
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;
@@ -56,7 +70,18 @@ struct MetalTextRenderer::Impl {
     {
         commandQueue = [device newCommandQueue];
         atlasUploader = std::make_unique<MetalAtlasUploader>(device);
+        frameSemaphore = dispatch_semaphore_create(kBufferCount);
+        allocateInstanceBuffers(kInitialMaxInstances);
         createDummyTextures();
+    }
+
+    void allocateInstanceBuffers(size_t maxInstances) {
+        size_t bufSize = maxInstances * sizeof(CellInstance);
+        for (int i = 0; i < kBufferCount; ++i) {
+            instanceBuffers[i] = [device newBufferWithLength:bufSize
+                                                     options:MTLResourceStorageModeShared];
+        }
+        instanceBufferCapacity = maxInstances;
     }
 
     // -----------------------------------------------------------------
@@ -446,19 +471,57 @@ fragment float4 cell_fragment(
             }
         }
 
-        // --- Pass 3: Cursor ---
+        // --- Pass 3: Underline for cells with AttrUnderline ---
+        // (Moved before cursor so cursor is always last)
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const TermCell& cell = screen.cellAt(row, col);
+                if (!(cell.attributes & AttrUnderline)) continue;
+
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                CellInstance ulInst = {};
+                ulInst.grid_col = static_cast<uint16_t>(col);
+                ulInst.grid_row = static_cast<uint16_t>(row);
+                ulInst.flags = 4; // bg pass (solid rect)
+                // Position underline at bottom of cell, 2px thick
+                ulInst.offset_y = static_cast<int16_t>(cellH - 2);
+                ulInst.glyph_width = static_cast<uint16_t>(cellW);
+                ulInst.glyph_height = 2;
+                ulInst.bg_r = (fg >> 16) & 0xFF;
+                ulInst.bg_g = (fg >> 8) & 0xFF;
+                ulInst.bg_b = fg & 0xFF;
+                ulInst.bg_a = 255;
+                cellInstances.push_back(ulInst);
+            }
+        }
+
+        // Record insertion point before cursor instances
+        cellCountBeforeCursor = cellInstances.size();
+
+        // --- Pass 4: Cursor ---
+        appendCursorInstances(screen, cellW, cellH);
+    }
+
+    // -----------------------------------------------------------------
+    // Append cursor instances (can be called independently for blink)
+    // -----------------------------------------------------------------
+    void appendCursorInstances(const Screen& screen, float cellW, float cellH) {
         // Update blink state (time-based)
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
         if (now - lastBlinkToggle >= blinkInterval) {
             cursorBlinkOn = !cursorBlinkOn;
             lastBlinkToggle = now;
         }
-        bool showCursor = screen.cursorVisible() && cursorBlinkOn;
+
+        int rows = screen.rows();
+        int cols = screen.cols();
+        bool showCursor = screen.cursorVisible() && cursorBlinkOn && !imeActive;
         if (showCursor) {
             int cRow = screen.cursorRow();
             int cCol = screen.cursorCol();
             if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {
-                uint32_t cursorColor = dc.resolveFg(screen.dynamicColors().cursor_color);
+                const auto& dc = screen.dynamicColors();
+                uint32_t cursorColor = dc.resolveFg(dc.cursor_color);
 
                 CellInstance cursorInst = {};
                 cursorInst.grid_col = static_cast<uint16_t>(cCol);
@@ -483,6 +546,21 @@ fragment float4 cell_fragment(
                 cellInstances.push_back(cursorInst);
             }
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Patch cursor in-place without full rebuild (for blink toggling)
+    // -----------------------------------------------------------------
+    void patchCursorOnly(const Screen& screen) {
+        if (!fontCollection) return;
+        FontMetrics metrics = fontCollection->primaryMetrics();
+        float cellW = metrics.cell_width;
+        float cellH = metrics.cell_height;
+
+        // Remove old cursor instances (everything after cellCountBeforeCursor)
+        cellInstances.resize(cellCountBeforeCursor);
+        // Append fresh cursor instances
+        appendCursorInstances(screen, cellW, cellH);
     }
 };
 
@@ -523,7 +601,21 @@ void MetalTextRenderer::setFontStack(FontCollection* collection,
 void MetalTextRenderer::render(const Screen& screen) {
     if (!impl_->pipelineState) return;
 
-    impl_->buildCellBuffer(screen);
+    // Determine if only cursor blink changed (no content rebuild needed)
+    bool blinkChanged = (impl_->cursorBlinkOn != impl_->lastBlinkState);
+
+    // Check needsRender from TerminalView -- always rebuild on content change.
+    // We always call buildCellBuffer on first frame or when content changes.
+    // For blink-only changes, just patch cursor instances in-place.
+    if (blinkChanged && impl_->cellCountBeforeCursor > 0
+        && !impl_->cellInstances.empty()) {
+        // Only cursor blink toggled -- patch cursor without full rebuild
+        impl_->patchCursorOnly(screen);
+    } else {
+        impl_->buildCellBuffer(screen);
+    }
+    impl_->lastBlinkState = impl_->cursorBlinkOn;
+
     if (impl_->cellInstances.empty()) return;
 
     // Upload dirty atlas textures
@@ -531,17 +623,29 @@ void MetalTextRenderer::render(const Screen& screen) {
         impl_->atlasUploader->upload(*impl_->glyphAtlas);
     }
 
+    // Wait for a free buffer slot (triple buffering)
+    dispatch_semaphore_wait(impl_->frameSemaphore, DISPATCH_TIME_FOREVER);
+
     @autoreleasepool {
         id<CAMetalDrawable> drawable = [impl_->layer nextDrawable];
-        if (!drawable) return;
+        if (!drawable) {
+            dispatch_semaphore_signal(impl_->frameSemaphore);
+            return;
+        }
 
-        // Cell instance buffer
-        size_t bufSize =
-            impl_->cellInstances.size() * sizeof(CellInstance);
-        id<MTLBuffer> cellBuf = [impl_->device
-            newBufferWithBytes:impl_->cellInstances.data()
-                        length:bufSize
-                       options:MTLResourceStorageModeShared];
+        // Resize instance buffers if needed
+        size_t instanceCount = impl_->cellInstances.size();
+        if (instanceCount > impl_->instanceBufferCapacity) {
+            size_t newCapacity = instanceCount * 2;
+            impl_->allocateInstanceBuffers(newCapacity);
+        }
+
+        // Copy cell instances into the current triple-buffered slot
+        int bufIdx = impl_->currentBufferIndex;
+        id<MTLBuffer> cellBuf = impl_->instanceBuffers[bufIdx];
+        std::memcpy(cellBuf.contents, impl_->cellInstances.data(),
+                    instanceCount * sizeof(CellInstance));
+        impl_->currentBufferIndex = (bufIdx + 1) % Impl::kBufferCount;
 
         // Uniforms
         CellUniforms uniforms = {};
@@ -591,6 +695,13 @@ void MetalTextRenderer::render(const Screen& screen) {
 
         id<MTLCommandBuffer> cmd =
             [impl_->commandQueue commandBuffer];
+
+        // Signal semaphore when GPU finishes with this buffer
+        dispatch_semaphore_t sema = impl_->frameSemaphore;
+        [cmd addCompletedHandler:^(id<MTLCommandBuffer>) {
+            dispatch_semaphore_signal(sema);
+        }];
+
         id<MTLRenderCommandEncoder> enc =
             [cmd renderCommandEncoderWithDescriptor:pass];
 
@@ -612,7 +723,7 @@ void MetalTextRenderer::render(const Screen& screen) {
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:6
-              instanceCount:impl_->cellInstances.size()];
+              instanceCount:instanceCount];
 
         [enc endEncoding];
         [cmd presentDrawable:drawable];
@@ -631,6 +742,10 @@ void MetalTextRenderer::setBackgroundOpacity(float opacity) {
 
 void MetalTextRenderer::setCursorBlinkInterval(float seconds) {
     impl_->blinkInterval = std::clamp(static_cast<double>(seconds), 0.1, 2.0);
+}
+
+void MetalTextRenderer::setIMEActive(bool active) {
+    impl_->imeActive = active;
 }
 
 } // namespace termcore

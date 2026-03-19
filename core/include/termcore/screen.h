@@ -107,6 +107,8 @@ public:
     const std::string& title() const { return title_; }
     const std::string& iconName() const { return icon_name_; }
     const std::string& workingDirectory() const { return working_directory_; }
+    const std::string& remoteHostname() const { return remote_hostname_; }
+    bool isRemoteSession() const { return !remote_hostname_.empty(); }
     const std::string& currentHyperlink() const { return current_hyperlink_; }
     PromptState promptState() const { return prompt_state_; }
     const TermNotification& lastNotification() const { return last_notification_; }
@@ -127,6 +129,9 @@ public:
     };
     using ClipboardCallback = std::function<void(const ClipboardEvent&)>;
     void setClipboardCallback(ClipboardCallback cb) { clipboard_callback_ = std::move(cb); }
+
+    /// Control whether OSC 52 clipboard writes are allowed (default: false, secure by default).
+    void setClipboardWriteAllowed(bool allowed) { clipboard_write_allowed_ = allowed; }
 
     // --- Dynamic colors ---
     struct DynamicColorEvent {
@@ -198,6 +203,7 @@ private:
     std::string title_;
     std::string icon_name_;
     std::string working_directory_;
+    std::string remote_hostname_;
     std::string current_hyperlink_;
     PromptState prompt_state_ = PromptState::None;
     TermNotification last_notification_;
@@ -216,6 +222,9 @@ private:
     NotificationCallback notification_callback_;
     ClipboardCallback clipboard_callback_;
     DynamicColorCallback dynamic_color_callback_;
+
+    // Security: OSC 52 clipboard write gate (default: denied)
+    bool clipboard_write_allowed_ = false;
 
     // Alternate screen buffer
     struct ScreenState {

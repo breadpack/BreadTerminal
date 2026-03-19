@@ -97,6 +97,8 @@ public:
     }
 
     int readLine(int fd, std::string& out) override {
+        static constexpr size_t kMaxLineLength = 16 * 1024 * 1024;  // 16 MB cap
+
         std::lock_guard<std::mutex> lock(buf_mutex_);
         auto& buf = read_bufs_[fd];
 
@@ -107,6 +109,12 @@ public:
                 out = buf.substr(0, pos);
                 buf.erase(0, pos + 1);
                 return 1;
+            }
+
+            // Guard against unbounded buffer growth (OOM DoS)
+            if (buf.size() > kMaxLineLength) {
+                read_bufs_.erase(fd);
+                return -2;
             }
 
             char tmp[4096];

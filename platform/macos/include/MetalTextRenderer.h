@@ -73,6 +73,9 @@ public:
     /// Set cursor blink interval in seconds (0.1 - 2.0).
     void setCursorBlinkInterval(float seconds);
 
+    /// Hide cursor during IME composition.
+    void setIMEActive(bool active);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

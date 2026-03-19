@@ -61,6 +61,17 @@
         return;
     }
 
+    // Enforce HTTPS to prevent MITM attacks
+    if (![url.scheme.lowercaseString isEqualToString:@"https"]) {
+        if (completion) {
+            NSError* err = [NSError errorWithDomain:@"FontDownloader"
+                                               code:-6
+                                           userInfo:@{NSLocalizedDescriptionKey: @"Only HTTPS URLs are allowed for font downloads"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(NO, err); });
+        }
+        return;
+    }
+
     NSURLSessionDownloadTask* task = [_session downloadTaskWithURL:url];
     @synchronized (self) {
         if (progress) _progressBlocks[task] = [progress copy];
@@ -205,7 +216,7 @@ didCompleteWithError:(NSError*)error {
     // Unzip using /usr/bin/unzip
     NSTask* unzipTask = [[NSTask alloc] init];
     unzipTask.executableURL = [NSURL fileURLWithPath:@"/usr/bin/unzip"];
-    unzipTask.arguments = @[@"-o", zipPath, @"-d", tmpDir];
+    unzipTask.arguments = @[@"-o", @"-j", zipPath, @"-d", tmpDir];
     unzipTask.standardOutput = [NSPipe pipe];
     unzipTask.standardError = [NSPipe pipe];
 

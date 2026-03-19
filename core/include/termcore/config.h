@@ -49,6 +49,9 @@ struct Config {
     std::string clipboard_paste_protection = "multiline";  // "never", "multiline", "always"
     bool clipboard_paste_bracketed_safe = true;
 
+    // OSC 52 clipboard write from applications (default: false for security)
+    bool allow_clipboard_write = false;
+
     // Background transparency
     float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
     int background_blur = 0;           // 0=none, 1=low, 2=medium, 3=high

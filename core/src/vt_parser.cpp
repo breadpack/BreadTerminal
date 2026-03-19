@@ -53,6 +53,7 @@ void VtParser::collectParam(uint8_t byte) {
             param_started_ = true;
         }
         current_param_ = current_param_ * 10 + (byte - '0');
+        if (current_param_ > 65535) current_param_ = 65535;
     }
 }
 
@@ -318,6 +319,11 @@ void VtParser::handleOscString(uint8_t byte) {
             osc_string_.push_back(static_cast<char>(byte));
         }
     }
+    // Guard against unbounded OSC buffer growth (1 MB cap)
+    if (osc_string_.size() > 1048576) {
+        osc_string_.clear();
+        state_ = VtParserState::Ground;
+    }
 }
 
 void VtParser::handleDcsEntry(uint8_t byte) {
@@ -388,6 +394,11 @@ void VtParser::handleDcsPassthrough(uint8_t byte) {
     }
     if (byte == 0x7F) return;
     dcs_data_.push_back(static_cast<char>(byte));
+    // Guard against unbounded DCS buffer growth (1 MB cap)
+    if (dcs_data_.size() > 1048576) {
+        dcs_data_.clear();
+        state_ = VtParserState::Ground;
+    }
 }
 
 void VtParser::handleSosPmApcString(uint8_t byte) {

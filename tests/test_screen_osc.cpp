@@ -127,6 +127,7 @@ TEST_F(ScreenOscTest, Osc9LastNotification) {
 // --- OSC 52: Clipboard ---
 
 TEST_F(ScreenOscTest, Osc52ClipboardWrite) {
+    screen.setClipboardWriteAllowed(true);
     feed("\033]52;c;SGVsbG8=\007");
     ASSERT_EQ(clipboard_events.size(), 1u);
     EXPECT_EQ(clipboard_events[0].selection, 'c');
@@ -142,6 +143,7 @@ TEST_F(ScreenOscTest, Osc52ClipboardRead) {
 }
 
 TEST_F(ScreenOscTest, Osc52PrimarySelection) {
+    screen.setClipboardWriteAllowed(true);
     feed("\033]52;p;SGVsbG8=\007");
     ASSERT_EQ(clipboard_events.size(), 1u);
     EXPECT_EQ(clipboard_events[0].selection, 'p');

@@ -29,4 +29,19 @@
     [_terminalView startShell];
 }
 
+- (void)viewDidAppear {
+    [super viewDidAppear];
+    // Ensure TerminalView is first responder for keyboard/IME input
+    [self.view.window makeFirstResponder:_terminalView];
+    NSLog(@"[FR] viewDidAppear: firstResponder = %@", self.view.window.firstResponder);
+}
+
+- (void)viewDidLayout {
+    [super viewDidLayout];
+    // Re-assert first responder after layout changes (NSSplitViewController can steal it)
+    if (self.view.window && self.view.window.firstResponder != _terminalView) {
+        [self.view.window makeFirstResponder:_terminalView];
+    }
+}
+
 @end

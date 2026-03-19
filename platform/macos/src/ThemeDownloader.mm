@@ -52,6 +52,17 @@
         return;
     }
 
+    // Enforce HTTPS to prevent MITM attacks
+    if (![url.scheme.lowercaseString isEqualToString:@"https"]) {
+        if (completion) {
+            NSError* err = [NSError errorWithDomain:@"ThemeDownloader"
+                                               code:-3
+                                           userInfo:@{NSLocalizedDescriptionKey: @"Only HTTPS URLs are allowed for theme downloads"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(NO, err); });
+        }
+        return;
+    }
+
     // Ensure theme directory exists
     std::string themeDir = termcore::defaultThemeDir();
     NSString* themeDirPath = [NSString stringWithUTF8String:themeDir.c_str()];

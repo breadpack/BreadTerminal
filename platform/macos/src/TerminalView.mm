@@ -7,6 +7,7 @@
 #include "termcore/search.h"
 #include "termcore/url_detector.h"
 #include "termcore/font/font_collection.h"
+#include "termcore/font/unicode_width.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"
@@ -28,6 +29,7 @@
 
     _device = device;
     _impl = new TerminalViewImpl();
+    _markedText = nil;
 
     // Metal layer
     self.wantsLayer = YES;
@@ -107,8 +109,7 @@
 }
 
 - (void)dealloc {
-    if (_impl->ptyReadSource) dispatch_source_cancel(_impl->ptyReadSource);
-    [_impl->renderTimer invalidate];
+    // TerminalViewImpl destructor handles ptyReadSource cancel and renderTimer invalidation
     delete _impl;
 }
 
@@ -141,6 +142,11 @@
             pgCfg.mode = termcore::PasteGuard::Config::Mode::Multiline;
         pgCfg.trust_bracketed = config.clipboard_paste_bracketed_safe;
         _impl->pasteGuard = std::make_unique<termcore::PasteGuard>(pgCfg);
+    }
+
+    // Scrollback limit
+    if (config.scrollback_limit > 0) {
+        _impl->screen->setMaxScrollback(static_cast<size_t>(config.scrollback_limit));
     }
 
     // Cursor blink interval
@@ -310,12 +316,16 @@
 #pragma mark - Text I/O
 
 - (void)sendText:(NSString*)text {
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "sendText: '%s'\n", [text UTF8String]); fclose(f); } }
     if (!_impl->pty) return;
     const char* utf8 = [text UTF8String];
     _impl->pty->write(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
 }
 
 - (void)writePty:(const char*)str {
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "writePty: '%s'\n", str); fclose(f); } }
     if (_impl->pty) _impl->pty->write(str, strlen(str));
 }
 
@@ -325,7 +335,9 @@
 
 - (void)renderFrame {
     // Always render when cursor is visible (blink requires continuous redraw)
-    bool cursorNeedsRedraw = _impl->screen && _impl->screen->cursorVisible();
+    // But NOT during IME composition — cursor is hidden, no blink needed
+    bool imeActive = _markedText != nil && _markedText.length > 0;
+    bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
     if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
@@ -341,7 +353,76 @@
         }
     }
 
+    // Inject IME marked text into screen cells before render, restore after
+    struct IMESavedCell { int row, col; termcore::TermCell cell; };
+    std::vector<IMESavedCell> imeSaved;
+
+    bool imeComposing = _markedText != nil && _markedText.length > 0;
+    _impl->renderer->setIMEActive(imeComposing);
+
+    if (imeComposing && _impl->screen) {
+        int curRow = _impl->screen->cursorRow();
+        int curCol = _impl->screen->cursorCol();
+        int cols = _impl->screen->cols();
+        int rows = _impl->screen->rows();
+        if (curRow >= 0 && curRow < rows) {
+            int col = curCol;
+            for (NSUInteger i = 0; i < _markedText.length; ++i) {
+                if (col >= cols) break;
+
+                unichar ch = [_markedText characterAtIndex:i];
+                char32_t cp = (char32_t)ch;
+                if (i + 1 < _markedText.length && CFStringIsSurrogateHighCharacter(ch)) {
+                    unichar lo = [_markedText characterAtIndex:i + 1];
+                    if (CFStringIsSurrogateLowCharacter(lo)) {
+                        cp = CFStringGetLongCharacterForSurrogatePair(ch, lo);
+                        ++i;
+                    }
+                }
+
+                int w = termcore::codepoint_width(cp);
+                if (w < 1) w = 1;
+                if (col + w > cols) break;
+
+                // Save original cells (main + continuation for wide chars)
+                for (int c = col; c < col + w; ++c) {
+                    const termcore::TermCell& orig = _impl->screen->cellAt(curRow, c);
+                    imeSaved.push_back({curRow, c, orig});
+                }
+
+                // Write main cell
+                termcore::TermCell& cell = const_cast<termcore::TermCell&>(
+                    _impl->screen->cellAt(curRow, col));
+                cell.codepoint = cp;
+                cell.fg_color = _impl->screen->dynamicColors().background;
+                cell.bg_color = _impl->screen->dynamicColors().foreground;
+                cell.attributes = 0;
+                cell.width = w;
+
+                // Write continuation cell for wide chars
+                if (w == 2 && col + 1 < cols) {
+                    termcore::TermCell& cont = const_cast<termcore::TermCell&>(
+                        _impl->screen->cellAt(curRow, col + 1));
+                    cont.codepoint = 0;
+                    cont.fg_color = cell.fg_color;
+                    cont.bg_color = cell.bg_color;
+                    cont.attributes = 0;
+                    cont.width = 0;
+                }
+
+                col += w;
+            }
+        }
+    }
+
     _impl->renderer->render(*_impl->screen);
+
+    // Restore original cells
+    for (const auto& sc : imeSaved) {
+        termcore::TermCell& cell = const_cast<termcore::TermCell&>(
+            _impl->screen->cellAt(sc.row, sc.col));
+        cell = sc.cell;
+    }
 }
 
 #pragma mark - Config hot reload
@@ -394,6 +475,14 @@
 #pragma mark - Config error display
 
 - (void)showConfigError:(NSString*)message {
+    // Remove any existing error banner before creating a new one
+    static const NSInteger kConfigErrorBannerTag = 9001;
+    for (NSView* subview in [self.subviews copy]) {
+        if (subview.tag == kConfigErrorBannerTag) {
+            [subview removeFromSuperview];
+        }
+    }
+
     // Create error banner at top of view
     CGFloat bannerHeight = 28.0;
     NSRect bannerRect = NSMakeRect(0,
@@ -402,6 +491,7 @@
                                     bannerHeight);
 
     NSTextField* errorLabel = [[NSTextField alloc] initWithFrame:bannerRect];
+    errorLabel.tag = kConfigErrorBannerTag;
     errorLabel.stringValue = [NSString stringWithFormat:@" Config error: %@", message];
     errorLabel.editable = NO;
     errorLabel.bordered = NO;

@@ -7,6 +7,7 @@
 
 #if !defined(_WIN32)
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -240,29 +241,63 @@ TerminfoInstallResult installTerminfo() {
     fputs(kTerminfoSource, fp);
     fclose(fp);
 
-    // Compile with tic
-    std::string cmd = "tic -x -o \"" + terminfo_dir + "\" \"" + tmp_path + "\" 2>&1";
-    FILE* proc = popen(cmd.c_str(), "r");
-    if (!proc) {
+    // Compile with tic using fork/execvp to avoid shell injection
+    int stderr_pipe[2];
+    if (pipe(stderr_pipe) != 0) {
         unlink(tmp_path.c_str());
         result.term_name = "xterm-256color";
-        result.error = "Failed to run tic command";
+        result.error = "Failed to create pipe for tic";
         return result;
     }
 
-    // Read any error output
-    char buf[256];
-    std::string tic_output;
-    while (fgets(buf, sizeof(buf), proc) != nullptr) {
-        tic_output += buf;
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
+        unlink(tmp_path.c_str());
+        result.term_name = "xterm-256color";
+        result.error = "Failed to fork for tic";
+        return result;
     }
 
-    int status = pclose(proc);
+    if (pid == 0) {
+        // Child process
+        close(stderr_pipe[0]); // Close read end
+        dup2(stderr_pipe[1], STDERR_FILENO);
+        dup2(stderr_pipe[1], STDOUT_FILENO);
+        close(stderr_pipe[1]);
+
+        const char* argv[] = {
+            "tic", "-x", "-o",
+            terminfo_dir.c_str(),
+            tmp_path.c_str(),
+            nullptr
+        };
+        execvp("tic", const_cast<char* const*>(argv));
+        _exit(127); // exec failed
+    }
+
+    // Parent process
+    close(stderr_pipe[1]); // Close write end
+
+    // Read any error output from child
+    char buf[256];
+    std::string tic_output;
+    ssize_t n;
+    while ((n = read(stderr_pipe[0], buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        tic_output += buf;
+    }
+    close(stderr_pipe[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
     // Clean up temp file
     unlink(tmp_path.c_str());
 
-    if (status != 0) {
+    if (exit_code != 0) {
         result.term_name = "xterm-256color";
         result.error = "tic failed: " + tic_output;
         return result;

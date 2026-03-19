@@ -18,7 +18,9 @@ static int bytesPerPixel(AtlasFormat fmt) {
 }
 
 AtlasPage::AtlasPage(int width, int height, AtlasFormat format)
-    : width_(width), height_(height), format_(format)
+    : width_(width), height_(height), format_(format),
+      dirty_min_x_(width), dirty_min_y_(height),
+      dirty_max_x_(0), dirty_max_y_(0)
 {
     pixels_.resize(static_cast<size_t>(width) * height * bytesPerPixel(format), 0);
     free_rects_.push_back({0, 0, width, height});
@@ -89,7 +91,8 @@ std::optional<GlyphRegion> AtlasPage::pack(int glyph_width, int glyph_height,
 
     splitRect(*best, padded_w, padded_h);
 
-    dirty_ = true;
+    // Mark dirty region including the 1px border padding
+    markDirtyRegion(rx, ry, padded_w, padded_h);
 
     // The glyph data goes at (rx+1, ry+1), inside the 1px border
     GlyphRegion region;
@@ -103,6 +106,14 @@ std::optional<GlyphRegion> AtlasPage::pack(int glyph_width, int glyph_height,
     return region;
 }
 
+void AtlasPage::markDirtyRegion(int x, int y, int w, int h) {
+    dirty_ = true;
+    dirty_min_x_ = std::min(dirty_min_x_, x);
+    dirty_min_y_ = std::min(dirty_min_y_, y);
+    dirty_max_x_ = std::max(dirty_max_x_, x + w);
+    dirty_max_y_ = std::max(dirty_max_y_, y + h);
+}
+
 void AtlasPage::blit(const GlyphRegion& region, const uint8_t* data, int data_stride) {
     if (!data || region.width <= 0 || region.height <= 0) return;
 
@@ -114,7 +125,7 @@ void AtlasPage::blit(const GlyphRegion& region, const uint8_t* data, int data_st
         int src_offset = row * data_stride;
         std::memcpy(&pixels_[dst_offset], &data[src_offset], region.width * bpp);
     }
-    dirty_ = true;
+    markDirtyRegion(region.x, region.y, region.width, region.height);
 }
 
 void AtlasPage::expand(int new_width, int new_height) {
@@ -147,7 +158,8 @@ void AtlasPage::expand(int new_width, int new_height) {
     pixels_ = std::move(new_pixels);
     width_ = new_width;
     height_ = new_height;
-    dirty_ = true;
+    // Full atlas is dirty after expansion (texture must be recreated)
+    markDirtyRegion(0, 0, new_width, new_height);
 }
 
 // --- GlyphAtlas ---
