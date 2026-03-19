@@ -143,6 +143,9 @@
         _impl->pasteGuard = std::make_unique<termcore::PasteGuard>(pgCfg);
     }
 
+    // Cursor blink interval
+    _impl->renderer->setCursorBlinkInterval(config.cursor_blink_interval);
+
     // Background transparency & blur
     [self applyTransparencyConfig:config];
 
@@ -321,7 +324,9 @@
 - (void)setNeedsRender { _impl->needsRender = true; }
 
 - (void)renderFrame {
-    if (!_impl->needsRender) return;
+    // Always render when cursor is visible (blink requires continuous redraw)
+    bool cursorNeedsRedraw = _impl->screen && _impl->screen->cursorVisible();
+    if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
     // Ensure drawable size is valid

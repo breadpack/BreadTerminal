@@ -42,6 +42,7 @@ struct Config {
     int scrollback_limit = 10000;
     std::string cursor_style = "block";  // block, underline, bar
     bool cursor_blink = true;
+    float cursor_blink_interval = 0.5f;  // seconds (0.1 - 2.0)
     std::string shell;  // Empty = use $SHELL
 
     // Clipboard paste protection

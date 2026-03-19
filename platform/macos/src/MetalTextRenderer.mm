@@ -38,6 +38,11 @@ struct MetalTextRenderer::Impl {
     // Background opacity (0.0 = fully transparent, 1.0 = opaque)
     float backgroundOpacity = 1.0f;
 
+    // Cursor blink state (time-based, not frame-based)
+    CFAbsoluteTime lastBlinkToggle = CFAbsoluteTimeGetCurrent();
+    bool cursorBlinkOn = true;
+    double blinkInterval = 0.5; // seconds, configurable
+
     // Reusable instance buffer
     std::vector<CellInstance> cellInstances;
 
@@ -440,6 +445,44 @@ fragment float4 cell_fragment(
                 cellInstances.push_back(inst);
             }
         }
+
+        // --- Pass 3: Cursor ---
+        // Update blink state (time-based)
+        CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+        if (now - lastBlinkToggle >= blinkInterval) {
+            cursorBlinkOn = !cursorBlinkOn;
+            lastBlinkToggle = now;
+        }
+        bool showCursor = screen.cursorVisible() && cursorBlinkOn;
+        if (showCursor) {
+            int cRow = screen.cursorRow();
+            int cCol = screen.cursorCol();
+            if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {
+                uint32_t cursorColor = dc.resolveFg(screen.dynamicColors().cursor_color);
+
+                CellInstance cursorInst = {};
+                cursorInst.grid_col = static_cast<uint16_t>(cCol);
+                cursorInst.grid_row = static_cast<uint16_t>(cRow);
+                cursorInst.flags = 4; // is_bg_pass
+                cursorInst.bg_r = (cursorColor >> 16) & 0xFF;
+                cursorInst.bg_g = (cursorColor >> 8) & 0xFF;
+                cursorInst.bg_b = cursorColor & 0xFF;
+                cursorInst.bg_a = 255;
+
+                CursorShape shape = screen.cursorShape();
+                if (shape == CursorShape::Bar) {
+                    cursorInst.glyph_width = 2;
+                    cursorInst.glyph_height = static_cast<uint16_t>(cellH);
+                } else if (shape == CursorShape::Underline) {
+                    cursorInst.offset_y = static_cast<int16_t>(cellH - 2);
+                    cursorInst.glyph_height = 2;
+                    cursorInst.glyph_width = static_cast<uint16_t>(cellW);
+                }
+                // Block cursor: default flags=4 renders full cell bg
+
+                cellInstances.push_back(cursorInst);
+            }
+        }
     }
 };
 
@@ -584,6 +627,10 @@ void MetalTextRenderer::resize(float width, float height) {
 
 void MetalTextRenderer::setBackgroundOpacity(float opacity) {
     impl_->backgroundOpacity = std::clamp(opacity, 0.0f, 1.0f);
+}
+
+void MetalTextRenderer::setCursorBlinkInterval(float seconds) {
+    impl_->blinkInterval = std::clamp(static_cast<double>(seconds), 0.1, 2.0);
 }
 
 } // namespace termcore

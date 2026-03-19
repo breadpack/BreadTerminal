@@ -88,6 +88,7 @@
     sidebarItem.minimumThickness = 180;
     sidebarItem.maximumThickness = 320;
     sidebarItem.canCollapse = YES;
+    sidebarItem.collapsed = YES;  // Hidden by default, toggle with Cmd+Shift+B
     sidebarItem.holdingPriority = NSLayoutPriorityDefaultLow + 1;
 
     NSSplitViewItem* contentItem =

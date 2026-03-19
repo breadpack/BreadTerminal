@@ -27,7 +27,8 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
 
     // --- CursorStyle ---
     if (old_cfg.cursor_style != new_cfg.cursor_style ||
-        old_cfg.cursor_blink != new_cfg.cursor_blink) {
+        old_cfg.cursor_blink != new_cfg.cursor_blink ||
+        std::abs(old_cfg.cursor_blink_interval - new_cfg.cursor_blink_interval) > 0.001f) {
         flags |= ConfigDirtyFlags::CursorStyle;
     }
 

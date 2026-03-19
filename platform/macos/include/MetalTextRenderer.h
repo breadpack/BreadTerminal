@@ -70,6 +70,9 @@ public:
     /// Set background opacity for transparency support (0.0 - 1.0).
     void setBackgroundOpacity(float opacity);
 
+    /// Set cursor blink interval in seconds (0.1 - 2.0).
+    void setCursorBlinkInterval(float seconds);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

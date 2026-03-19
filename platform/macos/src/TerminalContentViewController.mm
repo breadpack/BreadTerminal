@@ -9,13 +9,15 @@
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
         _device = device;
+        // Create terminal view immediately (not lazily via loadView)
+        // so it's available before the view hierarchy is set up
+        NSRect frame = NSMakeRect(0, 0, 600, 400);
+        _terminalView = [[TerminalView alloc] initWithFrame:frame device:_device];
     }
     return self;
 }
 
 - (void)loadView {
-    NSRect frame = NSMakeRect(0, 0, 600, 400);
-    _terminalView = [[TerminalView alloc] initWithFrame:frame device:_device];
     self.view = _terminalView;
 }
 

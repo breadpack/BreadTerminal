@@ -65,6 +65,8 @@ void parseLine(Config& config, const std::string& key, const std::string& value)
         config.cursor_style = value;
     } else if (key == "cursor-blink") {
         config.cursor_blink = (value == "true" || value == "1" || value == "yes");
+    } else if (key == "cursor-blink-interval") {
+        config.cursor_blink_interval = std::clamp(std::stof(value), 0.1f, 2.0f);
     } else if (key == "shell") {
         config.shell = value;
     } else if (key == "theme") {
@@ -260,6 +262,7 @@ std::string serializeConfig(const Config& config) {
     out << "scrollback-limit = " << config.scrollback_limit << "\n";
     out << "cursor-style = " << config.cursor_style << "\n";
     out << "cursor-blink = " << (config.cursor_blink ? "true" : "false") << "\n";
+    out << "cursor-blink-interval = " << config.cursor_blink_interval << "\n";
     if (!config.shell.empty()) {
         out << "shell = " << config.shell << "\n";
     }
