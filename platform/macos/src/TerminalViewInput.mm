@@ -71,6 +71,10 @@ static uint8_t modsFromEvent(NSEvent* event) {
 #pragma mark - Keyboard
 
 - (void)keyDown:(NSEvent*)event {
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "keyDown: kc=%d ch='%s'\n", event.keyCode,
+               [event.characters ?: @"" UTF8String]); fclose(f); } }
+
     // Debug screenshot: Cmd+Shift+S
     if ((event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) ==
         (NSEventModifierFlagCommand | NSEventModifierFlagShift)) {
@@ -84,6 +88,13 @@ static uint8_t modsFromEvent(NSEvent* event) {
     // If search field is active and Escape is pressed, close search.
     if (_searchActive && event.keyCode == 53) {
         [self closeSearch];
+        return;
+    }
+
+    // If IME composition is active, route ALL keys through IME
+    // (backspace edits jamo, arrows/space/enter commit composition)
+    if (_markedText != nil && _markedText.length > 0) {
+        [self interpretKeyEvents:@[event]];
         return;
     }
 
@@ -102,16 +113,17 @@ static uint8_t modsFromEvent(NSEvent* event) {
     if ([self handleSpecialKey:event]) return;
 
     // Route through IME system for proper CJK/Korean composition.
-    // interpretKeyEvents: calls back into NSTextInputClient methods
-    // (insertText:replacementRange:, setMarkedText:, etc.)
     [self interpretKeyEvents:@[event]];
 }
 
 #pragma mark - NSTextInputClient
 
 - (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
+    _markedText = nil;
     NSString* text = [string isKindOfClass:[NSAttributedString class]]
         ? [(NSAttributedString*)string string] : (NSString*)string;
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "insertText: '%s'\n", text ? [text UTF8String] : "nil"); fclose(f); } }
     if (text.length > 0) {
         [self sendText:text];
     }
@@ -119,20 +131,58 @@ static uint8_t modsFromEvent(NSEvent* event) {
 
 - (void)setMarkedText:(id)string selectedRange:(NSRange)selectedRange
      replacementRange:(NSRange)replacementRange {
-    // Marked text = IME composition in progress (e.g., Korean jamo being combined).
-    // We don't display inline composition preview in the terminal;
-    // text is sent when composition completes via insertText:.
+    NSString* text = [string isKindOfClass:[NSAttributedString class]]
+        ? [(NSAttributedString*)string string] : (NSString*)string;
+    _markedText = (text.length > 0) ? [text copy] : nil;
+    _markedSelectedRange = selectedRange;
+    _impl->needsRender = true;
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "setMarkedText: '%s'\n", _markedText ? [_markedText UTF8String] : "nil"); fclose(f); } }
 }
 
 - (void)unmarkText {
-    // Composition cancelled or completed — nothing to clean up.
+    _markedText = nil;
+    _impl->needsRender = true;
+}
+
+- (void)doCommandBySelector:(SEL)selector {
+    // Called by interpretKeyEvents: for non-text commands (backspace, arrows, etc.)
+    // When IME is not composing, translate to terminal escape sequences.
+    if (selector == @selector(deleteBackward:)) {
+        [self writePty:"\x7f"];
+    } else if (selector == @selector(deleteForward:)) {
+        [self writePty:"\x1b[3~"];
+    } else if (selector == @selector(moveUp:)) {
+        bool appCur = _impl->screen && _impl->screen->appCursorKeys();
+        [self writePty:appCur ? "\x1bOA" : "\x1b[A"];
+    } else if (selector == @selector(moveDown:)) {
+        bool appCur = _impl->screen && _impl->screen->appCursorKeys();
+        [self writePty:appCur ? "\x1bOB" : "\x1b[B"];
+    } else if (selector == @selector(moveRight:)) {
+        bool appCur = _impl->screen && _impl->screen->appCursorKeys();
+        [self writePty:appCur ? "\x1bOC" : "\x1b[C"];
+    } else if (selector == @selector(moveLeft:)) {
+        bool appCur = _impl->screen && _impl->screen->appCursorKeys();
+        [self writePty:appCur ? "\x1bOD" : "\x1b[D"];
+    } else if (selector == @selector(insertNewline:)) {
+        [self writePty:"\r"];
+    } else if (selector == @selector(insertTab:)) {
+        [self writePty:"\t"];
+    } else if (selector == @selector(cancelOperation:)) {
+        [self writePty:"\x1b"];
+    } else {
+        // Unknown command — do nothing (don't beep)
+    }
 }
 
 - (BOOL)hasMarkedText {
-    return NO;
+    return _markedText != nil && _markedText.length > 0;
 }
 
 - (NSRange)markedRange {
+    if (_markedText && _markedText.length > 0) {
+        return NSMakeRange(0, _markedText.length);
+    }
     return NSMakeRange(NSNotFound, 0);
 }
 
@@ -531,6 +581,10 @@ static uint8_t modsFromEvent(NSEvent* event) {
 }
 
 - (void)mouseDown:(NSEvent*)event {
+    // Ensure we're first responder on click
+    if (self.window.firstResponder != self) {
+        [self.window makeFirstResponder:self];
+    }
     // Cmd+click to open URL
     if (event.modifierFlags & NSEventModifierFlagCommand) {
         NSPoint cell = [self cellPositionForEvent:event];

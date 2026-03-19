@@ -28,6 +28,7 @@
 
     _device = device;
     _impl = new TerminalViewImpl();
+    _markedText = nil;
 
     // Metal layer
     self.wantsLayer = YES;
@@ -310,12 +311,16 @@
 #pragma mark - Text I/O
 
 - (void)sendText:(NSString*)text {
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "sendText: '%s'\n", [text UTF8String]); fclose(f); } }
     if (!_impl->pty) return;
     const char* utf8 = [text UTF8String];
     _impl->pty->write(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
 }
 
 - (void)writePty:(const char*)str {
+    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
+      if (f) { fprintf(f, "writePty: '%s'\n", str); fclose(f); } }
     if (_impl->pty) _impl->pty->write(str, strlen(str));
 }
 
@@ -341,7 +346,54 @@
         }
     }
 
+    // Inject IME marked text into screen cells before render, restore after
+    struct IMESavedCell { int row, col; termcore::TermCell cell; };
+    std::vector<IMESavedCell> imeSaved;
+
+    bool imeComposing = _markedText != nil && _markedText.length > 0;
+    _impl->renderer->setIMEActive(imeComposing);
+
+    if (imeComposing && _impl->screen) {
+        int curRow = _impl->screen->cursorRow();
+        int curCol = _impl->screen->cursorCol();
+        int cols = _impl->screen->cols();
+        int rows = _impl->screen->rows();
+        if (curRow >= 0 && curRow < rows) {
+            for (NSUInteger i = 0; i < _markedText.length; ++i) {
+                int col = curCol + (int)i;
+                if (col >= cols) break;
+
+                unichar ch = [_markedText characterAtIndex:i];
+                char32_t cp = (char32_t)ch;
+                if (i + 1 < _markedText.length && CFStringIsSurrogateHighCharacter(ch)) {
+                    unichar lo = [_markedText characterAtIndex:i + 1];
+                    if (CFStringIsSurrogateLowCharacter(lo)) {
+                        cp = CFStringGetLongCharacterForSurrogatePair(ch, lo);
+                        ++i;
+                    }
+                }
+
+                const termcore::TermCell& orig = _impl->screen->cellAt(curRow, col);
+                imeSaved.push_back({curRow, col, orig});
+
+                termcore::TermCell& cell = const_cast<termcore::TermCell&>(orig);
+                cell.codepoint = cp;
+                cell.fg_color = _impl->screen->dynamicColors().foreground;
+                cell.bg_color = _impl->screen->dynamicColors().background;
+                cell.attributes |= 0x04; // underline to indicate composition
+                cell.width = 1;
+            }
+        }
+    }
+
     _impl->renderer->render(*_impl->screen);
+
+    // Restore original cells
+    for (const auto& sc : imeSaved) {
+        termcore::TermCell& cell = const_cast<termcore::TermCell&>(
+            _impl->screen->cellAt(sc.row, sc.col));
+        cell = sc.cell;
+    }
 }
 
 #pragma mark - Config hot reload

@@ -71,36 +71,15 @@
         self.mainWindow.backgroundColor = [NSColor clearColor];
     }
 
-    // --- Sidebar ---
-    _sidebarVC = [[SidebarViewController alloc] init];
-    _sidebarVC.delegate = self;
-
-    // --- Terminal content (wrapped in a view controller) ---
-    _contentVC = [[TerminalContentViewController alloc] initWithDevice:device];
-    [_contentVC applyConfig:config];
-    _terminalView = _contentVC.terminalView;
-
-    // --- NSSplitViewController ---
-    _splitVC = [[NSSplitViewController alloc] init];
-
-    NSSplitViewItem* sidebarItem =
-        [NSSplitViewItem sidebarWithViewController:_sidebarVC];
-    sidebarItem.minimumThickness = 180;
-    sidebarItem.maximumThickness = 320;
-    sidebarItem.canCollapse = YES;
-    sidebarItem.collapsed = YES;  // Hidden by default, toggle with Cmd+Shift+B
-    sidebarItem.holdingPriority = NSLayoutPriorityDefaultLow + 1;
-
-    NSSplitViewItem* contentItem =
-        [NSSplitViewItem contentListWithViewController:_contentVC];
-    contentItem.minimumThickness = 300;
-
-    [_splitVC addSplitViewItem:sidebarItem];
-    [_splitVC addSplitViewItem:contentItem];
-
-    self.mainWindow.contentViewController = _splitVC;
+    // --- Terminal view (as subview of contentView) ---
+    NSView* contentView = self.mainWindow.contentView;
+    _terminalView = [[TerminalView alloc] initWithFrame:contentView.bounds device:device];
+    [_terminalView applyConfig:config];
+    _terminalView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [contentView addSubview:_terminalView];
 
     // --- Show & focus ---
+    [NSApp activateIgnoringOtherApps:YES];
     [self.mainWindow makeKeyAndOrderFront:nil];
     [self.mainWindow makeFirstResponder:_terminalView];
 

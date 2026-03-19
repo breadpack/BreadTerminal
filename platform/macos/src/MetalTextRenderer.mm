@@ -42,6 +42,7 @@ struct MetalTextRenderer::Impl {
     CFAbsoluteTime lastBlinkToggle = CFAbsoluteTimeGetCurrent();
     bool cursorBlinkOn = true;
     double blinkInterval = 0.5; // seconds, configurable
+    bool imeActive = false; // hide cursor during IME composition
 
     // Reusable instance buffer
     std::vector<CellInstance> cellInstances;
@@ -453,7 +454,7 @@ fragment float4 cell_fragment(
             cursorBlinkOn = !cursorBlinkOn;
             lastBlinkToggle = now;
         }
-        bool showCursor = screen.cursorVisible() && cursorBlinkOn;
+        bool showCursor = screen.cursorVisible() && cursorBlinkOn && !imeActive;
         if (showCursor) {
             int cRow = screen.cursorRow();
             int cCol = screen.cursorCol();
@@ -481,6 +482,29 @@ fragment float4 cell_fragment(
                 // Block cursor: default flags=4 renders full cell bg
 
                 cellInstances.push_back(cursorInst);
+            }
+        }
+
+        // --- Pass 4: Underline for cells with AttrUnderline ---
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const TermCell& cell = screen.cellAt(row, col);
+                if (!(cell.attributes & AttrUnderline)) continue;
+
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                CellInstance ulInst = {};
+                ulInst.grid_col = static_cast<uint16_t>(col);
+                ulInst.grid_row = static_cast<uint16_t>(row);
+                ulInst.flags = 4; // bg pass (solid rect)
+                // Position underline at bottom of cell, 2px thick
+                ulInst.offset_y = static_cast<int16_t>(cellH - 2);
+                ulInst.glyph_width = static_cast<uint16_t>(cellW);
+                ulInst.glyph_height = 2;
+                ulInst.bg_r = (fg >> 16) & 0xFF;
+                ulInst.bg_g = (fg >> 8) & 0xFF;
+                ulInst.bg_b = fg & 0xFF;
+                ulInst.bg_a = 255;
+                cellInstances.push_back(ulInst);
             }
         }
     }
@@ -631,6 +655,10 @@ void MetalTextRenderer::setBackgroundOpacity(float opacity) {
 
 void MetalTextRenderer::setCursorBlinkInterval(float seconds) {
     impl_->blinkInterval = std::clamp(static_cast<double>(seconds), 0.1, 2.0);
+}
+
+void MetalTextRenderer::setIMEActive(bool active) {
+    impl_->imeActive = active;
 }
 
 } // namespace termcore

@@ -272,13 +272,23 @@ CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
 
     FontDescriptor desc = discovery_.findFallback(codepoint, style);
     if (desc.file_path.empty()) {
+        fprintf(stderr, "[FONT FALLBACK] U+%04X: no fallback found\n", (unsigned)codepoint);
         return kInvalidCollectionFace;
     }
+
+    fprintf(stderr, "[FONT FALLBACK] U+%04X: found '%s' at '%s'\n",
+            (unsigned)codepoint, desc.family.c_str(), desc.file_path.c_str());
 
     // Check if we already have this font in the chain
     for (size_t i = 0; i < chain_.size(); ++i) {
         if (chain_[i].descriptor.file_path == desc.file_path &&
             chain_[i].descriptor.face_index == desc.face_index) {
+            // Already in chain — but check if glyph is actually there
+            uint32_t gi = rasterizer_.getGlyphIndex(chain_[i].rasterizer_face_id, codepoint);
+            if (gi != 0) {
+                codepoint_cache_[codepoint] = i;
+                return static_cast<CollectionFaceId>(i);
+            }
             codepoint_cache_[codepoint] = 0;
             return kInvalidCollectionFace;
         }

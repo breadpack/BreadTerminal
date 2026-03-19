@@ -63,6 +63,9 @@ struct TerminalViewImpl {
     NSTextField* _searchField;
     NSTrackingArea* _trackingArea;
     NSVisualEffectView* _visualEffectView;
+    // IME composition state
+    NSString* _markedText;
+    NSRange _markedSelectedRange;
     // Note: _termRows and _termCols are synthesized properties on TerminalView.
 }
 
