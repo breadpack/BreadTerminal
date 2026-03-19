@@ -47,7 +47,7 @@
     _impl->shaper     = std::make_unique<termcore::FontShaper>();
     _impl->fontCollection = std::make_unique<termcore::FontCollection>(
         *_impl->rasterizer, *_impl->discovery, *_impl->shaper);
-    _impl->fontCollection->setPrimaryFont("Menlo", 14.0f);
+    _impl->fontCollection->setPrimaryFont("Menlo", 16.0f);
     _impl->atlas = std::make_unique<termcore::GlyphAtlas>();
     _impl->cache = std::make_unique<termcore::GlyphCache>();
 
@@ -145,10 +145,6 @@
     [super viewDidMoveToWindow];
     if (self.window) {
         _metalLayer.contentsScale = self.window.backingScaleFactor;
-        _impl->rasterizer->setScaleFactor(
-            static_cast<float>(self.window.backingScaleFactor));
-        _impl->cache->clear();
-        _impl->needsRender = true;
     }
 }
 
