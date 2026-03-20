@@ -1,11 +1,7 @@
 #import "TerminalView.h"
 
+#include "termcore/terminal_controller.h"
 #include "termcore/screen.h"
-#include "termcore/vt_parser.h"
-#include "termcore/pty.h"
-#include "termcore/keybinding.h"
-#include "termcore/search.h"
-#include "termcore/url_detector.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/unicode_width.h"
 #include "termcore/font/font_shaper.h"
@@ -15,39 +11,14 @@
 #include "CoreTextRasterizer.h"
 #include "CoreTextDiscovery.h"
 #include "TerminalViewImpl.h"
+#include "MacPlatformHost.h"
 #include "termcore/theme_loader.h"
+#include "termcore/selection_manager.h"
 
 #import <UserNotifications/UserNotifications.h>
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <memory>
-
-// CVDisplayLink callback (fallback for < macOS 14)
-static CVReturn displayLinkCallback(CVDisplayLinkRef /*displayLink*/,
-                                     const CVTimeStamp* /*now*/,
-                                     const CVTimeStamp* /*outputTime*/,
-                                     CVOptionFlags /*flagsIn*/,
-                                     CVOptionFlags* /*flagsOut*/,
-                                     void* context) {
-    TerminalView* view = (__bridge TerminalView*)context;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [view renderFrame];
-    });
-    return kCVReturnSuccess;
-}
-
-// Idle downclock constants
-static const double kIdleTimeoutSeconds = 1.0;
-static const NSTimeInterval kIdleCheckInterval = 0.1; // 10 fps when idle
-
-// Convert mach_absolute_time to seconds
-static double machTimeToSeconds(uint64_t elapsed) {
-    static mach_timebase_info_data_t sTimebaseInfo = {0, 0};
-    if (sTimebaseInfo.denom == 0) {
-        mach_timebase_info(&sTimebaseInfo);
-    }
-    return (double)(elapsed * sTimebaseInfo.numer) / (double)(sTimebaseInfo.denom * 1000000000ULL);
-}
 
 @implementation TerminalView
 
@@ -61,7 +32,7 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _impl = new TerminalViewImpl();
     _markedText = nil;
 
-    // Metal layer — manually managed (NOT via makeBackingLayer)
+    // Metal layer -- manually managed (NOT via makeBackingLayer)
     // We need direct control of drawableSize for Retina support
     self.wantsLayer = YES;  // Creates default backing layer
     _metalLayer = [CAMetalLayer layer];
@@ -70,7 +41,8 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _metalLayer.framebufferOnly = YES;
     _metalLayer.contentsScale = 2.0;
     _metalLayer.frame = self.bounds;
-    _metalLayer.drawableSize = NSMakeSize(self.bounds.size.width * 2, self.bounds.size.height * 2);
+    _metalLayer.drawableSize = NSMakeSize(self.bounds.size.width * 2,
+                                           self.bounds.size.height * 2);
     [self.layer addSublayer:_metalLayer];
 
     // Font stack
@@ -96,28 +68,12 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _cellWidth  = metrics.cell_width  > 0 ? metrics.cell_width  : 16.0f;
     _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 32.0f;
 
-    // Screen + Parser
+    // Calculate initial grid size (before controller creation)
     auto [rows, cols] = [self calculateGridSize];
-    _impl->screen = std::make_unique<termcore::Screen>(rows, cols);
-    _impl->parser = std::make_unique<termcore::VtParser>(*_impl->screen);
     _termRows = rows;
     _termCols = cols;
-    _scrollOffset = 0;
 
-    // Keybinding manager (defaults are loaded in constructor)
-    _impl->keybindings = std::make_unique<termcore::KeybindingManager>();
-
-    // Search engine
-    _impl->search = std::make_unique<termcore::TerminalSearch>();
-
-    // URL detector
-    _impl->urlDetector = std::make_unique<termcore::UrlDetector>();
-
-    // Paste guard (default config)
-    _impl->pasteGuard = std::make_unique<termcore::PasteGuard>();
-
-    // Mux, notifications, agent tracker (for socket API)
-    _impl->mux = std::make_unique<termcore::Mux>();
+    // Notifications, agent tracker (for socket API)
     _impl->notifications = std::make_unique<termcore::NotificationStore>();
     _impl->agentTracker = std::make_unique<termcore::AgentTracker>();
 
@@ -133,8 +89,8 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _impl->lastActivityTime = mach_absolute_time();
     _impl->idleMode = false;
 
-    // Render timer will be started after view is added to window
-    // (cannot use __weak self during init — may be nil)
+    // Controller and PlatformHost are created in applyConfig / startShell
+    // after the view is added to a window (we need a window reference).
 
     return self;
 }
@@ -163,12 +119,16 @@ static double machTimeToSeconds(uint64_t elapsed) {
         }
         [self updateGridSize];
         _impl->needsRender = true;
+
+        // Update platform host's window reference if controller exists
+        if (_impl->platformHost) {
+            _impl->platformHost->setWindow(self.window);
+        }
     }
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    // TerminalViewImpl destructor handles ptyReadSource cancel and display link cleanup
     delete _impl;
 }
 
@@ -181,47 +141,10 @@ static double machTimeToSeconds(uint64_t elapsed) {
         _cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 32.0f;
     }
 
-    // Keybindings from config
-    if (!config.keybindings.empty()) {
-        std::vector<std::pair<std::string, std::string>> bindings;
-        for (const auto& kb : config.keybindings) {
-            bindings.emplace_back(kb.trigger, kb.action);
-        }
-        _impl->keybindings->loadFromConfig(bindings);
-    }
-
-    // Paste guard
-    {
-        termcore::PasteGuard::Config pgCfg;
-        if (config.clipboard_paste_protection == "always")
-            pgCfg.mode = termcore::PasteGuard::Config::Mode::Always;
-        else if (config.clipboard_paste_protection == "never")
-            pgCfg.mode = termcore::PasteGuard::Config::Mode::Never;
-        else
-            pgCfg.mode = termcore::PasteGuard::Config::Mode::Multiline;
-        pgCfg.trust_bracketed = config.clipboard_paste_bracketed_safe;
-        _impl->pasteGuard = std::make_unique<termcore::PasteGuard>(pgCfg);
-    }
-
-    // Scrollback limit
-    if (config.scrollback_limit > 0) {
-        _impl->screen->setMaxScrollback(static_cast<size_t>(config.scrollback_limit));
-    }
-
-    // Cursor blink interval
-    _impl->renderer->setCursorBlinkInterval(config.cursor_blink_interval);
-
-    // Command completion notification settings
-    _impl->notifyOnCommandFinish = config.notify_on_command_finish;
-    _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
-
     // Store the raw theme string for adaptive theme switching
     if (!config.theme.empty()) {
         _impl->currentThemeString = config.theme;
     }
-
-    // Initialize screen dynamic colors from the (already theme-resolved) config
-    _impl->screen->initDynamicColors(config);
 
     // Background transparency & blur
     [self applyTransparencyConfig:config];
@@ -236,6 +159,22 @@ static double machTimeToSeconds(uint64_t elapsed) {
     // Minimum contrast
     _impl->renderer->setMinimumContrast(config.minimum_contrast);
 
+    // Cursor blink interval
+    _impl->renderer->setCursorBlinkInterval(config.cursor_blink_interval);
+
+    // Create TerminalController if not yet created
+    if (!_impl->controller) {
+        _impl->platformHost = std::make_unique<MacPlatformHost>(
+            self, self.window);
+        _impl->controller = std::make_unique<termcore::TerminalController>(
+            _impl->platformHost.get(),
+            config,
+            _impl->fontCollection.get());
+    } else {
+        // Update controller with new config
+        _impl->controller->onConfigChanged(config);
+    }
+
     // Recalculate grid with potentially new font metrics
     [self updateGridSize];
 }
@@ -248,8 +187,11 @@ static double machTimeToSeconds(uint64_t elapsed) {
     termcore::Config tempConfig;
     termcore::applyTheme(tempConfig, *theme);
 
-    // Update the screen's dynamic colors
-    _impl->screen->initDynamicColors(tempConfig);
+    // Update the screen's dynamic colors via controller
+    termcore::Screen* scr = _impl->controller ? _impl->controller->activeScreen() : nullptr;
+    if (scr) {
+        scr->initDynamicColors(tempConfig);
+    }
 
     // Update transparency config (background color may have changed)
     [self applyTransparencyConfig:tempConfig];
@@ -304,7 +246,6 @@ static double machTimeToSeconds(uint64_t elapsed) {
             [self addSubview:_visualEffectView positioned:NSWindowBelow relativeTo:nil];
         }
 
-        // Map blur level to material
         switch (blur) {
             case 1:
                 _visualEffectView.material = NSVisualEffectMaterialHUDWindow;
@@ -318,7 +259,6 @@ static double machTimeToSeconds(uint64_t elapsed) {
                 break;
         }
     } else {
-        // Remove blur view if not needed
         if (_visualEffectView) {
             [_visualEffectView removeFromSuperview];
             _visualEffectView = nil;
@@ -335,11 +275,6 @@ static double machTimeToSeconds(uint64_t elapsed) {
 
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)becomeFirstResponder  { return YES; }
-
-// Metal layer is a sublayer, not the backing layer
-// This gives us direct control of drawableSize/contentsScale
-
-// viewDidMoveToWindow is implemented above (line 144)
 
 - (void)setFrameSize:(NSSize)newSize {
     [super setFrameSize:newSize];
@@ -359,10 +294,8 @@ static double machTimeToSeconds(uint64_t elapsed) {
 #pragma mark - Grid helpers
 
 - (std::pair<int,int>)calculateGridSize {
-    // Cell dimensions are in physical pixels; convert view bounds to pixels
     float cw = _cellWidth  > 0 ? _cellWidth  : 16;
     float ch = _cellHeight > 0 ? _cellHeight : 32;
-    // Use 2.0 for Retina (backingScaleFactor may return 1.0 incorrectly on some setups)
     float gridScale = 2.0f;
     float paddingPx = _impl->windowPadding * gridScale;
     float viewWidthPx  = self.bounds.size.width  * gridScale - paddingPx * 2;
@@ -377,53 +310,44 @@ static double machTimeToSeconds(uint64_t elapsed) {
     if (rows == _termRows && cols == _termCols) return;
     _termRows = rows;
     _termCols = cols;
-    _impl->screen->resize(rows, cols);
-    if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
-    // Viewport in physical pixels (matches drawableSize)
-    float gridScale = self.window.backingScaleFactor > 0 ? (float)self.window.backingScaleFactor : 2.0f;
-    float w = self.bounds.size.width * gridScale;
-    float h = self.bounds.size.height * gridScale;
-    _impl->renderer->resize(w, h);
+
+    // Delegate resize to controller (it handles screen + pty resize)
+    if (_impl->controller) {
+        float gridScale = self.window.backingScaleFactor > 0
+                            ? (float)self.window.backingScaleFactor : 2.0f;
+        float w = self.bounds.size.width * gridScale;
+        float h = self.bounds.size.height * gridScale;
+        _impl->controller->onResize(static_cast<int>(w), static_cast<int>(h));
+        _impl->renderer->resize(w, h);
+    }
     _impl->needsRender = true;
 }
 
 #pragma mark - Shell / PTY
 
 - (void)startShell {
-    _impl->pty = termcore::createPty();
-    std::string homeDir;
-    if (const char* home = std::getenv("HOME")) homeDir = home;
-    if (!_impl->pty->spawn("", {}, homeDir, _termRows, _termCols)) {
-        NSLog(@"BreadTerminal: failed to spawn shell");
+    // Ensure controller is created
+    if (!_impl->controller) {
+        NSLog(@"BreadTerminal: controller not created before startShell - call applyConfig first");
         return;
     }
 
+    // Initialize terminal (creates Mux, TabController, spawns PTY via platform host)
+    _impl->controller->initTerminal();
+
     // Wire response callback so Screen can write back to PTY (DA, DSR, DECRPM, etc.)
     __weak TerminalView* weakSelf = self;
-    _impl->screen->setResponseCallback([weakSelf](const std::string& response) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            TerminalView* strongSelf = weakSelf;
-            if (!strongSelf || !strongSelf->_impl->pty) return;
-            strongSelf->_impl->pty->write(response.data(), response.size());
+    termcore::Screen* scr = _impl->controller->activeScreen();
+    if (scr) {
+        scr->setResponseCallback([weakSelf](const std::string& response) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                TerminalView* strongSelf = weakSelf;
+                if (!strongSelf || !strongSelf->_impl->controller) return;
+                termcore::Pty* pty = strongSelf->_impl->controller->tabs()->activePty();
+                if (pty) pty->write(response.data(), response.size());
+            });
         });
-    });
-
-    // Wire command finish callback for desktop notifications
-    _impl->screen->setCommandFinishCallback([weakSelf](double duration_seconds) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            TerminalView* strongSelf = weakSelf;
-            if (!strongSelf) return;
-
-            // Check if notifications are enabled
-            if (!strongSelf->_impl->notifyOnCommandFinish) return;
-
-            // Only notify if the window is NOT the key window (app not focused)
-            NSWindow* window = strongSelf.window;
-            if (window && [window isKeyWindow] && [NSApp isActive]) return;
-
-            [strongSelf postCommandFinishNotification:duration_seconds];
-        });
-    });
+    }
 
     // Register for focus event notifications (CSI I / CSI O)
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -433,87 +357,76 @@ static double machTimeToSeconds(uint64_t elapsed) {
         selector:@selector(windowDidResignKey:)
         name:NSWindowDidResignKeyNotification object:self.window];
 
-    // Dispatch PTY reads on a dedicated serial queue
-    int fd = _impl->pty->fd();
-    dispatch_source_t src = dispatch_source_create(
-        DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
-    dispatch_source_set_event_handler(src, ^{
-        TerminalView* s = weakSelf;
-        if (s) [s readPtyDataOnMainQueue];
-    });
-    dispatch_source_set_cancel_handler(src, ^{});
-    _impl->ptyReadSource = src;
-    dispatch_resume(src);
+    // Dispatch PTY reads on main queue via dispatch source
+    termcore::Pty* pty = _impl->controller->tabs()->activePty();
+    if (pty) {
+        int fd = pty->fd();
+        dispatch_source_t src = dispatch_source_create(
+            DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
+        dispatch_source_set_event_handler(src, ^{
+            TerminalView* s = weakSelf;
+            if (s) [s readPtyDataOnMainQueue];
+        });
+        dispatch_source_set_cancel_handler(src, ^{});
+        _impl->ptyReadSource = src;
+        dispatch_resume(src);
+    }
 }
 
 - (void)readPtyDataOnMainQueue {
-    // Called on main queue — read from PTY and feed parser directly
-    char buf[65536];
-    for (;;) {
-        int n = _impl->pty->read(buf, sizeof(buf));
-        if (n > 0) {
-            _impl->parser->feed(buf, static_cast<size_t>(n));
-        } else if (n < 0) {
-            if (_impl->ptyReadSource) {
-                dispatch_source_cancel(_impl->ptyReadSource);
-                _impl->ptyReadSource = nullptr;
+    if (!_impl->controller) return;
+
+    // Let controller poll all PTYs (reads data and feeds parsers)
+    _impl->controller->pollPty();
+
+    if (_impl->controller->needsRender()) {
+        _impl->needsRender = true;
+
+        // Update window title from active screen
+        termcore::Screen* scr = _impl->controller->activeScreen();
+        if (scr) {
+            std::string title = scr->title();
+            if (!title.empty()) {
+                NSString* t = [NSString stringWithUTF8String:title.c_str()];
+                if (t && ![self.window.title isEqualToString:t])
+                    self.window.title = t;
             }
-            return;
-        } else {
-            break;
         }
-    }
-
-    _impl->needsRender = true;
-
-    // Update window title from OSC sequences
-    if (_impl->screen) {
-        std::string title = _impl->screen->title();
-        if (!title.empty()) {
-            NSString* t = [NSString stringWithUTF8String:title.c_str()];
-            if (t && ![self.window.title isEqualToString:t])
-                self.window.title = t;
-        }
-    }
-
-    // Exit copy mode on new PTY output
-    if (_impl->copyModeActive) {
-        [self exitCopyMode];
     }
 }
 
 #pragma mark - Text I/O
 
 - (void)sendText:(NSString*)text {
-    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
-      if (f) { fprintf(f, "sendText: '%s'\n", [text UTF8String]); fclose(f); } }
-    if (!_impl->pty) return;
+    if (!_impl->controller) return;
     const char* utf8 = [text UTF8String];
-    _impl->pty->write(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
-}
-
-- (void)writePty:(const char*)str {
-    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
-      if (f) { fprintf(f, "writePty: '%s'\n", str); fclose(f); } }
-    if (_impl->pty) _impl->pty->write(str, strlen(str));
+    std::string str(utf8, [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+    _impl->controller->onCharInput(str);
 }
 
 #pragma mark - Focus Events
 
 - (void)windowDidBecomeKey:(NSNotification*)notification {
-    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
-        const char* seq = "\033[I";
-        _impl->pty->write(seq, 3);
+    termcore::Screen* scr = _impl->controller ? _impl->controller->activeScreen() : nullptr;
+    if (scr && scr->focusEvents()) {
+        termcore::Pty* pty = _impl->controller->tabs()->activePty();
+        if (pty) {
+            const char* seq = "\033[I";
+            pty->write(seq, 3);
+        }
     }
-    // Trigger render on focus gain (e.g. cursor blink state)
     _impl->needsRender = true;
     [self markActivity];
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
-    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
-        const char* seq = "\033[O";
-        _impl->pty->write(seq, 3);
+    termcore::Screen* scr = _impl->controller ? _impl->controller->activeScreen() : nullptr;
+    if (scr && scr->focusEvents()) {
+        termcore::Pty* pty = _impl->controller->tabs()->activePty();
+        if (pty) {
+            const char* seq = "\033[O";
+            pty->write(seq, 3);
+        }
     }
     _impl->needsRender = true;
 }
@@ -526,26 +439,30 @@ static double machTimeToSeconds(uint64_t elapsed) {
 }
 
 - (void)renderFrame {
-    // Simple render guard: always render when cursor visible (for blink) or content changed
+    termcore::Screen* screen = _impl->controller ? _impl->controller->activeScreen() : nullptr;
+
     bool imeActive = _markedText != nil && _markedText.length > 0;
-    bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
+    bool cursorNeedsRedraw = !imeActive && screen && screen->cursorVisible();
     if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
-    // Force Retina drawable size every frame (AppKit resets contentsScale to 1)
+    if (_impl->controller) {
+        _impl->controller->clearNeedsRender();
+    }
+
+    // Force Retina drawable size every frame
     {
         CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2.0;
         NSSize sz = self.bounds.size;
         if (sz.width > 0 && sz.height > 0) {
             float pxW = sz.width * scale;
             float pxH = sz.height * scale;
-            // contentsScale may be reset by AppKit, but drawableSize is authoritative
             _metalLayer.drawableSize = NSMakeSize(pxW, pxH);
             _impl->renderer->resize(pxW, pxH);
         }
     }
 
-    // No mutex needed — PTY read and render both on main queue
+    if (!screen) return;
 
     // Inject IME marked text into screen cells before render, restore after
     struct IMESavedCell { int row, col; termcore::TermCell cell; };
@@ -554,11 +471,11 @@ static double machTimeToSeconds(uint64_t elapsed) {
     bool imeComposing = _markedText != nil && _markedText.length > 0;
     _impl->renderer->setIMEActive(imeComposing);
 
-    if (imeComposing && _impl->screen) {
-        int curRow = _impl->screen->cursorRow();
-        int curCol = _impl->screen->cursorCol();
-        int cols = _impl->screen->cols();
-        int rows = _impl->screen->rows();
+    if (imeComposing) {
+        int curRow = screen->cursorRow();
+        int curCol = screen->cursorCol();
+        int cols = screen->cols();
+        int rows = screen->rows();
         if (curRow >= 0 && curRow < rows) {
             int col = curCol;
             for (NSUInteger i = 0; i < _markedText.length; ++i) {
@@ -578,23 +495,20 @@ static double machTimeToSeconds(uint64_t elapsed) {
                 if (w < 1) w = 1;
                 if (col + w > cols) break;
 
-                // Save original cells (main + continuation for wide chars)
                 for (int c = col; c < col + w; ++c) {
-                    const termcore::TermCell& orig = _impl->screen->cellAt(curRow, c);
+                    const termcore::TermCell& orig = screen->cellAt(curRow, c);
                     imeSaved.push_back({curRow, c, orig});
                 }
 
-                // Write main cell via safe mutable accessor
-                termcore::TermCell& cell = _impl->screen->mutableCellAt(curRow, col);
+                termcore::TermCell& cell = screen->mutableCellAt(curRow, col);
                 cell.codepoint = cp;
-                cell.fg_color = _impl->screen->dynamicColors().background;
-                cell.bg_color = _impl->screen->dynamicColors().foreground;
+                cell.fg_color = screen->dynamicColors().background;
+                cell.bg_color = screen->dynamicColors().foreground;
                 cell.attributes = 0;
                 cell.width = w;
 
-                // Write continuation cell for wide chars
                 if (w == 2 && col + 1 < cols) {
-                    termcore::TermCell& cont = _impl->screen->mutableCellAt(curRow, col + 1);
+                    termcore::TermCell& cont = screen->mutableCellAt(curRow, col + 1);
                     cont.codepoint = 0;
                     cont.fg_color = cell.fg_color;
                     cont.bg_color = cell.bg_color;
@@ -607,28 +521,27 @@ static double machTimeToSeconds(uint64_t elapsed) {
         }
     }
 
-    // Pass selection state to renderer
+    // Pass selection state from controller to renderer
     {
+        const auto& selMgr = _impl->controller->selection();
         termcore::SelectionState sel;
-        sel.active = _selecting;
-        sel.block = _blockSelection;
-        sel.start_row = (int)_selectionStart.y;
-        sel.start_col = (int)_selectionStart.x;
-        sel.end_row = (int)_selectionEnd.y;
-        sel.end_col = (int)_selectionEnd.x;
+        sel.active = selMgr.hasSelection();
+        sel.block = false;  // block selection is not yet supported in controller
+        sel.start_row = selMgr.start().row;
+        sel.start_col = selMgr.start().col;
+        sel.end_row = selMgr.end().row;
+        sel.end_col = selMgr.end().col;
         _impl->renderer->setSelection(sel);
     }
 
-    _impl->renderer->render(*_impl->screen);
+    _impl->renderer->render(*screen);
 
     // Clear dirty flags after successful render
-    if (_impl->screen) {
-        _impl->screen->clearDirty();
-    }
+    screen->clearDirty();
 
     // Restore original cells
     for (const auto& sc : imeSaved) {
-        termcore::TermCell& cell = _impl->screen->mutableCellAt(sc.row, sc.col);
+        termcore::TermCell& cell = screen->mutableCellAt(sc.row, sc.col);
         cell = sc.cell;
     }
 }
@@ -656,74 +569,55 @@ static double machTimeToSeconds(uint64_t elapsed) {
     }
 
     if (hasFlag(dirty, ConfigDirtyFlags::Colors) || hasFlag(dirty, ConfigDirtyFlags::Theme)) {
-        // Update stored theme string for adaptive theme switching
         if (!config.theme.empty()) {
             _impl->currentThemeString = config.theme;
         }
-
-        // Update screen dynamic colors from the new config
-        _impl->screen->initDynamicColors(config);
-
-        // Re-apply transparency/background settings
+        // Update via controller
+        if (_impl->controller) {
+            _impl->controller->onConfigChanged(config);
+        }
         [self applyTransparencyConfig:config];
     }
 
     if (hasFlag(dirty, ConfigDirtyFlags::Keybindings)) {
-        if (!config.keybindings.empty()) {
-            std::vector<std::pair<std::string, std::string>> bindings;
-            for (const auto& kb : config.keybindings) {
-                bindings.emplace_back(kb.trigger, kb.action);
-            }
-            _impl->keybindings->loadFromConfig(bindings);
+        // Controller handles keybinding updates
+        if (_impl->controller) {
+            _impl->controller->onConfigChanged(config);
         }
-    }
-
-    if (hasFlag(dirty, ConfigDirtyFlags::Notification)) {
-        _impl->notifyOnCommandFinish = config.notify_on_command_finish;
-        _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
     }
 
     [self setNeedsRender];
 }
 
-#pragma mark - Command finish notification
+#pragma mark - Font size callback from MacPlatformHost
 
-- (void)postCommandFinishNotification:(double)duration {
-    UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+- (void)onCellSizeChanged:(float)cellW height:(float)cellH {
+    _cellWidth = cellW;
+    _cellHeight = cellH;
 
-    // Request permission if needed (no-op if already granted)
-    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
-                          completionHandler:^(BOOL granted, NSError* _Nullable error) {
-        if (!granted) return;
+    // Invalidate glyph cache since font changed
+    _impl->cache = std::make_unique<termcore::GlyphCache>();
+    _impl->atlas = std::make_unique<termcore::GlyphAtlas>();
+    _impl->renderer->setFontStack(
+        _impl->fontCollection.get(), _impl->cache.get(),
+        _impl->atlas.get(), _impl->rasterizer.get());
 
-        UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
-        content.title = @"Command finished";
-        content.body = [NSString stringWithFormat:@"Completed in %.1fs", duration];
-        content.sound = [UNNotificationSound defaultSound];
-
-        UNNotificationRequest* request =
-            [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
-                                                 content:content
-                                                 trigger:nil];
-        [center addNotificationRequest:request withCompletionHandler:^(NSError* _Nullable err) {
-            if (err) {
-                NSLog(@"BreadTerminal: notification error: %@", err.localizedDescription);
-            }
-        }];
-    }];
+    [self updateGridSize];
+    _impl->needsRender = true;
 }
 
 #pragma mark - Socket API accessors
 
-- (termcore::Mux&)mux { return *_impl->mux; }
+- (termcore::TerminalController*)controller {
+    return _impl->controller.get();
+}
+
 - (termcore::NotificationStore&)notifications { return *_impl->notifications; }
 - (termcore::AgentTracker&)agentTracker { return *_impl->agentTracker; }
-- (termcore::Pty*)pty { return _impl->pty.get(); }
 
 #pragma mark - Config error display
 
 - (void)showConfigError:(NSString*)message {
-    // Remove any existing error banner before creating a new one
     static const NSInteger kConfigErrorBannerTag = 9001;
     for (NSView* subview in [self.subviews copy]) {
         if (subview.tag == kConfigErrorBannerTag) {
@@ -731,7 +625,6 @@ static double machTimeToSeconds(uint64_t elapsed) {
         }
     }
 
-    // Create error banner at top of view
     CGFloat bannerHeight = 28.0;
     NSRect bannerRect = NSMakeRect(0,
                                     self.bounds.size.height - bannerHeight,
@@ -751,7 +644,6 @@ static double machTimeToSeconds(uint64_t elapsed) {
     errorLabel.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
     [self addSubview:errorLabel];
 
-    // Auto-dismiss after 5 seconds
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
         [errorLabel removeFromSuperview];

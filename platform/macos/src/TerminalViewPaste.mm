@@ -1,4 +1,5 @@
 #import "TerminalViewImpl.h"
+#include "termcore/terminal_controller.h"
 #include "termcore/paste_guard.h"
 #include "termcore/screen.h"
 #include "termcore/pty.h"
@@ -6,15 +7,17 @@
 @implementation TerminalView (Paste)
 
 - (void)executePaste:(NSString*)text bracketed:(BOOL)bracketed {
-    if (!text || text.length == 0) return;
+    if (!text || text.length == 0 || !_impl->controller) return;
     const char* utf8 = [text UTF8String];
     size_t len = strlen(utf8);
+    termcore::Pty* pty = _impl->controller->tabs()->activePty();
+    if (!pty) return;
     if (bracketed) {
-        _impl->pty->write("\033[200~", 6);
-        _impl->pty->write(utf8, len);
-        _impl->pty->write("\033[201~", 6);
+        pty->write("\033[200~", 6);
+        pty->write(utf8, len);
+        pty->write("\033[201~", 6);
     } else {
-        _impl->pty->write(utf8, len);
+        pty->write(utf8, len);
     }
 }
 
@@ -31,7 +34,6 @@
     NSAlert* alert = [[NSAlert alloc] init];
     alert.messageText = @"Paste Protection";
 
-    // Build informative text
     NSMutableString* info = [NSMutableString string];
     if (analysis.line_count > 1)
         [info appendFormat:@"\u26A0 Multi-line paste (%d lines)\n", analysis.line_count];
@@ -51,7 +53,6 @@
     [alert addButtonWithTitle:@"Paste Anyway"];
     [alert addButtonWithTitle:@"Cancel"];
 
-    // Add scrollable text view with preview
     NSScrollView* scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 400, 150)];
     scrollView.hasVerticalScroller = YES;
     NSTextView* textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 400, 150)];
@@ -61,7 +62,6 @@
     scrollView.documentView = textView;
     alert.accessoryView = scrollView;
 
-    // Show as sheet
     __weak TerminalView* weakSelf = self;
     [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
         TerminalView* s = weakSelf;

@@ -17,12 +17,7 @@ class FontCollection;
 class IFontRasterizer;
 class FontShaper;
 class IFontDiscovery;
-class VtParser;
-class Pty;
-class KeybindingManager;
-class TerminalSearch;
-class UrlDetector;
-class PasteGuard;
+class TerminalController;
 struct PasteAnalysis;
 enum class Action : uint16_t;
 } // namespace termcore
@@ -37,7 +32,7 @@ enum class Action : uint16_t;
 /// Start a shell session in this terminal view.
 - (void)startShell;
 
-/// Send typed text to the PTY.
+/// Send typed text to the PTY (via controller).
 - (void)sendText:(NSString*)text;
 
 /// Trigger a render update.
@@ -57,6 +52,9 @@ enum class Action : uint16_t;
 /// Updates screen dynamic colors and triggers re-render.
 - (void)applyThemeByName:(const std::string&)themeName;
 
+/// Access the TerminalController (for AppDelegate socket API wiring).
+- (termcore::TerminalController*)controller;
+
 @property (nonatomic, readonly) int termRows;
 @property (nonatomic, readonly) int termCols;
 
@@ -65,10 +63,10 @@ enum class Action : uint16_t;
 /// Input handling category: keyboard, mouse, clipboard, search, URL detection.
 @interface TerminalView (Input)
 
-/// Copy selection to clipboard.
+/// Copy selection to clipboard (via controller).
 - (void)copy:(id)sender;
 
-/// Paste from clipboard with bracketed-paste support.
+/// Paste from clipboard (via controller).
 - (void)paste:(id)sender;
 
 /// Open the search bar.
@@ -77,23 +75,8 @@ enum class Action : uint16_t;
 /// Close the search bar.
 - (void)closeSearch;
 
-/// Handle a keybinding action.
-- (void)handleAction:(termcore::Action)action;
-
 /// Capture debug screenshot + state dump (Cmd+Shift+S)
 - (void)captureScreenshot;
-
-/// Enter copy mode (vi-style navigation).
-- (void)enterCopyMode;
-
-/// Exit copy mode and reset all state.
-- (void)exitCopyMode;
-
-/// Handle a key event while in copy mode.
-- (BOOL)handleCopyModeKey:(NSEvent*)event;
-
-/// Yank (copy) the current copy mode selection to clipboard.
-- (void)copyModeYank;
 
 @end
 

@@ -15,6 +15,7 @@ add_library(termcore_linux STATIC
     src/FontconfigDiscovery.cpp
     src/GLAtlasUploader.cpp
     src/GLTextRenderer.cpp
+    src/GtkPlatformHost.cpp
     src/TerminalWidget.cpp
     src/TerminalInput.cpp
 )

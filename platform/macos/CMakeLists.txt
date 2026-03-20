@@ -83,6 +83,7 @@ endif()
 add_executable(BreadTerminal MACOSX_BUNDLE
     src/main.mm
     src/AppDelegate.mm
+    src/MacPlatformHost.mm
     src/TerminalView.mm
     src/TerminalViewInput.mm
     src/TerminalViewPaste.mm
@@ -131,6 +132,7 @@ target_link_libraries(BreadTerminal PRIVATE
 set_source_files_properties(
     src/main.mm
     src/AppDelegate.mm
+    src/MacPlatformHost.mm
     src/TerminalView.mm
     src/TerminalViewInput.mm
     src/TerminalViewPaste.mm

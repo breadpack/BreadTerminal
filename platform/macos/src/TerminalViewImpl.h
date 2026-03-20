@@ -3,15 +3,9 @@
 
 #import "TerminalView.h"
 
+#include "termcore/terminal_controller.h"
 #include "termcore/screen.h"
-#include "termcore/vt_parser.h"
 #include "termcore/pty.h"
-#include "termcore/keybinding.h"
-#include "termcore/search.h"
-#include "termcore/url_detector.h"
-#include "termcore/paste_guard.h"
-#include "termcore/mouse.h"
-#include "termcore/mux.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
 #include "termcore/font/font_collection.h"
@@ -19,6 +13,7 @@
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"
 #include "MetalTextRenderer.h"
+#include "MacPlatformHost.h"
 
 #include <dispatch/dispatch.h>
 #include <memory>
@@ -28,30 +23,33 @@
 
 /// Private C++ implementation details for TerminalView.
 struct TerminalViewImpl {
-    std::unique_ptr<termcore::Screen> screen;
-    std::unique_ptr<termcore::VtParser> parser;
-    std::unique_ptr<termcore::Pty> pty;
+    // Core controller — owns all terminal state (screen, pty, keybindings, search, etc.)
+    std::unique_ptr<termcore::TerminalController> controller;
+
+    // Platform host — bridges controller callbacks to Cocoa APIs
+    std::unique_ptr<MacPlatformHost> platformHost;
+
+    // Font rasterization stack (platform-owned, shared with controller)
     std::unique_ptr<termcore::IFontRasterizer> rasterizer;
     std::unique_ptr<termcore::IFontDiscovery> discovery;
     std::unique_ptr<termcore::FontShaper> shaper;
     std::unique_ptr<termcore::FontCollection> fontCollection;
     std::unique_ptr<termcore::GlyphAtlas> atlas;
     std::unique_ptr<termcore::GlyphCache> cache;
+
+    // Metal renderer
     std::unique_ptr<termcore::MetalTextRenderer> renderer;
-    std::unique_ptr<termcore::KeybindingManager> keybindings;
-    std::unique_ptr<termcore::TerminalSearch> search;
-    std::unique_ptr<termcore::UrlDetector> urlDetector;
-    std::unique_ptr<termcore::PasteGuard> pasteGuard;
-    std::unique_ptr<termcore::Mux> mux;
+
+    // Socket API support (still owned by platform)
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
+
     __strong dispatch_source_t ptyReadSource = nullptr;
 
     // --- Display link / timer ---
     CADisplayLink* displayLink API_AVAILABLE(macos(14.0)) = nil;
     CVDisplayLinkRef cvDisplayLink = nullptr;  // fallback for < macOS 14
     bool useCADisplayLink = false;
-    // renderTimer removed — replaced by CADisplayLink / CVDisplayLink
 
     // --- PTY serial queue + mutex ---
     dispatch_queue_t ptyQueue = nullptr;
@@ -63,20 +61,8 @@ struct TerminalViewImpl {
     NSTimer* idleTimer = nil;  // fires at reduced rate when idle
 
     bool needsRender = true;  // Start with initial render needed
-    bool notifyOnCommandFinish = true;
     int windowPadding = 0;  // logical pixels, stored for grid calculation
     std::string currentThemeString;  // Stores the raw theme config value (may be adaptive)
-
-    // Copy mode state (vi-style keyboard navigation)
-    bool copyModeActive = false;
-    int copyModeCursorRow = 0;    // Visible row (can be negative for scrollback)
-    int copyModeCursorCol = 0;
-    bool copyModeSelecting = false;
-    bool copyModeLineSelect = false;
-    int copyModeSelectStartRow = 0;
-    int copyModeSelectStartCol = 0;
-    bool copyModeSearchMode = false;  // '/' search input active
-    bool copyModeWaitingG = false;    // Waiting for second 'g' in 'gg'
 
     ~TerminalViewImpl() {
         if (ptyReadSource) {
@@ -110,37 +96,26 @@ struct TerminalViewImpl {
     CAMetalLayer* _metalLayer;
     float _cellWidth;
     float _cellHeight;
-    NSPoint _selectionStart;
-    NSPoint _selectionEnd;
-    BOOL _selecting;
-    BOOL _blockSelection;   // Alt+drag rectangular selection
-    int _scrollOffset;
-    BOOL _searchActive;
-    NSTextField* _searchField;
     NSTrackingArea* _trackingArea;
     NSVisualEffectView* _visualEffectView;
     // IME composition state
     NSString* _markedText;
     NSRange _markedSelectedRange;
-    // Copy mode indicator label
-    NSTextField* _copyModeLabel;
+    // Search UI
+    BOOL _searchActive;
+    NSTextField* _searchField;
     // Note: _termRows and _termCols are synthesized properties on TerminalView.
 }
-
-/// Internal helper: write raw bytes to the PTY.
-- (void)writePty:(const char*)str;
 
 /// Render a single frame (called by display link or idle timer).
 - (void)renderFrame;
 
+/// Callback from MacPlatformHost when cell size changes.
+- (void)onCellSizeChanged:(float)cellW height:(float)cellH;
+
 /// Accessors for socket API integration.
-- (termcore::Mux&)mux;
 - (termcore::NotificationStore&)notifications;
 - (termcore::AgentTracker&)agentTracker;
-- (termcore::Pty*)pty;
-
-/// Post a macOS desktop notification for command completion.
-- (void)postCommandFinishNotification:(double)duration;
 
 @end
 

@@ -14,6 +14,7 @@
 #include "termcore/config_diff.h"
 #include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
+#include "termcore/terminal_controller.h"
 #include "termcore/socket/socket_server.h"
 #include "termcore/socket/command_dispatcher.h"
 #include "termcore/socket/socket_transport.h"
@@ -59,7 +60,6 @@
     if (configPath.empty()) configPath = termcore::defaultConfigPath();
     termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
-        // Detect current system appearance for adaptive theme resolution
         BOOL isDark = YES;
         if (@available(macOS 10.14, *)) {
             NSAppearanceName appearance = [NSApp.effectiveAppearance
@@ -110,13 +110,15 @@
         auto socketPath = termcore::resolveSocketPath();
         auto transport = termcore::createSocketTransport(socketPath);
 
-        // PaneWriteCallback: write data to the pane's PTY
+        // PaneWriteCallback: write data to the pane's PTY via controller
         __weak TerminalView* weakTV = _terminalView;
         termcore::PaneWriteCallback writeCb = [weakTV](termcore::PaneId /*pane_id*/,
                                                         std::string_view data) -> bool {
             TerminalView* tv = weakTV;
             if (!tv) return false;
-            termcore::Pty* ptyPtr = [tv pty];
+            termcore::TerminalController* ctrl = [tv controller];
+            if (!ctrl || !ctrl->tabs()) return false;
+            termcore::Pty* ptyPtr = ctrl->tabs()->activePty();
             if (!ptyPtr) return false;
             ptyPtr->write(data.data(), data.size());
             return true;
@@ -126,13 +128,17 @@
         termcore::WebViewCallback webviewCb = [](const std::string& /*method*/,
                                                   const nlohmann::json& /*params*/) {};
 
-        // ScrollbackReadCallback: read scrollback + visible lines from the pane's Screen
+        // ScrollbackReadCallback: read scrollback + visible lines from controller's screen
         termcore::ScrollbackReadCallback scrollbackCb =
             [weakTV](termcore::PaneId /*pane_id*/, int line_count) -> std::vector<std::string> {
             TerminalView* tv = weakTV;
-            if (!tv || !tv->_impl || !tv->_impl->screen) return {};
+            if (!tv) return {};
+            termcore::TerminalController* ctrl = [tv controller];
+            if (!ctrl) return {};
 
-            auto* screen = tv->_impl->screen.get();
+            auto* screen = ctrl->activeScreen();
+            if (!screen) return {};
+
             int sb_size = static_cast<int>(screen->scrollbackSize());
             int screen_rows = screen->rows();
             int total = sb_size + screen_rows;
@@ -141,8 +147,6 @@
             std::vector<std::string> result;
             result.reserve(count);
 
-            // Read from most recent scrollback lines + visible screen
-            // line 0 = most recent scrollback line (just above visible area)
             for (int i = 0; i < count; ++i) {
                 if (i < sb_size) {
                     result.push_back(screen->getScrollbackLineText(i));
@@ -153,59 +157,62 @@
             return result;
         };
 
-        auto dispatcher = std::make_shared<termcore::CommandDispatcher>(
-            [_terminalView mux],
-            [_terminalView notifications],
-            [_terminalView agentTracker],
-            std::move(writeCb),
-            std::move(webviewCb),
-            std::move(scrollbackCb));
+        // Mux is now owned by controller's TabController
+        termcore::TerminalController* ctrl = [_terminalView controller];
+        if (ctrl && ctrl->tabs()) {
+            auto dispatcher = std::make_shared<termcore::CommandDispatcher>(
+                *ctrl->tabs()->mux(),
+                [_terminalView notifications],
+                [_terminalView agentTracker],
+                std::move(writeCb),
+                std::move(webviewCb),
+                std::move(scrollbackCb));
 
-        _socketServer = std::make_unique<termcore::SocketServer>(
-            std::move(transport), std::move(dispatcher));
+            _socketServer = std::make_unique<termcore::SocketServer>(
+                std::move(transport), std::move(dispatcher));
 
-        if (_socketServer->start()) {
-            setenv("BREADTERMINAL_SOCKET", _socketServer->socketPath().c_str(), 1);
-            NSLog(@"BreadTerminal: Socket API listening on %s",
-                  _socketServer->socketPath().c_str());
+            if (_socketServer->start()) {
+                setenv("BREADTERMINAL_SOCKET", _socketServer->socketPath().c_str(), 1);
+                NSLog(@"BreadTerminal: Socket API listening on %s",
+                      _socketServer->socketPath().c_str());
 
-            // Drain main-thread dispatch queue at ~60Hz
-            __weak AppDelegate* weakDrain = self;
-            _socketDrainTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
-                                                                repeats:YES
-                                                                  block:^(NSTimer* timer) {
-                AppDelegate* s = weakDrain;
-                if (!s) { [timer invalidate]; return; }
-                s->_socketServer->drainMainThreadQueue();
-            }];
-        } else {
-            NSLog(@"BreadTerminal: Failed to start socket API server");
-            _socketServer.reset();
+                __weak AppDelegate* weakDrain = self;
+                _socketDrainTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
+                                                                    repeats:YES
+                                                                      block:^(NSTimer* timer) {
+                    AppDelegate* s = weakDrain;
+                    if (!s) { [timer invalidate]; return; }
+                    s->_socketServer->drainMainThreadQueue();
+                }];
+            } else {
+                NSLog(@"BreadTerminal: Failed to start socket API server");
+                _socketServer.reset();
+            }
         }
     }
 
-    // Shell already started in createWindowWithFrame
-
     // --- Wire WorkspaceStatusProvider to sidebar ---
-    _statusProvider = std::make_unique<termcore::WorkspaceStatusProvider>(
-        [_terminalView mux], [_terminalView agentTracker],
-        [_terminalView notifications]);
+    termcore::TerminalController* ctrl = [_terminalView controller];
+    if (ctrl && ctrl->tabs()) {
+        _statusProvider = std::make_unique<termcore::WorkspaceStatusProvider>(
+            *ctrl->tabs()->mux(), [_terminalView agentTracker],
+            [_terminalView notifications]);
 
-    __weak SidebarViewController* weakSidebar = _sidebarVC;
-    _statusProvider->setOnChanged(
-        [weakSidebar](const std::vector<termcore::WorkspaceStatusSnapshot>& snapshots) {
-            auto snapshotsCopy = snapshots;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                SidebarViewController* sidebar = weakSidebar;
-                if (sidebar) {
-                    [sidebar updateSnapshots:std::move(snapshotsCopy)];
-                }
+        __weak SidebarViewController* weakSidebar = _sidebarVC;
+        _statusProvider->setOnChanged(
+            [weakSidebar](const std::vector<termcore::WorkspaceStatusSnapshot>& snapshots) {
+                auto snapshotsCopy = snapshots;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    SidebarViewController* sidebar = weakSidebar;
+                    if (sidebar) {
+                        [sidebar updateSnapshots:std::move(snapshotsCopy)];
+                    }
+                });
             });
-        });
 
-    // Initial sidebar snapshot
-    auto initialSnapshots = _statusProvider->currentSnapshots();
-    [_sidebarVC updateSnapshots:std::move(initialSnapshots)];
+        auto initialSnapshots = _statusProvider->currentSnapshots();
+        [_sidebarVC updateSnapshots:std::move(initialSnapshots)];
+    }
 
     // --- Config file watcher ---
     _configPath = configPath;
@@ -301,17 +308,13 @@
     _openThemeHubObserver = nil;
     _openFontHubObserver = nil;
 
-    // Destroy preferences controller first — it holds a raw IConfigWatcher* that
-    // will become dangling once _configWatcher is destroyed.
     _prefsController = nil;
 
-    // Tear down quick terminal
     if (_quickTerminalPanel) {
         [_quickTerminalPanel unregisterGlobalHotkey];
         _quickTerminalPanel = nil;
     }
 
-    // Stop socket server
     [_socketDrainTimer invalidate];
     _socketDrainTimer = nil;
     if (_socketServer) {
@@ -365,6 +368,17 @@
 
 - (IBAction)newTab:(id)sender {
     (void)sender;
+    // Use controller's tab creation if available
+    if (_terminalView && [_terminalView controller]) {
+        termcore::TerminalController* ctrl = [_terminalView controller];
+        if (ctrl->tabs()) {
+            ctrl->tabs()->createTab(ctrl->termRows(), ctrl->termCols());
+            [_terminalView setNeedsRender];
+            return;
+        }
+    }
+
+    // Fallback: create a new OS-level tabbed window
     NSWindow* keyWindow = [NSApp keyWindow];
     if (!keyWindow) keyWindow = self.mainWindow;
 
@@ -374,7 +388,6 @@
     [keyWindow addTabbedWindow:newWindow ordered:NSWindowAbove];
     [newWindow makeKeyAndOrderFront:nil];
 
-    // Focus the terminal view in the new tab
     for (NSView* subview in newWindow.contentView.subviews) {
         if ([subview isKindOfClass:[TerminalView class]]) {
             [newWindow makeFirstResponder:subview];
@@ -385,6 +398,16 @@
 
 - (IBAction)closeTab:(id)sender {
     (void)sender;
+    // Use controller's tab closing if available
+    if (_terminalView && [_terminalView controller]) {
+        termcore::TerminalController* ctrl = [_terminalView controller];
+        if (ctrl->tabs() && ctrl->tabCount() > 1) {
+            ctrl->tabs()->closeTab();
+            [_terminalView setNeedsRender];
+            return;
+        }
+    }
+
     NSWindow* keyWindow = [NSApp keyWindow];
     if (keyWindow) {
         [keyWindow close];
@@ -393,6 +416,16 @@
 
 - (IBAction)selectTabByNumber:(id)sender {
     NSInteger index = [sender tag] - 1;  // tag is 1-based
+    // Use controller's tab switching if available
+    if (_terminalView && [_terminalView controller]) {
+        termcore::TerminalController* ctrl = [_terminalView controller];
+        if (ctrl->tabs()) {
+            ctrl->tabs()->switchToTab(static_cast<int>(index));
+            [_terminalView setNeedsRender];
+            return;
+        }
+    }
+
     NSWindow* keyWindow = [NSApp keyWindow];
     if (!keyWindow) return;
     NSArray<NSWindow*>* tabs = keyWindow.tabbedWindows;
@@ -404,7 +437,12 @@
 #pragma mark - SidebarViewControllerDelegate
 
 - (void)sidebarDidSelectWorkspace:(uint32_t)workspaceId {
-    [_terminalView mux].setActiveWorkspace(workspaceId);
+    if (_terminalView && [_terminalView controller]) {
+        termcore::TerminalController* ctrl = [_terminalView controller];
+        if (ctrl->tabs() && ctrl->tabs()->mux()) {
+            ctrl->tabs()->mux()->setActiveWorkspace(workspaceId);
+        }
+    }
     if (_statusProvider) {
         _statusProvider->refresh();
     }
@@ -448,14 +486,12 @@
 - (IBAction)openThemeHub:(id)sender {
     (void)sender;
 
-    // If the window already exists, just bring it to front
     if (_themeHubWindowController.window &&
         _themeHubWindowController.window.isVisible) {
         [_themeHubWindowController.window makeKeyAndOrderFront:nil];
         return;
     }
 
-    // Reload config from disk
     termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
         auto* theme = termcore::getBuiltinTheme(config.theme);
@@ -484,14 +520,12 @@
 - (IBAction)openFontHub:(id)sender {
     (void)sender;
 
-    // If the window already exists, just bring it to front
     if (_fontHubWindowController.window &&
         _fontHubWindowController.window.isVisible) {
         [_fontHubWindowController.window makeKeyAndOrderFront:nil];
         return;
     }
 
-    // Reload config from disk
     termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
         auto* theme = termcore::getBuiltinTheme(config.theme);
