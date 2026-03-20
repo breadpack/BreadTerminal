@@ -2,6 +2,7 @@
 
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
 
 #import <Cocoa/Cocoa.h>
@@ -35,9 +36,9 @@ void ConfigWatcherMac::start(const std::string& path, ConfigReloadCallback callb
     callback_ = std::move(callback);
     running_ = true;
 
-    // Parse initial config as baseline for diffing
+    // Parse initial config as baseline for diffing (Lua first, then legacy)
     try {
-        last_good_config_ = parseConfigFile(path_);
+        last_good_config_ = loadConfig();
         if (!last_good_config_.theme.empty()) {
             std::string resolved = resolveThemeForAppearance(last_good_config_.theme, detectSystemIsDark());
             auto theme = findTheme(resolved);
@@ -184,7 +185,7 @@ void ConfigWatcherMac::doReload() {
     if (!callback_) return;
 
     try {
-        Config new_config = parseConfigFile(path_);
+        Config new_config = loadConfig();
         if (!new_config.theme.empty()) {
             std::string resolved = resolveThemeForAppearance(new_config.theme, detectSystemIsDark());
             auto theme = findTheme(resolved);

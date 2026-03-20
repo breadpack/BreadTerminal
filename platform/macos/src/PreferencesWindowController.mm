@@ -5,6 +5,8 @@
 #import "PrefsKeybindingsViewController.h"
 #import "PrefsClipboardViewController.h"
 
+#include "termcore/lua_config.h"
+
 static NSString* const kToolbarIdentifier = @"PreferencesToolbar";
 static NSString* const kTabGeneral      = @"General";
 static NSString* const kTabAppearance   = @"Appearance";
@@ -35,7 +37,7 @@ static NSString* const kTabClipboard    = @"Clipboard";
     if (self) {
         _configPath = path;
         _watcher = watcher;
-        _liveConfig = termcore::parseConfigFile(path);
+        _liveConfig = termcore::loadConfig();
         if (!_liveConfig.theme.empty()) {
             auto* theme = termcore::getBuiltinTheme(_liveConfig.theme);
             if (theme) termcore::applyTheme(_liveConfig, *theme);
@@ -58,7 +60,7 @@ static NSString* const kTabClipboard    = @"Clipboard";
 
 - (void)showPreferences {
     // Reload config from disk each time window is shown
-    _liveConfig = termcore::parseConfigFile(_configPath);
+    _liveConfig = termcore::loadConfig();
     if (!_liveConfig.theme.empty()) {
         auto* theme = termcore::getBuiltinTheme(_liveConfig.theme);
         if (theme) termcore::applyTheme(_liveConfig, *theme);
@@ -133,7 +135,10 @@ static NSString* const kTabClipboard    = @"Clipboard";
         PreferencesWindowController* strongSelf = weakSelf;
         if (!strongSelf) return;
         strongSelf->_liveConfig = updated;
-        termcore::writeConfigFile(strongSelf->_configPath, updated);
+        std::string luaPath = termcore::luaConfigWritePath();
+        if (!luaPath.empty()) {
+            termcore::writeConfigLua(luaPath, updated);
+        }
         if (strongSelf->_watcher) {
             strongSelf->_watcher->reloadNow();
         }

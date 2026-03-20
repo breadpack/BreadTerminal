@@ -3,6 +3,7 @@
 #include "ConfigWatcherWin.h"
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/lua_config.h"
 
 #include <algorithm>
 #include <vector>
@@ -33,8 +34,8 @@ void ConfigWatcherWin::start(const std::string& path,
         watch_filename_ = normalized;
     }
 
-    // Load initial config so we can diff later.
-    last_config_ = parseConfigFile(config_path_);
+    // Load initial config so we can diff later (Lua first, then legacy).
+    last_config_ = loadConfig();
 
     stop_event_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (stop_event_ == nullptr) {
@@ -73,7 +74,7 @@ void ConfigWatcherWin::reloadNow() {
     std::string error;
     Config new_config;
     try {
-        new_config = parseConfigFile(config_path_);
+        new_config = loadConfig();
     } catch (const std::exception& e) {
         error = e.what();
     }
@@ -169,7 +170,8 @@ void ConfigWatcherWin::watchThread() {
                 static_cast<int>(watch_filename_.size()),
                 fn_wide.data(), fn_wide_len);
 
-            if (_wcsicmp(changed_name.c_str(), fn_wide.data()) == 0) {
+            if (_wcsicmp(changed_name.c_str(), fn_wide.data()) == 0 ||
+                _wcsicmp(changed_name.c_str(), L"config.lua") == 0) {
                 our_file_changed = true;
                 break;
             }

@@ -87,26 +87,9 @@ struct Config {
 /// This is the recommended entry point for all platforms.
 Config loadConfig();
 
-/// Parse a config file. Returns Config with parsed values.
-Config parseConfigFile(const std::string& path);
-
-/// Parse a config string (for testing).
-Config parseConfigString(const std::string& content);
-
-/// Get the default config file path.
-/// macOS: ~/Library/Application Support/BreadTerminal/config
-/// Linux: ~/.config/breadterminal/config
+/// Get the default config directory base path (platform-specific).
+/// Used internally to locate config.lua.
 std::string defaultConfigPath();
-
-/// Write a default config file if none exists.
-bool writeDefaultConfig(const std::string& path);
-
-/// Serialize a Config to config file text format.
-std::string serializeConfig(const Config& config);
-
-/// Write a config to a file atomically (write .tmp, rename).
-/// Sets 0600 permissions on the file.
-bool writeConfigFile(const std::string& path, const Config& config);
 
 /// Named color themes
 struct Theme {

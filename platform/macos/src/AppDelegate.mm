@@ -12,6 +12,7 @@
 
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
 #include "termcore/socket/socket_server.h"
 #include "termcore/socket/command_dispatcher.h"
@@ -53,9 +54,10 @@
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
-    // --- Load config ---
-    std::string configPath = termcore::defaultConfigPath();
-    termcore::Config config = termcore::parseConfigFile(configPath);
+    // --- Load config (Lua first, then legacy) ---
+    std::string configPath = termcore::defaultLuaConfigPath();
+    if (configPath.empty()) configPath = termcore::defaultConfigPath();
+    termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
         // Detect current system appearance for adaptive theme resolution
         BOOL isDark = YES;
@@ -433,7 +435,10 @@
         AppDelegate* strongSelf = weakSelf;
         if (!strongSelf) return;
         strongSelf->_config = updated;
-        termcore::writeConfigFile(strongSelf->_configPath, updated);
+        std::string luaPath = termcore::luaConfigWritePath();
+        if (!luaPath.empty()) {
+            termcore::writeConfigLua(luaPath, updated);
+        }
         if (strongSelf->_configWatcher) {
             strongSelf->_configWatcher->reloadNow();
         }
@@ -451,7 +456,7 @@
     }
 
     // Reload config from disk
-    termcore::Config config = termcore::parseConfigFile(_configPath);
+    termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
         auto* theme = termcore::getBuiltinTheme(config.theme);
         if (theme) termcore::applyTheme(config, *theme);
@@ -487,7 +492,7 @@
     }
 
     // Reload config from disk
-    termcore::Config config = termcore::parseConfigFile(_configPath);
+    termcore::Config config = termcore::loadConfig();
     if (!config.theme.empty()) {
         auto* theme = termcore::getBuiltinTheme(config.theme);
         if (theme) termcore::applyTheme(config, *theme);

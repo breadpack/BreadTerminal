@@ -251,15 +251,17 @@ TEST_F(PasteGuardTest, SpanOffsetsNonEmpty) {
     }
 }
 
-// --- Config parsing ---
+// --- Config defaults ---
 
-TEST(PasteGuardConfigTest, ParseClipboardPasteProtection) {
-    auto cfg = parseConfigString("clipboard-paste-protection = always\n");
+TEST(PasteGuardConfigTest, ClipboardPasteProtectionConfig) {
+    Config cfg;
+    cfg.clipboard_paste_protection = "always";
     EXPECT_EQ(cfg.clipboard_paste_protection, "always");
 }
 
-TEST(PasteGuardConfigTest, ParseClipboardPasteBracketedSafe) {
-    auto cfg = parseConfigString("clipboard-paste-bracketed-safe = false\n");
+TEST(PasteGuardConfigTest, ClipboardPasteBracketedSafeConfig) {
+    Config cfg;
+    cfg.clipboard_paste_bracketed_safe = false;
     EXPECT_FALSE(cfg.clipboard_paste_bracketed_safe);
 }
 

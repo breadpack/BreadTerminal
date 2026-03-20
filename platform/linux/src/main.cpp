@@ -3,9 +3,8 @@
 #include <gtk/gtk.h>
 
 static void on_activate(GtkApplication* app, gpointer /*user_data*/) {
-    // Load config
-    std::string configPath = termcore::defaultConfigPath();
-    termcore::Config config = termcore::parseConfigFile(configPath);
+    // Load config (Lua first, then legacy)
+    termcore::Config config = termcore::loadConfig();
 
     GtkWidget* window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "BreadTerminal");

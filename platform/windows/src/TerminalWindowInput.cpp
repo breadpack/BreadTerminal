@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
 
 #include <algorithm>
@@ -271,6 +272,9 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
                     settingsWin->setConfig(config);
                     settingsWin->setSaveCallback([this](const termcore::Config& updated) {
                         config = updated;
+                        // Persist to Lua config
+                        std::string luaPath = termcore::luaConfigWritePath();
+                        if (!luaPath.empty()) termcore::writeConfigLua(luaPath, config);
                         // Apply font changes
                         std::string newFont = config.font_family.empty() ? "Consolas" : config.font_family;
                         if (newFont != fontFamily || config.font_size != currentFontSize) {
@@ -327,6 +331,9 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
                         }
                         updateTabBar();
                         applyTitleBarTheme(hwnd);
+                        // Persist to Lua config
+                        std::string luaPath = termcore::luaConfigWritePath();
+                        if (!luaPath.empty()) termcore::writeConfigLua(luaPath, config);
                         // Update the ThemeHub popup itself with new theme colors
                         themeHub->setConfig(config);
                         needsRender = true;
@@ -358,6 +365,9 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
                                 if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
                             }
                         }
+                        // Persist to Lua config
+                        std::string luaPath = termcore::luaConfigWritePath();
+                        if (!luaPath.empty()) termcore::writeConfigLua(luaPath, config);
                         needsRender = true;
                     });
                     fontHub->show(hwnd);

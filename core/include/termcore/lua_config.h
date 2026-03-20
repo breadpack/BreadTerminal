@@ -31,11 +31,24 @@ LuaEngine* luaConfigEngine();
 /// Returns ~/.config/breadterminal/config.lua (Linux),
 ///         ~/Library/Application Support/BreadTerminal/config.lua (macOS),
 ///         %APPDATA%/BreadTerminal/config.lua (Windows).
-/// Returns empty string if not found; caller should fall back to defaultConfigPath().
+/// Returns empty string if the file does not exist.
 std::string defaultLuaConfigPath();
 
 /// Write a default config.lua template if none exists.
 bool writeDefaultLuaConfig(const std::string& path);
+
+/// Serialize a Config to Lua source code string.
+/// This generates a valid config.lua that can be loaded back by loadConfigLua().
+/// Unlike writeDefaultLuaConfig (template), this writes the actual current values.
+std::string serializeConfigLua(const Config& config);
+
+/// Write a Config to a Lua file atomically (write .tmp, rename).
+bool writeConfigLua(const std::string& path, const Config& config);
+
+/// Get the Lua config file path (creates parent dirs if needed).
+/// Unlike defaultLuaConfigPath() which only returns if file exists,
+/// this always returns the expected path for writing.
+std::string luaConfigWritePath();
 
 } // namespace termcore
 #endif

@@ -153,7 +153,8 @@ else()
 endif()
 
 # lua_config.cpp has both TERMCORE_HAS_LUA and stub paths, always compile it
-list(APPEND TERMCORE_SOURCES src/lua_config.cpp)
+# lua_config_writer.cpp has no Lua runtime dependency — always compile it
+list(APPEND TERMCORE_SOURCES src/lua_config.cpp src/lua_config_writer.cpp)
 
 add_library(termcore STATIC ${TERMCORE_SOURCES})
 
