@@ -71,9 +71,11 @@ static uint8_t modsFromEvent(NSEvent* event) {
 #pragma mark - Keyboard
 
 - (void)keyDown:(NSEvent*)event {
-    { FILE* f = fopen("/dev/null", "a") /* debug disabled */;
-      if (f) { fprintf(f, "keyDown: kc=%d ch='%s'\n", event.keyCode,
-               [event.characters ?: @"" UTF8String]); fclose(f); } }
+    // Clear selection on any key input (except modifiers)
+    if (_selecting && !(event.modifierFlags & NSEventModifierFlagCommand)) {
+        _selecting = NO;
+        _impl->needsRender = true;
+    }
 
     // Debug screenshot: Cmd+Shift+S
     if ((event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagShift)) ==
@@ -787,7 +789,15 @@ static bool isCopyModeWordChar(char32_t cp) {
 
 - (void)mouseUp:(NSEvent*)event {
     if ([self sendMouseEvent:1 button:3 event:event]) return;
-    if (_selecting) _selectionEnd = [self cellPositionForEvent:event];
+    if (_selecting) {
+        _selectionEnd = [self cellPositionForEvent:event];
+        // If selection is a single cell (click without drag), clear selection
+        if ((int)_selectionStart.x == (int)_selectionEnd.x &&
+            (int)_selectionStart.y == (int)_selectionEnd.y) {
+            _selecting = NO;
+        }
+        _impl->needsRender = true;
+    }
 }
 
 - (void)mouseDragged:(NSEvent*)event {
