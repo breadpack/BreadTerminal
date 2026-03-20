@@ -33,6 +33,17 @@ set(TERMCORE_WIN_SOURCES
     src/D3DImageRenderer.cpp
     src/D3DBackgroundImage.cpp
     src/D3DCustomShader.cpp
+    src/ThemeHubWindow.cpp
+    src/ThemeHubPaint.cpp
+    src/ThemeHubCards.cpp
+    src/FontHubWindow.cpp
+    src/FontHubPaint.cpp
+    src/FontHubCards.cpp
+    src/FontInstaller.cpp
+    src/SettingsWindow.cpp
+    src/SettingsPaint.cpp
+    src/SettingsTabPanels.cpp
+    src/SettingsControls.cpp
 )
 
 if(HAS_WEBVIEW2)
@@ -63,4 +74,16 @@ add_executable(BreadTerminal WIN32
     src/TerminalSelection.cpp
     src/TerminalSearch.cpp
 )
-target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32)
+target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus)
+
+# Copy theme_index.json to output directory
+add_custom_command(TARGET BreadTerminal POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/theme_index.json"
+        "$<TARGET_FILE_DIR:BreadTerminal>/theme_index.json"
+)
+add_custom_command(TARGET BreadTerminal POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/font_index.json"
+        "$<TARGET_FILE_DIR:BreadTerminal>/font_index.json"
+)

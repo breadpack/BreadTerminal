@@ -317,7 +317,15 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->context->Unmap(impl_->constantBuffer, 0);
     }
 
+    // Use the terminal's default background color for clear, so edges
+    // beyond the cell grid still show the correct background.
     float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    {
+        uint32_t bg = screen.dynamicColors().background;
+        clearColor[0] = static_cast<float>((bg >> 16) & 0xFF) / 255.0f;
+        clearColor[1] = static_cast<float>((bg >> 8) & 0xFF) / 255.0f;
+        clearColor[2] = static_cast<float>(bg & 0xFF) / 255.0f;
+    }
     impl_->context->ClearRenderTargetView(impl_->rtv, clearColor);
 
     impl_->context->OMSetRenderTargets(1, &impl_->rtv, nullptr);
@@ -382,6 +390,10 @@ void D3DTextRenderer::setResizeOverlay(bool visible, int cols, int rows) {
 
 void D3DTextRenderer::setTabBar(const TabBarInfo& info) {
     impl_->tabBar = info;
+}
+
+D3DTextRenderer::TabBarInfo D3DTextRenderer::getTabBar() const {
+    return impl_->tabBar;
 }
 
 void D3DTextRenderer::setPaneBorders(const PaneBorderInfo& info) {

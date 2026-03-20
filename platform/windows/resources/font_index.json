@@ -1,0 +1,202 @@
+[
+  {
+    "name": "JetBrains Mono",
+    "postscript_name": "JetBrainsMono-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/JetBrainsMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Fira Code",
+    "postscript_name": "FiraCode-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/tonsky/FiraCode/releases/download/6.2/Fira_Code_v6.2.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Cascadia Code",
+    "postscript_name": "CascadiaCode-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Cascadia Mono",
+    "postscript_name": "CascadiaMono-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Iosevka",
+    "postscript_name": "Iosevka-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/be5invis/Iosevka/releases/download/v31.9.1/SuperTTC-Iosevka-31.9.1.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Iosevka.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Source Code Pro",
+    "postscript_name": "SourceCodePro-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/adobe-fonts/source-code-pro/releases/download/2.042R-u/1.062R-i/OTF-source-code-pro-2.042R-u_1.062R-i.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/SourceCodePro.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Hack",
+    "postscript_name": "Hack-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Hack.zip",
+    "license": "MIT"
+  },
+  {
+    "name": "Victor Mono",
+    "postscript_name": "VictorMono-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/rubjo/victor-mono/releases/download/v1.5.6/VictorMonoAll.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/VictorMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Monaspace Neon",
+    "postscript_name": "MonaspaceNeon-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/githubnext/monaspace/releases/download/v1.101/monaspace-v1.101.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Monaspace.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Geist Mono",
+    "postscript_name": "GeistMono-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/vercel/geist-font/releases/download/1.4.01/Geist.Mono.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/GeistMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "IBM Plex Mono",
+    "postscript_name": "IBMPlexMono",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/IBM/plex/releases/download/v6.4.2/OpenType.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/IBMPlexMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Inconsolata",
+    "postscript_name": "Inconsolata-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/googlefonts/Inconsolata/releases/download/v3.000/Inconsolata-Variable.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Inconsolata.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Anonymous Pro",
+    "postscript_name": "AnonymousPro",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://www.marksimonson.com/assets/content/fonts/AnonymousPro-1_002.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/AnonymousPro.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Commit Mono",
+    "postscript_name": "CommitMono-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/eigilnikolajsen/commit-mono/releases/download/v1.143/CommitMono-1.143.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CommitMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Maple Mono",
+    "postscript_name": "MapleMono-Regular",
+    "category": "monospace",
+    "has_ligatures": true,
+    "has_nerd_font_variant": true,
+    "download_url": "https://github.com/subframe7536/maple-font/releases/download/v7.0/MapleMono.zip",
+    "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/MapleMono.zip",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "Rec Mono",
+    "postscript_name": "RecMonoLinear-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": false,
+    "download_url": "https://github.com/arrowtype/recursive/releases/download/v1.085/ArrowType-Recursive-1.085.zip",
+    "nerd_font_download_url": "",
+    "license": "OFL-1.1"
+  },
+  {
+    "name": "SF Mono",
+    "postscript_name": "SFMono-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": false,
+    "download_url": "",
+    "nerd_font_download_url": "",
+    "license": "Apple"
+  },
+  {
+    "name": "Monaco",
+    "postscript_name": "Monaco",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": false,
+    "download_url": "",
+    "nerd_font_download_url": "",
+    "license": "Apple"
+  },
+  {
+    "name": "Menlo",
+    "postscript_name": "Menlo-Regular",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": false,
+    "download_url": "",
+    "nerd_font_download_url": "",
+    "license": "Apple"
+  },
+  {
+    "name": "Courier New",
+    "postscript_name": "CourierNewPSMT",
+    "category": "monospace",
+    "has_ligatures": false,
+    "has_nerd_font_variant": false,
+    "download_url": "",
+    "nerd_font_download_url": "",
+    "license": "Monotype"
+  }
+]

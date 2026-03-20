@@ -170,114 +170,287 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
         }
     }
 
-    // Pass 8: Tab Bar (with notification indicators)
+    // Pass 8: Tab Bar (polished, modern design inspired by VS Code / Windows Terminal)
     const auto& tabBar = this->tabBar;
     if (tabBar.visible && !tabBar.tabs.empty()) {
-        float tabBarY = 0.0f;
-        int totalCols = static_cast<int>(viewportWidth / cellW);
+        float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+        int tabCount = static_cast<int>(tabBar.tabs.size());
+
+        // Layout constants
+        float tabPadX = cellW * 1.0f;         // generous horizontal padding
+        float tabGap = 4.0f;                   // visible gap between tabs
+        float tabMinW = cellW * 12.0f;
+        float tabMaxW = cellW * 24.0f;
+        float closeW = cellW * 1.5f;           // close button hit area
+        float leftMargin = 8.0f;
+        float tabTopPad = 6.0f;                // tabs float below bar top
+        float bottomBorderH = 1.0f;            // thin bottom separator
+        float plusBtnW = cellW * 2.0f;          // "+" button width
+
+        float availW = viewportWidth - leftMargin - plusBtnW - 8.0f;
+        float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+        tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
+
+        // Helper to blend two colors
+        auto blendColor = [](uint32_t base, uint32_t target, float t) -> uint32_t {
+            int bR = (base >> 16) & 0xFF, bG = (base >> 8) & 0xFF, bB = base & 0xFF;
+            int tR = (target >> 16) & 0xFF, tG = (target >> 8) & 0xFF, tB = target & 0xFF;
+            return ((uint32_t)(bR + (tR - bR) * t) << 16) |
+                   ((uint32_t)(bG + (tG - bG) * t) << 8) |
+                    (uint32_t)(bB + (tB - bB) * t);
+        };
 
         // Full-width tab bar background
         D3DCellInstance tabBarBg = {};
         tabBarBg.position[0] = 0;
-        tabBarBg.position[1] = tabBarY;
+        tabBarBg.position[1] = 0;
         tabBarBg.atlas_size[0] = viewportWidth;
-        tabBarBg.atlas_size[1] = cellH;
+        tabBarBg.atlas_size[1] = tabBarH;
         colorFromRGBA(tabBar.bg_color | 0xFF000000, tabBarBg.bg_color);
-        tabBarBg.flags = 4;  // is_bg_pass
+        tabBarBg.flags = 4;
         cellInstances.push_back(tabBarBg);
 
-        // Each tab gets an equal share of columns, capped at a reasonable width
-        int tabCount = static_cast<int>(tabBar.tabs.size());
-        int maxTabWidth = 20;  // max columns per tab
-        int tabWidth = (std::min)(maxTabWidth, totalCols / (std::max)(1, tabCount));
+        // Bottom border line (full width, will be covered by active tab)
+        {
+            uint32_t borderColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.12f);
+            D3DCellInstance border = {};
+            border.position[0] = 0;
+            border.position[1] = tabBarH - bottomBorderH;
+            border.atlas_size[0] = viewportWidth;
+            border.atlas_size[1] = bottomBorderH;
+            colorFromRGBA(borderColor | 0xFF000000, border.bg_color);
+            border.flags = 8;
+            cellInstances.push_back(border);
+        }
 
         for (int t = 0; t < tabCount; ++t) {
             const auto& tab = tabBar.tabs[t];
-            int tabStartCol = t * tabWidth;
-            if (tabStartCol >= totalCols) break;
+            float tabX = leftMargin + t * (tabW + tabGap);
+            if (tabX >= viewportWidth) break;
+            bool isHovered = (t == tabBar.hovered_tab);
 
-            uint32_t tabBgColor = tab.active
-                ? tabBar.active_bg_color
-                : tabBar.inactive_bg_color;
-
-            // Override background for tabs needing attention (accent blue).
-            if (tab.needs_attention) {
-                tabBgColor = 0x007acc;
+            // Tab dimensions: active tabs are taller (touch bottom), inactive float
+            float tabY, tabH;
+            if (tab.active) {
+                tabY = tabTopPad;
+                tabH = tabBarH - tabTopPad;  // extends to bottom, covers border
+            } else {
+                tabY = tabTopPad + 2.0f;
+                tabH = tabBarH - tabTopPad - 2.0f - bottomBorderH; // doesn't touch bottom
             }
 
-            // Tab background
-            D3DCellInstance tabBg = {};
-            tabBg.position[0] = tabStartCol * cellW;
-            tabBg.position[1] = tabBarY;
-            tabBg.atlas_size[0] = tabWidth * cellW;
-            tabBg.atlas_size[1] = cellH;
-            colorFromRGBA(tabBgColor | 0xFF000000, tabBg.bg_color);
-            tabBg.flags = 4;  // is_bg_pass
-            cellInstances.push_back(tabBg);
+            // Tab background color
+            uint32_t tabBgColor;
+            if (tab.active) {
+                tabBgColor = tabBar.active_bg_color;  // = terminal bg (seamless)
+            } else if (tab.needs_attention) {
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.accent_color, 0.25f);
+            } else if (isHovered) {
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.active_bg_color, 0.35f);
+            } else {
+                tabBgColor = tabBar.bg_color;  // blend into bar (no separate bg)
+            }
 
-            // Tab title text (with 1-col padding)
+            // Tab background rect (only draw if different from bar bg or active/hovered)
+            if (tab.active || isHovered || tab.needs_attention) {
+                D3DCellInstance tabBg = {};
+                tabBg.position[0] = tabX;
+                tabBg.position[1] = tabY;
+                tabBg.atlas_size[0] = tabW;
+                tabBg.atlas_size[1] = tabH;
+                colorFromRGBA(tabBgColor | 0xFF000000, tabBg.bg_color);
+                tabBg.flags = 4;
+                cellInstances.push_back(tabBg);
+            }
+
+            // Active tab: accent indicator at top edge
+            if (tab.active) {
+                D3DCellInstance indicator = {};
+                indicator.position[0] = tabX;
+                indicator.position[1] = tabY;
+                indicator.atlas_size[0] = tabW;
+                indicator.atlas_size[1] = 2.0f;
+                colorFromRGBA(tabBar.accent_color | 0xFF000000, indicator.bg_color);
+                indicator.flags = 8;
+                cellInstances.push_back(indicator);
+            }
+
+            // Separator: thin vertical line between non-active/non-hovered tabs
+            if (t > 0 && !tab.active && !tabBar.tabs[t - 1].active
+                && t != tabBar.hovered_tab && t - 1 != tabBar.hovered_tab) {
+                D3DCellInstance sep = {};
+                sep.position[0] = tabX - tabGap * 0.5f;
+                sep.position[1] = tabTopPad + tabH * 0.2f;
+                sep.atlas_size[0] = 1.0f;
+                sep.atlas_size[1] = tabH * 0.6f;
+                uint32_t sepColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.1f);
+                colorFromRGBA(sepColor | 0xFF000000, sep.bg_color);
+                sep.flags = 8;
+                cellInstances.push_back(sep);
+            }
+
+            // Text color with proper contrast
+            uint32_t textColor;
+            if (tab.active) {
+                textColor = tabBar.fg_color;
+            } else if (isHovered) {
+                textColor = blendColor(tabBar.fg_color, tabBar.bg_color, 0.1f);
+            } else {
+                textColor = blendColor(tabBar.fg_color, tabBar.bg_color, 0.4f);
+            }
+
+            // Tab title text (vertically centered in tab)
+            bool showClose = (tab.active || isHovered);
             const std::string& title = tab.title;
-            int textStart = tabStartCol + 1;
-            int textEnd = tabStartCol + tabWidth - 1;
-            for (size_t i = 0; i < title.size(); ++i) {
-                int col = textStart + static_cast<int>(i);
-                if (col >= textEnd || col >= totalCols) break;
+            float textX = tabX + tabPadX;
+            float textMaxX = tabX + tabW - (showClose ? closeW + 4.0f : tabPadX);
+            float textCenterY = tabY + (tabH - cellH) * 0.5f;
 
+            for (size_t i = 0; i < title.size(); ++i) {
                 char32_t cp = static_cast<char32_t>(
                     static_cast<unsigned char>(title[i]));
-                if (cp == ' ' || cp == 0) continue;
+                if (cp == ' ' || cp == 0) { textX += cellW; continue; }
 
                 CollectionFaceId faceId = fontCollection->resolveFace(cp);
-                if (faceId == kInvalidCollectionFace) continue;
-                FontFaceId rastFace =
-                    fontCollection->rasterizerFaceId(faceId);
-                uint32_t glyphIdx =
-                    rasterizer->getGlyphIndex(rastFace, cp);
-                if (glyphIdx == 0) continue;
+                if (faceId == kInvalidCollectionFace) { textX += cellW; continue; }
+                FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
+                uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cp);
+                if (glyphIdx == 0) { textX += cellW; continue; }
 
                 GlyphKey key{rastFace, glyphIdx, {0, 0}};
                 auto info = glyphCache->getOrRasterize(
                     key, fontSize, *rasterizer, *glyphAtlas);
-                if (!info || info->region.width <= 0) continue;
+                if (!info || info->region.width <= 0) { textX += cellW; continue; }
+                if (textX + info->region.width > textMaxX) break;
 
                 D3DCellInstance inst = {};
-                float offsetX =
-                    static_cast<float>(info->region.bearing_x);
-                float offsetY =
-                    ascent - static_cast<float>(info->region.bearing_y);
-                inst.position[0] = col * cellW + offsetX;
-                inst.position[1] = tabBarY + offsetY;
-                inst.atlas_uv[0] =
-                    static_cast<float>(info->region.x);
-                inst.atlas_uv[1] =
-                    static_cast<float>(info->region.y);
-                inst.atlas_size[0] =
-                    static_cast<float>(info->region.width);
-                inst.atlas_size[1] =
-                    static_cast<float>(info->region.height);
-                colorFromRGBA(tabBar.fg_color | 0xFF000000,
-                              inst.fg_color);
-                inst.flags = 1;  // has_glyph
+                inst.position[0] = textX + info->region.bearing_x;
+                inst.position[1] = textCenterY + ascent - info->region.bearing_y;
+                inst.atlas_uv[0] = (float)info->region.x;
+                inst.atlas_uv[1] = (float)info->region.y;
+                inst.atlas_size[0] = (float)info->region.width;
+                inst.atlas_size[1] = (float)info->region.height;
+                colorFromRGBA(textColor | 0xFF000000, inst.fg_color);
+                inst.flags = 1;
                 cellInstances.push_back(inst);
+                textX += cellW;
             }
 
-            // Unread dot indicator: small 3px radius circle after tab title.
-            if (tab.has_unread && !tab.active) {
-                int dotCol = textStart + static_cast<int>(title.size());
-                if (dotCol < textEnd && dotCol < totalCols) {
-                    float dotRadius = 3.0f;
-                    float dotX = dotCol * cellW + cellW * 0.5f - dotRadius;
-                    float dotY = tabBarY + cellH * 0.5f - dotRadius;
+            // Close button: only on active or hovered tab
+            if (showClose) {
+                float closeCenterX = tabX + tabW - closeW * 0.5f - 4.0f;
+                float closeCenterY = tabY + tabH * 0.5f;
+                float closeBtnSize = cellH * 0.55f;
 
-                    D3DCellInstance dot = {};
-                    dot.position[0] = dotX;
-                    dot.position[1] = dotY;
-                    dot.atlas_size[0] = dotRadius * 2.0f;
-                    dot.atlas_size[1] = dotRadius * 2.0f;
-                    dot.bg_color[0] = 0.0f; dot.bg_color[1] = 0.478f;
-                    dot.bg_color[2] = 0.8f; dot.bg_color[3] = 1.0f; // #007acc
-                    dot.flags = 8; // solid color rect
-                    cellInstances.push_back(dot);
+                // Close hover highlight (rounded-look square bg)
+                if (isHovered && tabBar.hover_close) {
+                    D3DCellInstance cBg = {};
+                    cBg.position[0] = closeCenterX - closeBtnSize * 0.5f;
+                    cBg.position[1] = closeCenterY - closeBtnSize * 0.5f;
+                    cBg.atlas_size[0] = closeBtnSize;
+                    cBg.atlas_size[1] = closeBtnSize;
+                    uint32_t hoverBg = blendColor(tabBgColor, tabBar.fg_color, 0.15f);
+                    colorFromRGBA(hoverBg | 0xFF000000, cBg.bg_color);
+                    cBg.flags = 8;
+                    cellInstances.push_back(cBg);
+                }
+
+                // "×" glyph
+                char32_t xCp = U'\u00D7';
+                CollectionFaceId xFace = fontCollection->resolveFace(xCp);
+                if (xFace == kInvalidCollectionFace) {
+                    xCp = 'x';
+                    xFace = fontCollection->resolveFace(xCp);
+                }
+                if (xFace != kInvalidCollectionFace) {
+                    FontFaceId xRast = fontCollection->rasterizerFaceId(xFace);
+                    uint32_t xGlyph = rasterizer->getGlyphIndex(xRast, xCp);
+                    if (xGlyph != 0) {
+                        GlyphKey xKey{xRast, xGlyph, {0, 0}};
+                        auto xInfo = glyphCache->getOrRasterize(
+                            xKey, fontSize, *rasterizer, *glyphAtlas);
+                        if (xInfo && xInfo->region.width > 0) {
+                            D3DCellInstance xInst = {};
+                            xInst.position[0] = closeCenterX - xInfo->region.width * 0.5f
+                                                + xInfo->region.bearing_x;
+                            xInst.position[1] = textCenterY + ascent - xInfo->region.bearing_y;
+                            xInst.atlas_uv[0] = (float)xInfo->region.x;
+                            xInst.atlas_uv[1] = (float)xInfo->region.y;
+                            xInst.atlas_size[0] = (float)xInfo->region.width;
+                            xInst.atlas_size[1] = (float)xInfo->region.height;
+                            uint32_t closeFg = (isHovered && tabBar.hover_close)
+                                ? tabBar.fg_color
+                                : blendColor(textColor, tabBgColor, 0.3f);
+                            colorFromRGBA(closeFg | 0xFF000000, xInst.fg_color);
+                            xInst.flags = 1;
+                            cellInstances.push_back(xInst);
+                        }
+                    }
+                }
+            }
+
+            // Unread dot indicator
+            if (tab.has_unread && !tab.active) {
+                float dotR = 3.0f;
+                float dotX = tabX + tabW - dotR * 3 - 2.0f;
+                float dotY = tabY + tabH * 0.5f - dotR;
+                D3DCellInstance dot = {};
+                dot.position[0] = dotX;
+                dot.position[1] = dotY;
+                dot.atlas_size[0] = dotR * 2;
+                dot.atlas_size[1] = dotR * 2;
+                colorFromRGBA(tabBar.accent_color | 0xFF000000, dot.bg_color);
+                dot.flags = 8;
+                cellInstances.push_back(dot);
+            }
+        }
+
+        // "+" new tab button (with hover effect)
+        {
+            float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
+            float plusY = tabTopPad + 2.0f;
+            float plusH = tabBarH - tabTopPad - 2.0f - bottomBorderH;
+            if (plusX + plusBtnW < viewportWidth) {
+                // Hover background for "+" button
+                if (tabBar.hover_plus) {
+                    D3DCellInstance plusBg = {};
+                    plusBg.position[0] = plusX;
+                    plusBg.position[1] = plusY;
+                    plusBg.atlas_size[0] = plusBtnW;
+                    plusBg.atlas_size[1] = plusH;
+                    uint32_t hoverBg = blendColor(tabBar.bg_color, tabBar.fg_color, 0.1f);
+                    colorFromRGBA(hoverBg | 0xFF000000, plusBg.bg_color);
+                    plusBg.flags = 8;
+                    cellInstances.push_back(plusBg);
+                }
+
+                char32_t plusCp = '+';
+                CollectionFaceId pFace = fontCollection->resolveFace(plusCp);
+                if (pFace != kInvalidCollectionFace) {
+                    FontFaceId pRast = fontCollection->rasterizerFaceId(pFace);
+                    uint32_t pGlyph = rasterizer->getGlyphIndex(pRast, plusCp);
+                    if (pGlyph != 0) {
+                        GlyphKey pKey{pRast, pGlyph, {0, 0}};
+                        auto pInfo = glyphCache->getOrRasterize(
+                            pKey, fontSize, *rasterizer, *glyphAtlas);
+                        if (pInfo && pInfo->region.width > 0) {
+                            D3DCellInstance pInst = {};
+                            pInst.position[0] = plusX + (plusBtnW - pInfo->region.width) * 0.5f
+                                + pInfo->region.bearing_x;
+                            float plusTextY = plusY + (plusH - cellH) * 0.5f;
+                            pInst.position[1] = plusTextY + ascent - pInfo->region.bearing_y;
+                            pInst.atlas_uv[0] = (float)pInfo->region.x;
+                            pInst.atlas_uv[1] = (float)pInfo->region.y;
+                            pInst.atlas_size[0] = (float)pInfo->region.width;
+                            pInst.atlas_size[1] = (float)pInfo->region.height;
+                            uint32_t plusFg = tabBar.hover_plus
+                                ? blendColor(tabBar.fg_color, tabBar.bg_color, 0.1f)
+                                : blendColor(tabBar.fg_color, tabBar.bg_color, 0.5f);
+                            colorFromRGBA(plusFg | 0xFF000000, pInst.fg_color);
+                            pInst.flags = 1;
+                            cellInstances.push_back(pInst);
+                        }
+                    }
                 }
             }
         }

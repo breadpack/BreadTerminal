@@ -112,18 +112,27 @@ public:
         bool needs_attention = false;  // highlight tab background
     };
 
+    /// Tab bar height multiplier relative to cell height.
+    static constexpr float kTabBarHeightScale = 1.4f;
+
     /// Tab bar displayed at the top of the viewport.
     struct TabBarInfo {
         std::vector<TabInfo> tabs;
-        uint32_t bg_color = 0x1e1e1e;         // tab bar background
-        uint32_t active_bg_color = 0x2d2d2d;   // active tab background
+        uint32_t bg_color = 0x1e1e1e;         // tab bar background (darker)
+        uint32_t active_bg_color = 0x2d2d2d;   // active tab = terminal bg
         uint32_t inactive_bg_color = 0x1e1e1e; // inactive tab background
         uint32_t fg_color = 0xcccccc;          // text color
+        uint32_t accent_color = 0x007acc;      // accent for indicator
+        int hovered_tab = -1;                  // tab under mouse (-1 = none)
+        bool hover_close = false;              // mouse over close button area
+        bool hover_plus = false;               // mouse over "+" button
         bool visible = false;
     };
 
     /// Set tab bar content for rendering.
     void setTabBar(const TabBarInfo& info);
+    /// Get current tab bar state (for hover updates).
+    TabBarInfo getTabBar() const;
 
     /// A single border segment between panes.
     struct BorderSegment {

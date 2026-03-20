@@ -83,15 +83,23 @@ void TerminalWindowState::resizeSwapChain(int width, int height) {
 
     // Recalculate terminal dimensions
     if (cellWidth > 0 && cellHeight > 0) {
+        // Reserve space for tab bar when visible (2+ tabs)
+        bool tabBarVisible = mux && mux->getWorkspace(wsId)
+            && mux->getWorkspace(wsId)->tabs.size() > 1;
+        float tabBarH = tabBarVisible ? cellHeight * D3DTextRenderer::kTabBarHeightScale : 0.0f;
+        float contentH = height - tabBarH;
         int cols = (std::max)(1, static_cast<int>(width / cellWidth));
-        int rows = (std::max)(1, static_cast<int>(height / cellHeight));
+        int rows = (std::max)(1, static_cast<int>(contentH / cellHeight));
 
         if (rows != termRows || cols != termCols) {
             termRows = rows;
             termCols = cols;
-            if (screen) screen->resize(rows, cols);
-            if (pty && pty->isAlive()) {
-                pty->resize(rows, cols);
+            // Resize ALL panes
+            for (auto& [id, ps] : panes) {
+                if (ps->screen) ps->screen->resize(rows, cols);
+                if (ps->pty && ps->pty->isAlive()) {
+                    ps->pty->resize(rows, cols);
+                }
             }
             needsRender = true;
         }
@@ -103,6 +111,145 @@ void TerminalWindowState::resizeSwapChain(int width, int height) {
         resizeOverlayRows = screen ? screen->rows() : 0;
         needsRender = true;
     }
+}
+
+// --- Pane management ---
+
+PaneState* TerminalWindowState::activePane() const {
+    if (!mux) return nullptr;
+    auto* tab = mux->activeTab(wsId);
+    if (!tab) return nullptr;
+    PaneId pid = tab->active_pane;
+    auto it = panes.find(pid);
+    return it != panes.end() ? it->second.get() : nullptr;
+}
+
+PaneState* TerminalWindowState::paneById(PaneId id) const {
+    auto it = panes.find(id);
+    return it != panes.end() ? it->second.get() : nullptr;
+}
+
+void TerminalWindowState::syncActivePointers() {
+    auto* ap = activePane();
+    if (ap) {
+        screen = ap->screen.get();
+        pty = ap->pty.get();
+    } else {
+        screen = nullptr;
+        pty = nullptr;
+    }
+}
+
+PaneId TerminalWindowState::createPaneState(int rows, int cols) {
+    PaneId id = nextPaneId++;
+    auto ps = std::make_unique<PaneState>();
+    ps->id = id;
+    ps->screen = std::make_unique<Screen>(rows, cols);
+    ps->parser = std::make_unique<VtParser>(*ps->screen);
+    ps->screen->initDynamicColors(config);
+
+    ps->pty = termcore::createPty();
+    if (!ps->pty->spawn(config.shell, {}, "", rows, cols)) {
+        OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
+    }
+
+    panes[id] = std::move(ps);
+    return id;
+}
+
+void TerminalWindowState::destroyPaneState(PaneId id) {
+    panes.erase(id);
+}
+
+bool TerminalWindowState::hasAnyAlivePty() const {
+    for (const auto& [id, ps] : panes) {
+        if (ps->pty && ps->pty->isAlive()) return true;
+    }
+    return false;
+}
+
+void TerminalWindowState::setupMuxCallbacks() {
+    mux->setPaneCallbacks(
+        // PaneCreateCallback
+        [this](int rows, int cols) -> PaneId {
+            return createPaneState(rows, cols);
+        },
+        // PaneDestroyCallback
+        [this](PaneId id) {
+            destroyPaneState(id);
+        }
+    );
+
+    mux->setOnChanged([this]() {
+        syncActivePointers();
+        updateTabBar();
+        needsRender = true;
+    });
+}
+
+void TerminalWindowState::updateTabBar() {
+    if (!mux || !renderer) return;
+    auto* ws = mux->getWorkspace(wsId);
+    if (!ws) return;
+
+    D3DTextRenderer::TabBarInfo tabInfo;
+    // Only show tab bar when there are 2+ tabs
+    tabInfo.visible = ws->tabs.size() > 1;
+
+    // Derive tab bar colors from theme
+    uint32_t bgR = (config.background >> 16) & 0xFF;
+    uint32_t bgG = (config.background >> 8) & 0xFF;
+    uint32_t bgB = config.background & 0xFF;
+    int lum = bgR * 299 + bgG * 587 + bgB * 114;
+    bool isDark = lum < 128000;
+
+    // Tab bar bg: darker/lighter than terminal bg for depth
+    if (isDark) {
+        tabInfo.bg_color =
+            ((uint32_t)(bgR * 0.7f) << 16) |
+            ((uint32_t)(bgG * 0.7f) << 8) |
+             (uint32_t)(bgB * 0.7f);
+    } else {
+        tabInfo.bg_color =
+            ((uint32_t)(bgR * 0.92f) << 16) |
+            ((uint32_t)(bgG * 0.92f) << 8) |
+             (uint32_t)(bgB * 0.92f);
+    }
+    // Active tab = terminal bg (seamless connection to content)
+    tabInfo.active_bg_color = config.background;
+    // Inactive tab = blends into tab bar
+    tabInfo.inactive_bg_color = tabInfo.bg_color;
+    tabInfo.fg_color = config.foreground;
+    // Accent from palette blue (index 4)
+    tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+
+    for (size_t i = 0; i < ws->tabs.size(); ++i) {
+        auto& tab = ws->tabs[i];
+        D3DTextRenderer::TabInfo ti;
+
+        // Get title from the active pane's screen (reflects running process)
+        std::string screenTitle;
+        PaneId activePaneId = mux->activePaneId(wsId, tab->id);
+        if (activePaneId != termcore::kInvalidPane) {
+            auto it = panes.find(activePaneId);
+            if (it != panes.end() && it->second->screen) {
+                screenTitle = it->second->screen->title();
+            }
+        }
+
+        if (!screenTitle.empty()) {
+            ti.title = screenTitle;
+        } else if (!tab->title.empty()) {
+            ti.title = tab->title;
+        } else {
+            ti.title = "Tab " + std::to_string(i + 1);
+        }
+
+        ti.active = (i == ws->active_tab_index);
+        tabInfo.tabs.push_back(ti);
+    }
+
+    renderer->setTabBar(tabInfo);
 }
 
 // --- Terminal initialization ---
@@ -135,12 +282,15 @@ void TerminalWindowState::initTerminal() {
     cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
     cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
 
-    // Screen + parser
-    screen = std::make_unique<Screen>(termRows, termCols);
-    parser = std::make_unique<VtParser>(*screen);
-
-    // Apply theme/colors to dynamic color system
-    screen->initDynamicColors(config);
+    // Calculate actual rows/cols from window client area
+    RECT initRc;
+    GetClientRect(hwnd, &initRc);
+    int initWidth = initRc.right - initRc.left;
+    int initHeight = initRc.bottom - initRc.top;
+    if (initWidth > 0 && initHeight > 0 && cellWidth > 0 && cellHeight > 0) {
+        termCols = (std::max)(1, static_cast<int>(initWidth / cellWidth));
+        termRows = (std::max)(1, static_cast<int>(initHeight / cellHeight));
+    }
 
     // Renderer
     renderer = std::make_unique<D3DTextRenderer>();
@@ -170,13 +320,19 @@ void TerminalWindowState::initTerminal() {
     mux = std::make_unique<termcore::Mux>();
     notifications = std::make_unique<termcore::NotificationStore>();
     agentTracker = std::make_unique<termcore::AgentTracker>();
+
+    // Set up Mux callbacks and create initial workspace + tab
+    setupMuxCallbacks();
+    wsId = mux->createWorkspace("default");
+    mux->createTab(wsId, termRows, termCols);
+    syncActivePointers();
+    updateTabBar();
 }
 
 void TerminalWindowState::startShell() {
-    pty = termcore::createPty();
-    if (!pty->spawn(config.shell, {}, "", termRows, termCols)) {
-        OutputDebugStringW(L"BreadTerminal: failed to spawn shell\n");
-    }
+    // Shell is now spawned per-pane in createPaneState().
+    // This method is kept for compatibility; the first pane is
+    // already created by initTerminal() via mux->createTab().
 }
 
 // --- Font size ---
@@ -204,8 +360,10 @@ void TerminalWindowState::changeFontSize(float delta) {
     if (rows != termRows || cols != termCols) {
         termRows = rows;
         termCols = cols;
-        if (screen) screen->resize(rows, cols);
-        if (pty && pty->isAlive()) pty->resize(rows, cols);
+        for (auto& [id, ps] : panes) {
+            if (ps->screen) ps->screen->resize(rows, cols);
+            if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
+        }
     }
 
     needsRender = true;
@@ -232,8 +390,10 @@ void TerminalWindowState::resetFontSize() {
     if (rows != termRows || cols != termCols) {
         termRows = rows;
         termCols = cols;
-        if (screen) screen->resize(rows, cols);
-        if (pty && pty->isAlive()) pty->resize(rows, cols);
+        for (auto& [id, ps] : panes) {
+            if (ps->screen) ps->screen->resize(rows, cols);
+            if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
+        }
     }
 
     needsRender = true;
@@ -242,23 +402,60 @@ void TerminalWindowState::resetFontSize() {
 // --- PTY / rendering ---
 
 void TerminalWindowState::pollPty() {
-    if (!pty || !pty->isAlive()) return;
-
-    bool wasAtBottom = screen ? screen->isViewportAtBottom() : true;
-
+    // Poll ALL panes for PTY output
+    std::vector<PaneId> deadPanes;
     char buf[8192];
-    int n = pty->read(buf, sizeof(buf));
-    while (n > 0) {
-        parser->feed(buf, static_cast<size_t>(n));
-        needsRender = true;
-        n = pty->read(buf, sizeof(buf));
+
+    for (auto& [id, ps] : panes) {
+        if (!ps->pty) continue;
+
+        bool wasAtBottom = ps->screen ? ps->screen->isViewportAtBottom() : true;
+
+        int n = ps->pty->read(buf, sizeof(buf));
+        while (n > 0) {
+            ps->parser->feed(buf, static_cast<size_t>(n));
+            needsRender = true;
+            n = ps->pty->read(buf, sizeof(buf));
+        }
+
+        if (needsRender && wasAtBottom && ps->screen) {
+            ps->screen->scrollViewportToBottom();
+        }
+
+        // Track dead panes for cleanup
+        if (!ps->pty->isAlive()) {
+            deadPanes.push_back(id);
+        }
     }
 
-    if (needsRender && wasAtBottom && screen) {
-        screen->scrollViewportToBottom();
+    // Auto-close dead panes
+    for (PaneId deadId : deadPanes) {
+        if (!mux) continue;
+        auto* tab = mux->activeTab(wsId);
+        if (!tab) continue;
+
+        // Find which tab contains this pane and close it
+        auto tabIds = mux->allTabIds(wsId);
+        for (auto tid : tabIds) {
+            auto allPanesInTab = mux->allPanes(wsId, tid);
+            for (auto pid : allPanesInTab) {
+                if (pid == deadId) {
+                    if (allPanesInTab.size() == 1 && tabIds.size() == 1) {
+                        // Last pane in last tab — close window
+                        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                        return;
+                    }
+                    mux->closePane(wsId, tid, deadId);
+                    syncActivePointers();
+                    updateTabBar();
+                    goto nextDead;
+                }
+            }
+        }
+        nextDead:;
     }
 
-    // Detect URLs in visible screen content
+    // Detect URLs in active screen
     if (needsRender && screen) {
         detectedUrls = urlDetector.detectInScreen(*screen);
     }
@@ -329,6 +526,29 @@ void TerminalWindowState::toggleFullscreen() {
 
         isFullscreen = false;
     }
+}
+
+// --- DWM title bar theming ---
+
+void TerminalWindowState::applyTitleBarTheme(HWND hwnd) {
+    // DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    // DWMWA_CAPTION_COLOR = 35
+    // DWMWA_TEXT_COLOR = 36
+
+    // Determine if theme is dark (simple luminance check)
+    uint32_t bg = config.background;
+    int lum = ((bg >> 16) & 0xFF) * 299 + ((bg >> 8) & 0xFF) * 587 + (bg & 0xFF) * 114;
+    BOOL useDark = (lum < 128000) ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd, 20, &useDark, sizeof(useDark));
+
+    // Set caption color to match terminal background
+    COLORREF captionColor = RGB((bg >> 16) & 0xFF, (bg >> 8) & 0xFF, bg & 0xFF);
+    DwmSetWindowAttribute(hwnd, 35, &captionColor, sizeof(captionColor));
+
+    // Set title text color to match terminal foreground
+    uint32_t fg = config.foreground;
+    COLORREF textColor = RGB((fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF);
+    DwmSetWindowAttribute(hwnd, 36, &textColor, sizeof(textColor));
 }
 
 // --- DWM background blur ---

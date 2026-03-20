@@ -129,13 +129,139 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 0;
 
         case WM_LBUTTONDOWN:
-            if (state) state->handleMouseDown(
-                GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (state) {
+                int mx = GET_X_LPARAM(lParam);
+                int my = GET_Y_LPARAM(lParam);
+                // Check if click is in tab bar area
+                if (state->mux && state->cellHeight > 0) {
+                    float tabBarH = state->cellHeight * D3DTextRenderer::kTabBarHeightScale;
+                    auto* ws = state->mux->getWorkspace(state->wsId);
+                    if (ws && ws->tabs.size() > 1 && my < static_cast<int>(tabBarH)) {
+                        RECT rc;
+                        GetClientRect(hWnd, &rc);
+                        int viewW = rc.right - rc.left;
+                        int tabCount = static_cast<int>(ws->tabs.size());
+                        float cW = state->cellWidth;
+
+                        // Match layout constants from D3DCellBuilderOverlays
+                        float tabGap = 4.0f;
+                        float tabMinW = cW * 12.0f;
+                        float tabMaxW = cW * 24.0f;
+                        float leftMargin = 8.0f;
+                        float closeW = cW * 1.5f;
+                        float plusBtnW = cW * 2.0f;
+
+                        float availW = viewW - leftMargin - plusBtnW - 8.0f;
+                        float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+                        tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
+
+                        float fmx = static_cast<float>(mx);
+
+                        // Check "+" button
+                        float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
+                        if (fmx >= plusX && fmx < plusX + plusBtnW) {
+                            state->mux->createTab(state->wsId,
+                                state->termRows, state->termCols);
+                            state->syncActivePointers();
+                            state->updateTabBar();
+                            state->needsRender = true;
+                            return 0;
+                        }
+
+                        // Check which tab was clicked
+                        for (int t = 0; t < tabCount; ++t) {
+                            float tabX = leftMargin + t * (tabW + tabGap);
+                            if (fmx >= tabX && fmx < tabX + tabW) {
+                                // Check close button area (right side of tab)
+                                float closeHitX = tabX + tabW - closeW - 4.0f;
+                                if (fmx >= closeHitX) {
+                                    // Close this tab
+                                    auto tabId = ws->tabs[t]->id;
+                                    if (ws->tabs.size() <= 1) {
+                                        PostMessageW(hWnd, WM_CLOSE, 0, 0);
+                                    } else {
+                                        state->mux->destroyTab(state->wsId, tabId);
+                                        state->syncActivePointers();
+                                        state->updateTabBar();
+                                        state->needsRender = true;
+                                    }
+                                } else {
+                                    // Switch to this tab
+                                    state->mux->setActiveTab(state->wsId, ws->tabs[t]->id);
+                                    state->syncActivePointers();
+                                    state->updateTabBar();
+                                    state->needsRender = true;
+                                }
+                                break;
+                            }
+                        }
+                        return 0;
+                    }
+                }
+                state->handleMouseDown(mx, my);
+            }
             return 0;
 
         case WM_MOUSEMOVE:
-            if (state) state->handleMouseMove(
-                GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (state) {
+                int mx = GET_X_LPARAM(lParam);
+                int my = GET_Y_LPARAM(lParam);
+                // Update tab bar hover state
+                if (state->mux && state->cellHeight > 0 && state->renderer) {
+                    float tabBarH = state->cellHeight * D3DTextRenderer::kTabBarHeightScale;
+                    auto* ws = state->mux->getWorkspace(state->wsId);
+                    if (ws && ws->tabs.size() > 1 && my < (int)tabBarH) {
+                        int tabCount = (int)ws->tabs.size();
+                        float cW = state->cellWidth;
+                        float tabGap = 4.0f, tabMinW = cW * 12.0f, tabMaxW = cW * 24.0f;
+                        float leftMargin = 8.0f, closeW = cW * 1.5f;
+                        float plusBtnW = cW * 2.0f;
+                        RECT rc; GetClientRect(hWnd, &rc);
+                        float availW = (rc.right - rc.left) - leftMargin - plusBtnW - 8.0f;
+                        float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+                        tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
+                        float fmx = (float)mx;
+                        int newHover = -1; bool newCloseHover = false; bool newPlusHover = false;
+
+                        // Check tab hover
+                        for (int t = 0; t < tabCount; ++t) {
+                            float tabX = leftMargin + t * (tabW + tabGap);
+                            if (fmx >= tabX && fmx < tabX + tabW) {
+                                newHover = t;
+                                newCloseHover = (fmx >= tabX + tabW - closeW - 4.0f);
+                                break;
+                            }
+                        }
+
+                        // Check "+" button hover
+                        float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
+                        if (fmx >= plusX && fmx < plusX + plusBtnW) {
+                            newPlusHover = true;
+                        }
+
+                        auto tabInfo = state->renderer->getTabBar();
+                        if (tabInfo.hovered_tab != newHover
+                            || tabInfo.hover_close != newCloseHover
+                            || tabInfo.hover_plus != newPlusHover) {
+                            tabInfo.hovered_tab = newHover;
+                            tabInfo.hover_close = newCloseHover;
+                            tabInfo.hover_plus = newPlusHover;
+                            state->renderer->setTabBar(tabInfo);
+                            state->needsRender = true;
+                        }
+                    } else {
+                        auto tabInfo = state->renderer->getTabBar();
+                        if (tabInfo.hovered_tab != -1 || tabInfo.hover_plus) {
+                            tabInfo.hovered_tab = -1;
+                            tabInfo.hover_close = false;
+                            tabInfo.hover_plus = false;
+                            state->renderer->setTabBar(tabInfo);
+                            state->needsRender = true;
+                        }
+                    }
+                }
+                state->handleMouseMove(mx, my);
+            }
             return 0;
 
         case WM_LBUTTONUP:
@@ -186,7 +312,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 1;
 
         case WM_CLOSE:
-            if (state && state->pty && state->pty->isAlive()) {
+            if (state && state->hasAnyAlivePty()) {
                 int result = MessageBoxW(hWnd,
                     L"A process is still running. Close anyway?",
                     L"BreadTerminal",
@@ -291,6 +417,7 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
         SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
     }
 
+    state->applyTitleBarTheme(hwnd);
     state->applyBackgroundBlur(hwnd);
 
     ShowWindow(hwnd, nCmdShow);

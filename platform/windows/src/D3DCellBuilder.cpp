@@ -55,6 +55,10 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     cellInstances.clear();
     cellInstances.reserve(rows * cols * 2);
 
+    // Offset grid down when tab bar is visible
+    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float gridOffsetY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
+
     // Pass 1: Background quads (cell-sized)
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
@@ -62,7 +66,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
             D3DCellInstance inst = {};
             inst.position[0] = col * cellW;
-            inst.position[1] = row * cellH;
+            inst.position[1] = row * cellH + gridOffsetY;
 
             colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
             colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
@@ -133,7 +137,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 static_cast<float>(info->region.bearing_y);
 
             inst.position[0] = col * cellW + offsetX;
-            inst.position[1] = row * cellH + offsetY;
+            inst.position[1] = row * cellH + offsetY + gridOffsetY;
 
             inst.atlas_uv[0] = static_cast<float>(info->region.x);
             inst.atlas_uv[1] = static_cast<float>(info->region.y);
@@ -183,7 +187,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             if (shape == CursorShape::Block) {
                 D3DCellInstance inst = {};
                 inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH;
+                inst.position[1] = cRow * cellH + gridOffsetY;
                 colorFromRGBA(cursorColor, inst.bg_color);
                 inst.bg_color[3] = 0.5f;
                 inst.flags = 4;  // is_bg_pass
@@ -191,7 +195,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             } else if (shape == CursorShape::Bar) {
                 D3DCellInstance inst = {};
                 inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH;
+                inst.position[1] = cRow * cellH + gridOffsetY;
                 inst.atlas_size[0] = 2.0f;
                 inst.atlas_size[1] = cellH;
                 colorFromRGBA(cursorColor, inst.bg_color);
@@ -200,7 +204,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             } else if (shape == CursorShape::Underline) {
                 D3DCellInstance inst = {};
                 inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH + cellH - 2.0f;
+                inst.position[1] = cRow * cellH + gridOffsetY + cellH - 2.0f;
                 inst.atlas_size[0] = cellW;
                 inst.atlas_size[1] = 2.0f;
                 colorFromRGBA(cursorColor, inst.bg_color);
@@ -254,7 +258,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 cellInstances.push_back(inst);
             };
 
-            float baseY = row * cellH;
+            float baseY = row * cellH + gridOffsetY;
 
             switch (ulStyle) {
                 case 1: // single - 1px line at bottom

@@ -10,8 +10,16 @@
 
 TerminalWindowState::GridPos TerminalWindowState::pixelToGrid(int x, int y) const {
     GridPos pos;
+    // Offset for tab bar when visible
+    int offsetY = 0;
+    if (mux) {
+        auto* ws = mux->getWorkspace(wsId);
+        if (ws && ws->tabs.size() > 1) {
+            offsetY = static_cast<int>(cellHeight);
+        }
+    }
     pos.col = (std::max)(0, (std::min)(termCols - 1, static_cast<int>(x / cellWidth)));
-    pos.row = (std::max)(0, (std::min)(termRows - 1, static_cast<int>(y / cellHeight)));
+    pos.row = (std::max)(0, (std::min)(termRows - 1, static_cast<int>((y - offsetY) / cellHeight)));
     return pos;
 }
 

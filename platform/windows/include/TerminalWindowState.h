@@ -22,6 +22,9 @@
 #include "termcore/mux.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
+#include "ThemeHubWindow.h"
+#include "FontHubWindow.h"
+#include "SettingsWindow.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -34,9 +37,18 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 using Microsoft::WRL::ComPtr;
 using namespace termcore;
+
+/// Per-pane terminal state (PTY + Screen + Parser).
+struct PaneState {
+    PaneId id = kInvalidPane;
+    std::unique_ptr<Screen> screen;
+    std::unique_ptr<VtParser> parser;
+    std::unique_ptr<Pty> pty;
+};
 
 /// Terminal window state, stored as GWLP_USERDATA on the HWND.
 struct TerminalWindowState {
@@ -48,10 +60,27 @@ struct TerminalWindowState {
     ComPtr<IDXGISwapChain1> swapChain;
     ComPtr<ID3D11RenderTargetView> rtv;
 
-    // Core terminal state
-    std::unique_ptr<Screen> screen;
-    std::unique_ptr<VtParser> parser;
-    std::unique_ptr<Pty> pty;
+    // Per-pane terminal state (owned by panes map)
+    std::unordered_map<PaneId, std::unique_ptr<PaneState>> panes;
+    PaneId nextPaneId = 1;
+
+    // Active pane raw pointers — updated by syncActivePointers()
+    // All existing code uses these; they always point to the active pane.
+    Screen* screen = nullptr;
+    Pty* pty = nullptr;
+
+    // Mux workspace/tab IDs
+    WorkspaceId wsId = kInvalidWorkspace;
+
+    // --- Pane management ---
+    PaneState* activePane() const;
+    PaneState* paneById(PaneId id) const;
+    void syncActivePointers();  // call after any Mux active-pane change
+    void setupMuxCallbacks();
+    void updateTabBar();
+    PaneId createPaneState(int rows, int cols);
+    void destroyPaneState(PaneId id);
+    bool hasAnyAlivePty() const;
 
     // Font stack
     std::unique_ptr<IFontRasterizer> rasterizer;
@@ -75,6 +104,9 @@ struct TerminalWindowState {
     std::unique_ptr<termcore::Mux> mux;
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
+    std::unique_ptr<termcore::ThemeHubWindow> themeHub;
+    std::unique_ptr<termcore::FontHubWindow> fontHub;
+    std::unique_ptr<termcore::SettingsWindow> settingsWin;
 
     // Configuration
     termcore::Config config;
@@ -130,7 +162,8 @@ struct TerminalWindowState {
     // --- Fullscreen ---
     void toggleFullscreen();
 
-    // --- DWM background blur ---
+    // --- DWM title bar / blur ---
+    void applyTitleBarTheme(HWND hwnd);
     void applyBackgroundBlur(HWND hwnd);
 
     // --- DPI ---
