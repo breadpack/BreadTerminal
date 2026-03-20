@@ -155,7 +155,7 @@ if(TERMCORE_HAS_LUA)
     list(APPEND TERMCORE_SOURCES src/lua_engine.cpp)
     message(STATUS "Lua plugin system: ENABLED (${LUA_VERSION})")
 else()
-    message(STATUS "Lua plugin system: DISABLED (Lua 5.4 not found)")
+    message(FATAL_ERROR "Lua 5.4 is required but not found. Install lua5.4 and liblua5.4-dev.")
 endif()
 
 # lua_config.cpp has both TERMCORE_HAS_LUA and stub paths, always compile it

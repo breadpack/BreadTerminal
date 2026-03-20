@@ -36,16 +36,8 @@ TEST(ConfigTest, DefaultConfigValues) {
 }
 
 // --- Lua config loading ---
-// These tests require Lua 5.4 to be linked into termcore.
-
-#ifndef TERMCORE_HAS_LUA
-#define SKIP_LUA GTEST_SKIP() << "Lua not available"
-#else
-#define SKIP_LUA ((void)0)
-#endif
 
 TEST(ConfigTest, LoadLuaStringFont) {
-    SKIP_LUA;
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ font_family = \"JetBrains Mono\", font_size = 16.5 })"));
     const Config& config = luaConfig();
@@ -54,7 +46,7 @@ TEST(ConfigTest, LoadLuaStringFont) {
 }
 
 TEST(ConfigTest, LoadLuaStringColors) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ background = 0xff00ff, foreground = 0x123456 })"));
     const Config& config = luaConfig();
@@ -63,7 +55,7 @@ TEST(ConfigTest, LoadLuaStringColors) {
 }
 
 TEST(ConfigTest, LoadLuaStringPalette) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ palette = { "
         "0xaaaaaa, 0xbbbbbb, 0xcccccc, 0xdddddd, "
@@ -76,7 +68,7 @@ TEST(ConfigTest, LoadLuaStringPalette) {
 }
 
 TEST(ConfigTest, LoadLuaStringKeybinding) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.keymap(\"cmd+t\", \"new_tab\")"));
     const Config& config = luaConfig();
@@ -86,7 +78,7 @@ TEST(ConfigTest, LoadLuaStringKeybinding) {
 }
 
 TEST(ConfigTest, LoadLuaStringMultipleKeybindings) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.keymap(\"cmd+t\", \"new_tab\")\n"
         "terminal.keymap(\"cmd+w\", \"close_tab\")\n"
@@ -98,7 +90,7 @@ TEST(ConfigTest, LoadLuaStringMultipleKeybindings) {
 }
 
 TEST(ConfigTest, LoadLuaStringCursorConfig) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ cursor_style = \"underline\", cursor_blink = false })"));
     const Config& config = luaConfig();
@@ -107,7 +99,7 @@ TEST(ConfigTest, LoadLuaStringCursorConfig) {
 }
 
 TEST(ConfigTest, LoadLuaStringShell) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ shell = \"/bin/zsh\" })"));
     const Config& config = luaConfig();
@@ -115,7 +107,7 @@ TEST(ConfigTest, LoadLuaStringShell) {
 }
 
 TEST(ConfigTest, LoadLuaStringScrollbackLimit) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ scrollback_limit = 50000 })"));
     const Config& config = luaConfig();
@@ -123,7 +115,7 @@ TEST(ConfigTest, LoadLuaStringScrollbackLimit) {
 }
 
 TEST(ConfigTest, LoadLuaStringBackgroundOpacity) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ background_opacity = 0.5 })"));
     const Config& config = luaConfig();
@@ -131,7 +123,7 @@ TEST(ConfigTest, LoadLuaStringBackgroundOpacity) {
 }
 
 TEST(ConfigTest, LoadLuaStringBackgroundBlur) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ background_blur = 2 })"));
     const Config& config = luaConfig();
@@ -139,7 +131,7 @@ TEST(ConfigTest, LoadLuaStringBackgroundBlur) {
 }
 
 TEST(ConfigTest, LoadLuaStringClipboardConfig) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ "
         "clipboard_paste_protection = \"always\", "
@@ -152,7 +144,7 @@ TEST(ConfigTest, LoadLuaStringClipboardConfig) {
 }
 
 TEST(ConfigTest, LoadLuaStringSidebar) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ sidebar_visible = false, sidebar_width = 300 })"));
     const Config& config = luaConfig();
@@ -161,7 +153,7 @@ TEST(ConfigTest, LoadLuaStringSidebar) {
 }
 
 TEST(ConfigTest, LoadLuaStringFontFeatures) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ font_features = { \"calt\", \"liga\", \"dlig\" } })"));
     const Config& config = luaConfig();
@@ -172,7 +164,7 @@ TEST(ConfigTest, LoadLuaStringFontFeatures) {
 }
 
 TEST(ConfigTest, LoadLuaStringMultipleConfigCalls) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ font_family = \"Monaco\" })\n"
         "terminal.config({ font_size = 18 })\n"));
@@ -182,7 +174,7 @@ TEST(ConfigTest, LoadLuaStringMultipleConfigCalls) {
 }
 
 TEST(ConfigTest, LoadLuaStringWindowSize) {
-    SKIP_LUA;
+
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ window_width = 1024, window_height = 768 })"));
     const Config& config = luaConfig();
@@ -193,7 +185,7 @@ TEST(ConfigTest, LoadLuaStringWindowSize) {
 // --- Lua config serialization round-trip ---
 
 TEST(ConfigTest, SerializeLuaDefaultConfig) {
-    SKIP_LUA;
+
     Config original;
     std::string lua = serializeConfigLua(original);
 
@@ -219,7 +211,7 @@ TEST(ConfigTest, SerializeLuaDefaultConfig) {
 }
 
 TEST(ConfigTest, SerializeLuaCustomConfig) {
-    SKIP_LUA;
+
     Config original;
     original.font_family = "Fira Code";
     original.font_size = 18.0f;
@@ -275,7 +267,7 @@ TEST(ConfigTest, SerializeLuaCustomConfig) {
 // --- Lua config file I/O ---
 
 TEST(ConfigTest, WriteAndLoadLuaConfigFile) {
-    SKIP_LUA;
+
     std::string path = std::tmpnam(nullptr);
     if (path.empty()) GTEST_SKIP() << "tmpnam failed";
     path += ".lua";
