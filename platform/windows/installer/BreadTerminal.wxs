@@ -19,10 +19,23 @@
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D">
         <File Id="BreadTerminalExe" Source="$(var.PackageDir)\BreadTerminal.exe" KeyPath="yes" />
       </Component>
-      <!-- Runtime DLLs (only when vcpkg dynamic linking is used) -->
-      <!-- <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
-        <File Source="$(var.PackageDir)\*.dll" />
-      </Component> -->
+      <!-- Runtime DLLs (vcpkg dependencies) -->
+      <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
+        <File Source="$(var.PackageDir)\harfbuzz.dll" />
+        <File Source="$(var.PackageDir)\icudt78.dll" />
+        <File Source="$(var.PackageDir)\icuuc78.dll" />
+        <File Source="$(var.PackageDir)\freetype.dll" />
+        <File Source="$(var.PackageDir)\zlib1.dll" />
+        <File Source="$(var.PackageDir)\libpng16.dll" />
+        <File Source="$(var.PackageDir)\brotlicommon.dll" />
+        <File Source="$(var.PackageDir)\brotlidec.dll" />
+        <File Source="$(var.PackageDir)\bz2.dll" />
+      </Component>
+      <!-- Resource files (theme/font index) -->
+      <Component Id="ResourceFiles" Guid="C9D0E1F2-A3B4-5C6D-7E8F-900112233445">
+        <File Source="$(var.PackageDir)\theme_index.json" />
+        <File Source="$(var.PackageDir)\font_index.json" />
+      </Component>
     </ComponentGroup>
 
     <ComponentGroup Id="ShellScripts" Directory="ShellDir">
@@ -60,12 +73,52 @@
       </Component>
     </ComponentGroup>
 
+    <!-- Windows Terminal profile registration script -->
+    <ComponentGroup Id="InstallerScripts" Directory="INSTALLFOLDER">
+      <Component Id="WTProfileScript" Guid="B8C9D0E1-F2A3-4B5C-6D7E-8F9001122334">
+        <File Id="RegisterWTProfile" Source="$(var.PackageDir)\register-wt-profile.ps1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <Feature Id="ProductFeature" Title="BreadTerminal" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
       <ComponentGroupRef Id="ShellScripts" />
       <ComponentGroupRef Id="EnvironmentPath" />
       <ComponentGroupRef Id="Shortcuts" />
+      <ComponentGroupRef Id="InstallerScripts" />
     </Feature>
+
+    <!-- Custom action: register Windows Terminal profile (runs after files installed) -->
+    <SetProperty Id="POWERSHELLEXE" Value="[WindowsFolder]System32\WindowsPowerShell\v1.0\powershell.exe"
+                 Sequence="execute" Before="RegisterWTProfileAction" />
+    <CustomAction Id="RegisterWTProfileAction"
+                  Property="POWERSHELLEXE"
+                  ExeCommand="-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]register-wt-profile.ps1&quot;"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RegisterWTProfileAction" After="InstallFinalize" Condition="NOT Installed OR REINSTALL" />
+    </InstallExecuteSequence>
+
+    <!-- Launch after install (checkbox on exit dialog) -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch BreadTerminal" />
+    <Property Id="WixShellExecTarget" Value="[#BreadTerminalExe]" />
+    <CustomAction Id="LaunchApplication"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+
+    <!-- Skip license agreement + wire launch checkbox -->
+    <Property Id="LicenseAccepted" Value="1" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog"
+               Value="InstallDirDlg" Order="2" Condition="NOT Installed" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog"
+               Value="WelcomeDlg" Order="2" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT REMOVE" />
+    </UI>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
   </Package>

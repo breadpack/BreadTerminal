@@ -14,7 +14,7 @@ static uint32_t mapWin32Keycode(WPARAM wParam) {
 
     // Map virtual keycodes to ASCII for printable keys
     if (keycode >= 'A' && keycode <= 'Z') {
-        keycode = keycode - 'A' + 'a';  // lowercase
+        return keycode - 'A' + 'a';  // lowercase — return early to avoid VK_F1-F12 collision
     }
 
     switch (keycode) {
