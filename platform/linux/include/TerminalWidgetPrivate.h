@@ -10,9 +10,8 @@
 #include "termcore/font/glyph_atlas.h"
 #include "termcore/font/glyph_cache.h"
 
+#include "GLTextRenderer.h"
 #include <memory>
-
-class GLTextRenderer;
 
 using namespace termcore;
 
