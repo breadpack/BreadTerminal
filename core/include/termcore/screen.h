@@ -24,12 +24,12 @@ enum CellAttribute : uint16_t {
     AttrStrikethrough = 64,
 };
 
-/// Underline style for styled underlines (SGR 4:x).
+/// Underline style values (SGR 4:x).
 enum UnderlineStyle : uint8_t {
-    UnderlineNone = 0,
+    UnderlineNone   = 0,
     UnderlineSingle = 1,
     UnderlineDouble = 2,
-    UnderlineCurly = 3,
+    UnderlineCurly  = 3,
     UnderlineDotted = 4,
     UnderlineDashed = 5,
 };
@@ -41,8 +41,8 @@ struct TermCell {
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
     uint8_t width = 1;
-    uint8_t underline_style = 0;          // UnderlineStyle: 0=none..5=dashed
-    uint32_t underline_color = kColorDefault;  // SGR 58 underline color
+    uint8_t underline_style = UnderlineNone;
+    uint32_t underline_color = kColorDefault;
 };
 
 /// Cursor shape for DECSCUSR.
@@ -62,7 +62,7 @@ struct Pen {
     uint32_t fg_color = kColorDefault;
     uint32_t bg_color = kColorDefault;
     uint16_t attributes = 0;
-    uint8_t underline_style = 0;
+    uint8_t underline_style = UnderlineNone;
     uint32_t underline_color = kColorDefault;
 };
 
@@ -91,6 +91,7 @@ public:
 
     // --- Grid access ---
     const TermCell& cellAt(int row, int col) const;
+    TermCell& mutableCellAt(int row, int col);
     int rows() const { return rows_; }
     int cols() const { return cols_; }
 
@@ -130,6 +131,7 @@ public:
     MouseEncoding mouseEncoding() const { return mouse_encoding_; }
     bool focusEvents() const { return focus_events_; }
     bool syncUpdate() const { return sync_update_; }
+    std::chrono::steady_clock::time_point syncStartTime() const { return sync_start_time_; }
     KittyKeyboardState& kittyKeyboard() { return kitty_keyboard_; }
 
     // --- OSC state accessors ---
@@ -142,25 +144,21 @@ public:
     PromptState promptState() const { return prompt_state_; }
     const TermNotification& lastNotification() const { return last_notification_; }
 
-    // --- Prompt markers (OSC 133) for jump navigation ---
-    struct PromptMarker {
-        int scrollback_offset;  // distance from bottom of scrollback (0 = most recent)
-        int row;                // row within that context
-    };
-    int nextPromptRow(int current_row) const;
-    int prevPromptRow(int current_row) const;
-
-    // --- Command finish detection ---
-    struct CommandTiming {
-        std::chrono::steady_clock::time_point start;
-        bool active = false;
-    };
-    using CommandFinishCallback = std::function<void(float elapsed_seconds)>;
-    void setCommandFinishCallback(CommandFinishCallback cb) { command_finish_callback_ = std::move(cb); }
+    // --- Prompt navigation (OSC 133) ---
+    const std::vector<int>& promptRows() const { return prompt_rows_; }
+    int previousPromptRow(int from_row) const;
+    int nextPromptRow(int from_row) const;
+    /// Find the output region (start_row, end_row) containing the given row.
+    /// Returns {-1,-1} if no output region found.
+    std::pair<int,int> outputRegionAt(int row) const;
 
     // --- Response callback (for writing back to PTY) ---
     using ResponseCallback = std::function<void(const std::string&)>;
     void setResponseCallback(ResponseCallback cb) { response_callback_ = std::move(cb); }
+
+    // --- Parser re-feed callback (for DCS passthrough, e.g. tmux) ---
+    using ParserFeedCallback = std::function<void(const char*, size_t)>;
+    void setParserFeedCallback(ParserFeedCallback cb) { parser_feed_callback_ = std::move(cb); }
 
     // --- Notification callback ---
     using NotificationCallback = std::function<void(const TermNotification&)>;
@@ -178,6 +176,11 @@ public:
     /// Control whether OSC 52 clipboard writes are allowed (default: false, secure by default).
     void setClipboardWriteAllowed(bool allowed) { clipboard_write_allowed_ = allowed; }
 
+    // --- Command finish callback (for desktop notifications) ---
+    using CommandFinishCallback = std::function<void(double duration_seconds)>;
+    void setCommandFinishCallback(CommandFinishCallback cb) { command_finish_callback_ = std::move(cb); }
+    void setNotifyAfterSeconds(float seconds) { notify_after_seconds_ = seconds; }
+
     // --- Dynamic colors ---
     struct DynamicColorEvent {
         int index;        // -1 = palette changed, 0..9 = OSC 10..19 slot
@@ -189,6 +192,18 @@ public:
     const DynamicColors& dynamicColors() const { return dynamic_colors_; }
     void initDynamicColors(const Config& cfg);
 
+    // --- Dirty tracking ---
+    /// Returns true if any row has been modified since the last clearDirty().
+    bool isDirty() const { return screen_dirty_; }
+    /// Returns true if the specific row has been modified since clearDirty().
+    bool isRowDirty(int row) const;
+    /// Clear all dirty flags (call after rendering).
+    void clearDirty();
+    /// Mark a specific row as dirty.
+    void markRowDirty(int row);
+    /// Mark all rows dirty (e.g. after resize, alt-screen switch).
+    void markAllDirty();
+
     // --- Utility ---
     std::string getLineText(int row) const;
     std::string getScrollbackLineText(int line) const;  // line 0 = most recent
@@ -197,12 +212,16 @@ public:
     void onPrint(char32_t codepoint) override;
     void onExecute(uint8_t byte) override;
     void onCsiDispatch(char32_t final_char,
-                       const std::vector<int>& params,
+                       const std::vector<VtParam>& params,
                        const std::string& intermediates) override;
     void onEscDispatch(char32_t final_char,
                        const std::string& intermediates) override;
     void onOscDispatch(int osc_number,
                        const std::string& osc_string) override;
+    void onDcsDispatch(char32_t final_char,
+                       const std::vector<VtParam>& params,
+                       const std::string& intermediates,
+                       const std::string& data) override;
 
 private:
     using Row = std::vector<TermCell>;
@@ -210,7 +229,7 @@ private:
     // Grid
     int rows_;
     int cols_;
-    std::vector<Row> grid_;
+    std::deque<Row> grid_;
     std::deque<Row> scrollback_;
     size_t max_scrollback_ = 10000;
     int viewport_offset_ = 0;  // 0 = bottom (live), >0 = scrolled up
@@ -233,9 +252,12 @@ private:
 
     // Mode flags
     bool app_cursor_keys_ = false;   // DECCKM ?1
+    bool origin_mode_ = false;       // DECOM ?6
+    bool insert_mode_ = false;       // IRM mode 4
     bool bracketed_paste_ = false;   // ?2004
     bool focus_events_ = false;      // ?1004
     bool sync_update_ = false;       // ?2026
+    std::chrono::steady_clock::time_point sync_start_time_; // when ?2026 was set
     bool alt_screen_active_ = false;
 
     // Mouse mode
@@ -254,6 +276,16 @@ private:
     PromptState prompt_state_ = PromptState::None;
     TermNotification last_notification_;
 
+    /// Prompt marker positions for navigation.
+    /// Each entry stores the absolute row (scrollback_size + cursor_row at time of marker).
+    /// Stored as: { absolute_row, marker_type } where marker_type matches PromptState.
+    struct PromptMarker {
+        int absolute_row;
+        PromptState type;
+    };
+    std::vector<int> prompt_rows_;            // absolute rows of 'A' markers
+    std::vector<PromptMarker> prompt_markers_; // all markers for region detection
+
     // REP (repeat character)
     char32_t last_printed_ = 0;
 
@@ -265,29 +297,34 @@ private:
 
     // Callbacks
     ResponseCallback response_callback_;
+    ParserFeedCallback parser_feed_callback_;
     NotificationCallback notification_callback_;
     ClipboardCallback clipboard_callback_;
     DynamicColorCallback dynamic_color_callback_;
+    CommandFinishCallback command_finish_callback_;
+
+    // Command execution timing (for completion notifications)
+    std::chrono::steady_clock::time_point command_start_time_;
+    bool command_running_ = false;
+    float notify_after_seconds_ = 5.0f;
 
     // Security: OSC 52 clipboard write gate (default: denied)
     bool clipboard_write_allowed_ = false;
 
-    // Prompt markers for jump navigation
-    std::vector<PromptMarker> prompt_markers_;
-
-    // Command timing for finish notification
-    CommandTiming command_timing_;
-    CommandFinishCallback command_finish_callback_;
+    // Dirty tracking
+    std::vector<bool> row_dirty_;
+    bool screen_dirty_ = true;
 
     // Alternate screen buffer
     struct ScreenState {
-        std::vector<Row> grid;
+        std::deque<Row> grid;
         CursorState cursor;
         Pen pen;
         int scroll_top = 0;
         int scroll_bottom = 0;
         bool autowrap = true;
         bool wrap_pending = false;
+        bool origin_mode = false;
     };
     ScreenState saved_primary_;
 
@@ -296,42 +333,43 @@ private:
     void scrollUp(int top, int bottom, int count = 1);
     void scrollDown(int top, int bottom, int count = 1);
     void clampCursor();
-    TermCell& mutableCellAt(int row, int col);
     void eraseCell(TermCell& cell) const;
     void advanceCursorAfterPrint();
 
     // CSI handlers (defined in screen_csi.cpp)
     void handleCursorMovement(char32_t final_char,
-                              const std::vector<int>& params);
-    void handleEraseDisplay(const std::vector<int>& params);
-    void handleEraseLine(const std::vector<int>& params);
-    void handleSGR(const std::vector<int>& params);
-    void handleScrollRegion(const std::vector<int>& params);
+                              const std::vector<VtParam>& params);
+    void handleEraseDisplay(const std::vector<VtParam>& params);
+    void handleEraseLine(const std::vector<VtParam>& params);
+    void handleSGR(const std::vector<VtParam>& params);
+    void handleScrollRegion(const std::vector<VtParam>& params);
     void handleMode(char32_t final_char,
-                    const std::vector<int>& params,
+                    const std::vector<VtParam>& params,
                     const std::string& intermediates);
     void handleInsertDeleteLines(char32_t final_char,
-                                 const std::vector<int>& params);
+                                 const std::vector<VtParam>& params);
     void handleInsertDeleteChars(char32_t final_char,
-                                 const std::vector<int>& params);
+                                 const std::vector<VtParam>& params);
     void handleScrollUpDown(char32_t final_char,
-                            const std::vector<int>& params);
-    void handleEraseChars(const std::vector<int>& params);
+                            const std::vector<VtParam>& params);
+    void handleEraseChars(const std::vector<VtParam>& params);
     void handleAbsolutePosition(char32_t final_char,
-                                const std::vector<int>& params);
+                                const std::vector<VtParam>& params);
 
     // CSI ext handlers (defined in screen_csi_ext.cpp)
-    void handleDeviceStatusReport(const std::vector<int>& params,
+    void handleDeviceStatusReport(const std::vector<VtParam>& params,
                                   const std::string& intermediates);
-    void handleDeviceAttributes(const std::vector<int>& params,
+    void handleDeviceAttributes(const std::vector<VtParam>& params,
                                 const std::string& intermediates);
-    void handleCursorStyle(const std::vector<int>& params);
-    void handleRepeatChar(const std::vector<int>& params);
+    void handleCursorStyle(const std::vector<VtParam>& params);
+    void handleRepeatChar(const std::vector<VtParam>& params);
     void handleCursorNextPrevLine(char32_t final_char,
-                                  const std::vector<int>& params);
+                                  const std::vector<VtParam>& params);
     void handleTabMovement(char32_t final_char,
-                           const std::vector<int>& params);
-    void handleTabClear(const std::vector<int>& params);
+                           const std::vector<VtParam>& params);
+    void handleTabClear(const std::vector<VtParam>& params);
+    void handleModeQuery(const std::vector<VtParam>& params,
+                         const std::string& intermediates);
     void initTabStops();
 
     // OSC handlers (defined in screen_osc.cpp)

@@ -15,9 +15,39 @@
 #include "CoreTextRasterizer.h"
 #include "CoreTextDiscovery.h"
 #include "TerminalViewImpl.h"
+#include "termcore/theme_loader.h"
 
+#import <UserNotifications/UserNotifications.h>
 #include <dispatch/dispatch.h>
+#include <mach/mach_time.h>
 #include <memory>
+
+// CVDisplayLink callback (fallback for < macOS 14)
+static CVReturn displayLinkCallback(CVDisplayLinkRef /*displayLink*/,
+                                     const CVTimeStamp* /*now*/,
+                                     const CVTimeStamp* /*outputTime*/,
+                                     CVOptionFlags /*flagsIn*/,
+                                     CVOptionFlags* /*flagsOut*/,
+                                     void* context) {
+    TerminalView* view = (__bridge TerminalView*)context;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [view renderFrame];
+    });
+    return kCVReturnSuccess;
+}
+
+// Idle downclock constants
+static const double kIdleTimeoutSeconds = 1.0;
+static const NSTimeInterval kIdleCheckInterval = 0.1; // 10 fps when idle
+
+// Convert mach_absolute_time to seconds
+static double machTimeToSeconds(uint64_t elapsed) {
+    static mach_timebase_info_data_t sTimebaseInfo = {0, 0};
+    if (sTimebaseInfo.denom == 0) {
+        mach_timebase_info(&sTimebaseInfo);
+    }
+    return (double)(elapsed * sTimebaseInfo.numer) / (double)(sTimebaseInfo.denom * 1000000000ULL);
+}
 
 @implementation TerminalView
 
@@ -31,15 +61,17 @@
     _impl = new TerminalViewImpl();
     _markedText = nil;
 
-    // Metal layer
-    self.wantsLayer = YES;
+    // Metal layer — manually managed (NOT via makeBackingLayer)
+    // We need direct control of drawableSize for Retina support
+    self.wantsLayer = YES;  // Creates default backing layer
     _metalLayer = [CAMetalLayer layer];
     _metalLayer.device = _device;
-    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+    _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     _metalLayer.framebufferOnly = YES;
+    _metalLayer.contentsScale = 2.0;
     _metalLayer.frame = self.bounds;
-    _metalLayer.contentsScale = self.window.backingScaleFactor ?: 2.0;
-    self.layer = _metalLayer;
+    _metalLayer.drawableSize = NSMakeSize(self.bounds.size.width * 2, self.bounds.size.height * 2);
+    [self.layer addSublayer:_metalLayer];
 
     // Font stack
     _impl->rasterizer = termcore::createCoreTextRasterizer();
@@ -91,25 +123,52 @@
 
     _searchActive = NO;
 
-    // Set initial drawable size and viewport — both in physical pixels
-    _metalLayer.drawableSize = NSMakeSize(frame.size.width * scale, frame.size.height * scale);
-    _impl->renderer->resize(frame.size.width * scale, frame.size.height * scale);
+    // Drawable size and viewport will be synced in first renderFrame
     _impl->needsRender = true;
 
-    // Render timer (60 fps)
-    __weak TerminalView* weakSelf = self;
-    _impl->renderTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
-                                                         repeats:YES
-                                                           block:^(NSTimer* _Nonnull timer) {
-        TerminalView* s = weakSelf;
-        if (!s) { [timer invalidate]; return; }
-        [s renderFrame];
-    }];
+    // Create PTY serial queue
+    _impl->ptyQueue = dispatch_queue_create("com.breadterminal.pty", DISPATCH_QUEUE_SERIAL);
+
+    // Initialize idle tracking
+    _impl->lastActivityTime = mach_absolute_time();
+    _impl->idleMode = false;
+
+    // Render timer will be started after view is added to window
+    // (cannot use __weak self during init — may be nil)
+
     return self;
 }
 
+- (void)markActivity {}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window && !_impl->idleTimer) {
+        // Start 60fps render timer now that view is in a window
+        __weak TerminalView* weakSelf = self;
+        _impl->idleTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0
+                                                            repeats:YES
+                                                              block:^(NSTimer* timer) {
+            TerminalView* s = weakSelf;
+            if (!s) { [timer invalidate]; return; }
+            [s renderFrame];
+        }];
+        CGFloat scale = self.window.backingScaleFactor;
+        _metalLayer.contentsScale = scale;
+        // Force correct drawable size for Retina
+        NSSize sz = self.bounds.size;
+        if (sz.width > 0 && sz.height > 0) {
+            _metalLayer.drawableSize = NSMakeSize(sz.width * scale, sz.height * scale);
+            _impl->renderer->resize(sz.width * scale, sz.height * scale);
+        }
+        [self updateGridSize];
+        _impl->needsRender = true;
+    }
+}
+
 - (void)dealloc {
-    // TerminalViewImpl destructor handles ptyReadSource cancel and renderTimer invalidation
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    // TerminalViewImpl destructor handles ptyReadSource cancel and display link cleanup
     delete _impl;
 }
 
@@ -152,11 +211,73 @@
     // Cursor blink interval
     _impl->renderer->setCursorBlinkInterval(config.cursor_blink_interval);
 
+    // Command completion notification settings
+    _impl->notifyOnCommandFinish = config.notify_on_command_finish;
+    _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
+
+    // Store the raw theme string for adaptive theme switching
+    if (!config.theme.empty()) {
+        _impl->currentThemeString = config.theme;
+    }
+
+    // Initialize screen dynamic colors from the (already theme-resolved) config
+    _impl->screen->initDynamicColors(config);
+
     // Background transparency & blur
     [self applyTransparencyConfig:config];
 
+    // Grid padding
+    _impl->windowPadding = config.window_padding;
+    {
+        CGFloat padScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0;
+        _impl->renderer->setGridPadding(config.window_padding * padScale);
+    }
+
+    // Minimum contrast
+    _impl->renderer->setMinimumContrast(config.minimum_contrast);
+
     // Recalculate grid with potentially new font metrics
     [self updateGridSize];
+}
+
+- (void)applyThemeByName:(const std::string&)themeName {
+    auto theme = termcore::findTheme(themeName);
+    if (!theme) return;
+
+    // Build a temporary config with the theme colors applied
+    termcore::Config tempConfig;
+    termcore::applyTheme(tempConfig, *theme);
+
+    // Update the screen's dynamic colors
+    _impl->screen->initDynamicColors(tempConfig);
+
+    // Update transparency config (background color may have changed)
+    [self applyTransparencyConfig:tempConfig];
+
+    // Trigger re-render
+    _impl->needsRender = true;
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+
+    // Only react if we have an adaptive theme configured
+    if (_impl->currentThemeString.empty() ||
+        !termcore::isAdaptiveTheme(_impl->currentThemeString)) {
+        return;
+    }
+
+    // Detect current appearance
+    BOOL isDark = YES;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName match = [self.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+        isDark = [match isEqualToString:NSAppearanceNameDarkAqua];
+    }
+
+    // Resolve and apply the appropriate theme variant
+    std::string resolved = termcore::resolveThemeForAppearance(_impl->currentThemeString, isDark);
+    [self applyThemeByName:resolved];
 }
 
 - (void)applyTransparencyConfig:(const termcore::Config&)config {
@@ -207,34 +328,27 @@
 
 #pragma mark - NSView overrides
 
-- (BOOL)wantsLayer { return YES; }
+- (void)layout {
+    [super layout];
+    _metalLayer.frame = self.bounds;
+}
+
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)becomeFirstResponder  { return YES; }
-- (BOOL)wantsUpdateLayer { return YES; }
 
-- (CALayer*)makeBackingLayer {
-    if (!_metalLayer) {
-        _metalLayer = [CAMetalLayer layer];
-        _metalLayer.device = _device;
-        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
-    }
-    return _metalLayer;
-}
+// Metal layer is a sublayer, not the backing layer
+// This gives us direct control of drawableSize/contentsScale
 
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-    if (self.window) {
-        _metalLayer.contentsScale = self.window.backingScaleFactor;
-    }
-}
+// viewDidMoveToWindow is implemented above (line 144)
 
 - (void)setFrameSize:(NSSize)newSize {
     [super setFrameSize:newSize];
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2.0;
     _metalLayer.frame = self.bounds;
-    _metalLayer.drawableSize = NSMakeSize(
-        newSize.width * _metalLayer.contentsScale,
-        newSize.height * _metalLayer.contentsScale);
+    _metalLayer.drawableSize = NSMakeSize(newSize.width * scale, newSize.height * scale);
+    _impl->renderer->resize(newSize.width * scale, newSize.height * scale);
     [self updateGridSize];
+    _impl->needsRender = true;
 }
 
 - (void)viewDidEndLiveResize {
@@ -248,9 +362,11 @@
     // Cell dimensions are in physical pixels; convert view bounds to pixels
     float cw = _cellWidth  > 0 ? _cellWidth  : 16;
     float ch = _cellHeight > 0 ? _cellHeight : 32;
-    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
-    float viewWidthPx  = self.bounds.size.width  * scale;
-    float viewHeightPx = self.bounds.size.height * scale;
+    // Use 2.0 for Retina (backingScaleFactor may return 1.0 incorrectly on some setups)
+    float gridScale = 2.0f;
+    float paddingPx = _impl->windowPadding * gridScale;
+    float viewWidthPx  = self.bounds.size.width  * gridScale - paddingPx * 2;
+    float viewHeightPx = self.bounds.size.height * gridScale - paddingPx * 2;
     int cols = std::max(1, (int)(viewWidthPx  / cw));
     int rows = std::max(1, (int)(viewHeightPx / ch));
     return {rows, cols};
@@ -264,9 +380,9 @@
     _impl->screen->resize(rows, cols);
     if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
     // Viewport in physical pixels (matches drawableSize)
-    float scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
-    float w = self.bounds.size.width * scale;
-    float h = self.bounds.size.height * scale;
+    float gridScale = self.window.backingScaleFactor > 0 ? (float)self.window.backingScaleFactor : 2.0f;
+    float w = self.bounds.size.width * gridScale;
+    float h = self.bounds.size.height * gridScale;
     _impl->renderer->resize(w, h);
     _impl->needsRender = true;
 }
@@ -275,41 +391,94 @@
 
 - (void)startShell {
     _impl->pty = termcore::createPty();
-    if (!_impl->pty->spawn("", {}, "", _termRows, _termCols)) {
+    std::string homeDir;
+    if (const char* home = std::getenv("HOME")) homeDir = home;
+    if (!_impl->pty->spawn("", {}, homeDir, _termRows, _termCols)) {
         NSLog(@"BreadTerminal: failed to spawn shell");
         return;
     }
+
+    // Wire response callback so Screen can write back to PTY (DA, DSR, DECRPM, etc.)
+    __weak TerminalView* weakSelf = self;
+    _impl->screen->setResponseCallback([weakSelf](const std::string& response) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TerminalView* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf->_impl->pty) return;
+            strongSelf->_impl->pty->write(response.data(), response.size());
+        });
+    });
+
+    // Wire command finish callback for desktop notifications
+    _impl->screen->setCommandFinishCallback([weakSelf](double duration_seconds) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            TerminalView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            // Check if notifications are enabled
+            if (!strongSelf->_impl->notifyOnCommandFinish) return;
+
+            // Only notify if the window is NOT the key window (app not focused)
+            NSWindow* window = strongSelf.window;
+            if (window && [window isKeyWindow] && [NSApp isActive]) return;
+
+            [strongSelf postCommandFinishNotification:duration_seconds];
+        });
+    });
+
+    // Register for focus event notifications (CSI I / CSI O)
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(windowDidBecomeKey:)
+        name:NSWindowDidBecomeKeyNotification object:self.window];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(windowDidResignKey:)
+        name:NSWindowDidResignKeyNotification object:self.window];
+
+    // Dispatch PTY reads on a dedicated serial queue
     int fd = _impl->pty->fd();
     dispatch_source_t src = dispatch_source_create(
         DISPATCH_SOURCE_TYPE_READ, fd, 0, dispatch_get_main_queue());
-    __weak TerminalView* weakSelf = self;
     dispatch_source_set_event_handler(src, ^{
         TerminalView* s = weakSelf;
-        if (s) [s readPtyData];
+        if (s) [s readPtyDataOnMainQueue];
     });
     dispatch_source_set_cancel_handler(src, ^{});
     _impl->ptyReadSource = src;
     dispatch_resume(src);
 }
 
-- (void)readPtyData {
-    char buf[8192];
-    int n = _impl->pty->read(buf, sizeof(buf));
-    if (n > 0) {
-        _impl->parser->feed(buf, static_cast<size_t>(n));
-        _impl->needsRender = true;
-        // Update window title from OSC sequences
-        auto title = _impl->screen->title();
+- (void)readPtyDataOnMainQueue {
+    // Called on main queue — read from PTY and feed parser directly
+    char buf[65536];
+    for (;;) {
+        int n = _impl->pty->read(buf, sizeof(buf));
+        if (n > 0) {
+            _impl->parser->feed(buf, static_cast<size_t>(n));
+        } else if (n < 0) {
+            if (_impl->ptyReadSource) {
+                dispatch_source_cancel(_impl->ptyReadSource);
+                _impl->ptyReadSource = nullptr;
+            }
+            return;
+        } else {
+            break;
+        }
+    }
+
+    _impl->needsRender = true;
+
+    // Update window title from OSC sequences
+    if (_impl->screen) {
+        std::string title = _impl->screen->title();
         if (!title.empty()) {
             NSString* t = [NSString stringWithUTF8String:title.c_str()];
             if (t && ![self.window.title isEqualToString:t])
                 self.window.title = t;
         }
-    } else if (n < 0) {
-        if (_impl->ptyReadSource) {
-            dispatch_source_cancel(_impl->ptyReadSource);
-            _impl->ptyReadSource = nullptr;
-        }
+    }
+
+    // Exit copy mode on new PTY output
+    if (_impl->copyModeActive) {
+        [self exitCopyMode];
     }
 }
 
@@ -329,29 +498,54 @@
     if (_impl->pty) _impl->pty->write(str, strlen(str));
 }
 
+#pragma mark - Focus Events
+
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
+        const char* seq = "\033[I";
+        _impl->pty->write(seq, 3);
+    }
+    // Trigger render on focus gain (e.g. cursor blink state)
+    _impl->needsRender = true;
+    [self markActivity];
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification {
+    if (_impl->screen && _impl->screen->focusEvents() && _impl->pty) {
+        const char* seq = "\033[O";
+        _impl->pty->write(seq, 3);
+    }
+    _impl->needsRender = true;
+}
+
 #pragma mark - Rendering
 
-- (void)setNeedsRender { _impl->needsRender = true; }
+- (void)setNeedsRender {
+    _impl->needsRender = true;
+    [self markActivity];
+}
 
 - (void)renderFrame {
-    // Always render when cursor is visible (blink requires continuous redraw)
-    // But NOT during IME composition — cursor is hidden, no blink needed
+    // Simple render guard: always render when cursor visible (for blink) or content changed
     bool imeActive = _markedText != nil && _markedText.length > 0;
     bool cursorNeedsRedraw = !imeActive && _impl->screen && _impl->screen->cursorVisible();
     if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
-    // Ensure drawable size is valid
-    if (_metalLayer.drawableSize.width <= 0 || _metalLayer.drawableSize.height <= 0) {
-        CGFloat scale = self.window.backingScaleFactor ?: 2.0;
+    // Force Retina drawable size every frame (AppKit resets contentsScale to 1)
+    {
+        CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2.0;
         NSSize sz = self.bounds.size;
         if (sz.width > 0 && sz.height > 0) {
             float pxW = sz.width * scale;
             float pxH = sz.height * scale;
+            // contentsScale may be reset by AppKit, but drawableSize is authoritative
             _metalLayer.drawableSize = NSMakeSize(pxW, pxH);
             _impl->renderer->resize(pxW, pxH);
         }
     }
+
+    // No mutex needed — PTY read and render both on main queue
 
     // Inject IME marked text into screen cells before render, restore after
     struct IMESavedCell { int row, col; termcore::TermCell cell; };
@@ -390,9 +584,8 @@
                     imeSaved.push_back({curRow, c, orig});
                 }
 
-                // Write main cell
-                termcore::TermCell& cell = const_cast<termcore::TermCell&>(
-                    _impl->screen->cellAt(curRow, col));
+                // Write main cell via safe mutable accessor
+                termcore::TermCell& cell = _impl->screen->mutableCellAt(curRow, col);
                 cell.codepoint = cp;
                 cell.fg_color = _impl->screen->dynamicColors().background;
                 cell.bg_color = _impl->screen->dynamicColors().foreground;
@@ -401,8 +594,7 @@
 
                 // Write continuation cell for wide chars
                 if (w == 2 && col + 1 < cols) {
-                    termcore::TermCell& cont = const_cast<termcore::TermCell&>(
-                        _impl->screen->cellAt(curRow, col + 1));
+                    termcore::TermCell& cont = _impl->screen->mutableCellAt(curRow, col + 1);
                     cont.codepoint = 0;
                     cont.fg_color = cell.fg_color;
                     cont.bg_color = cell.bg_color;
@@ -415,12 +607,28 @@
         }
     }
 
+    // Pass selection state to renderer
+    {
+        termcore::SelectionState sel;
+        sel.active = _selecting;
+        sel.block = _blockSelection;
+        sel.start_row = (int)_selectionStart.y;
+        sel.start_col = (int)_selectionStart.x;
+        sel.end_row = (int)_selectionEnd.y;
+        sel.end_col = (int)_selectionEnd.x;
+        _impl->renderer->setSelection(sel);
+    }
+
     _impl->renderer->render(*_impl->screen);
+
+    // Clear dirty flags after successful render
+    if (_impl->screen) {
+        _impl->screen->clearDirty();
+    }
 
     // Restore original cells
     for (const auto& sc : imeSaved) {
-        termcore::TermCell& cell = const_cast<termcore::TermCell&>(
-            _impl->screen->cellAt(sc.row, sc.col));
+        termcore::TermCell& cell = _impl->screen->mutableCellAt(sc.row, sc.col);
         cell = sc.cell;
     }
 }
@@ -448,6 +656,14 @@
     }
 
     if (hasFlag(dirty, ConfigDirtyFlags::Colors) || hasFlag(dirty, ConfigDirtyFlags::Theme)) {
+        // Update stored theme string for adaptive theme switching
+        if (!config.theme.empty()) {
+            _impl->currentThemeString = config.theme;
+        }
+
+        // Update screen dynamic colors from the new config
+        _impl->screen->initDynamicColors(config);
+
         // Re-apply transparency/background settings
         [self applyTransparencyConfig:config];
     }
@@ -462,7 +678,39 @@
         }
     }
 
+    if (hasFlag(dirty, ConfigDirtyFlags::Notification)) {
+        _impl->notifyOnCommandFinish = config.notify_on_command_finish;
+        _impl->screen->setNotifyAfterSeconds(config.notify_after_seconds);
+    }
+
     [self setNeedsRender];
+}
+
+#pragma mark - Command finish notification
+
+- (void)postCommandFinishNotification:(double)duration {
+    UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+
+    // Request permission if needed (no-op if already granted)
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError* _Nullable error) {
+        if (!granted) return;
+
+        UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
+        content.title = @"Command finished";
+        content.body = [NSString stringWithFormat:@"Completed in %.1fs", duration];
+        content.sound = [UNNotificationSound defaultSound];
+
+        UNNotificationRequest* request =
+            [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
+                                                 content:content
+                                                 trigger:nil];
+        [center addNotificationRequest:request withCompletionHandler:^(NSError* _Nullable err) {
+            if (err) {
+                NSLog(@"BreadTerminal: notification error: %@", err.localizedDescription);
+            }
+        }];
+    }];
 }
 
 #pragma mark - Socket API accessors

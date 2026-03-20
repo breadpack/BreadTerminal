@@ -1,12 +1,14 @@
 #include "arg_parser.h"
 #include "cli_client.h"
+#include "hooks_installer.h"
+#include "local_commands.h"
 #include "output_formatter.h"
 
 #include <iostream>
 #include <nlohmann/json.hpp>
 
 int main(int argc, char* argv[]) {
-    auto args = breadterminal::parseArgs(argc, argv);
+    auto args = bread::parseArgs(argc, argv);
     if (!args.valid) {
         if (!args.error.empty()) {
             std::cerr << "Error: " << args.error << "\n";
@@ -14,11 +16,28 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Build JSON-RPC request
-    std::string request_json = breadterminal::buildRequestJson(args);
+    // Handle local commands that don't need server connection
+    if (args.type == bread::CommandType::LocalCommand) {
+        switch (args.local_cmd) {
+            case bread::LocalCmd::HooksInstall:
+                return bread::installHooks();
+            case bread::LocalCmd::Identify:
+                return bread::cmdIdentify(args);
+            case bread::LocalCmd::Capabilities:
+                return bread::cmdCapabilities(args);
+            case bread::LocalCmd::GetText:
+                return bread::cmdGetText(args);
+            case bread::LocalCmd::None:
+                break;
+        }
+        return 0;
+    }
+
+    // Remote RPC command: build JSON-RPC request
+    std::string request_json = bread::buildRequestJson(args);
 
     // Connect to server
-    breadterminal::CliClient client;
+    bread::CliClient client;
     if (!client.connect(args.socket_path, args.timeout_ms)) {
         std::cerr << "Error: " << client.lastError() << "\n";
         return 1;
@@ -45,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     // Format and print
     int exit_code = 0;
-    std::string output = breadterminal::formatResponse(response, args.json_output, exit_code);
+    std::string output = bread::formatResponse(response, args.json_output, exit_code);
 
     if (exit_code != 0) {
         std::cerr << output;

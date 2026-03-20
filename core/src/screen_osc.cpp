@@ -147,6 +147,23 @@ void Screen::handleOscWorkingDirectory(const std::string& str) {
     }
 }
 
+// --- URI scheme validation helper ---
+static bool isAllowedUriScheme(const std::string& uri) {
+    // Extract scheme (everything before "://") or before ":"
+    auto colon = uri.find(':');
+    if (colon == std::string::npos || colon == 0) return false;
+
+    std::string scheme;
+    scheme.reserve(colon);
+    for (size_t i = 0; i < colon; ++i) {
+        scheme += static_cast<char>(std::tolower(static_cast<unsigned char>(uri[i])));
+    }
+
+    // Allow only safe schemes
+    return scheme == "http" || scheme == "https" ||
+           scheme == "mailto" || scheme == "ssh" || scheme == "file";
+}
+
 // --- OSC 8: Hyperlink ---
 void Screen::handleOscHyperlink(const std::string& str) {
     // Format: params;uri
@@ -154,14 +171,21 @@ void Screen::handleOscHyperlink(const std::string& str) {
     auto semi = str.find(';');
     if (semi == std::string::npos) {
         // Malformed; treat entire string as URI
-        current_hyperlink_ = str;
+        if (isAllowedUriScheme(str)) {
+            current_hyperlink_ = str;
+        } else {
+            current_hyperlink_.clear();
+        }
         return;
     }
     auto uri = str.substr(semi + 1);
     if (uri.empty()) {
         current_hyperlink_.clear();
-    } else {
+    } else if (isAllowedUriScheme(uri)) {
         current_hyperlink_ = uri;
+    } else {
+        // Reject URIs with disallowed schemes (javascript:, data:, etc.)
+        current_hyperlink_.clear();
     }
 }
 
@@ -241,84 +265,51 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     //          C (input end/output start), D (output end)
     if (str.empty()) return;
 
+    int absolute_row = static_cast<int>(scrollback_.size()) + cursor_.row;
+
     switch (str[0]) {
     case 'A':
         prompt_state_ = PromptState::Prompt;
-        // Record prompt marker at current cursor position
-        {
-            PromptMarker marker;
-            marker.scrollback_offset = static_cast<int>(scrollback_.size());
-            marker.row = cursor_.row;
-            prompt_markers_.push_back(marker);
-        }
+        prompt_rows_.push_back(absolute_row);
+        prompt_markers_.push_back({absolute_row, PromptState::Prompt});
         // If a command was active, fire finish callback
-        if (command_timing_.active) {
-            command_timing_.active = false;
-            if (command_finish_callback_) {
-                auto elapsed = std::chrono::steady_clock::now() - command_timing_.start;
-                float seconds = std::chrono::duration<float>(elapsed).count();
-                if (seconds > 5.0f) {
-                    command_finish_callback_(seconds);
-                }
+        if (command_running_ && command_finish_callback_) {
+            auto now = std::chrono::steady_clock::now();
+            double duration = std::chrono::duration<double>(now - command_start_time_).count();
+            if (duration >= static_cast<double>(notify_after_seconds_)) {
+                command_finish_callback_(duration);
             }
         }
+        command_running_ = false;
         break;
     case 'B':
         prompt_state_ = PromptState::Input;
+        prompt_markers_.push_back({absolute_row, PromptState::Input});
         break;
     case 'C':
         prompt_state_ = PromptState::Output;
-        // Command started: record start time
-        command_timing_.start = std::chrono::steady_clock::now();
-        command_timing_.active = true;
+        prompt_markers_.push_back({absolute_row, PromptState::Output});
+        // Record command start time for completion notifications
+        command_start_time_ = std::chrono::steady_clock::now();
+        command_running_ = true;
         break;
-    case 'D':
+    case 'D': {
         prompt_state_ = PromptState::None;
-        // Output end: fire finish callback if command was active
-        if (command_timing_.active) {
-            command_timing_.active = false;
-            if (command_finish_callback_) {
-                auto elapsed = std::chrono::steady_clock::now() - command_timing_.start;
-                float seconds = std::chrono::duration<float>(elapsed).count();
-                if (seconds > 5.0f) {
-                    command_finish_callback_(seconds);
-                }
+        prompt_markers_.push_back({absolute_row, PromptState::None});
+        // Compute command duration and fire callback if threshold exceeded
+        if (command_running_ && command_finish_callback_) {
+            auto now = std::chrono::steady_clock::now();
+            double duration = std::chrono::duration<double>(now - command_start_time_).count();
+            if (duration >= static_cast<double>(notify_after_seconds_)) {
+                command_finish_callback_(duration);
             }
         }
+        command_running_ = false;
         break;
+    }
     default:
         break;
     }
-}
-
-// --- Prompt navigation ---
-int Screen::nextPromptRow(int current_row) const {
-    // Find the nearest prompt marker below current_row
-    int best = -1;
-    for (const auto& marker : prompt_markers_) {
-        // Convert marker to an absolute row relative to current scrollback
-        int abs_row = marker.row - (static_cast<int>(scrollback_.size()) - marker.scrollback_offset);
-        if (abs_row > current_row) {
-            if (best < 0 || abs_row < best) {
-                best = abs_row;
-            }
-        }
-    }
-    return best;
-}
-
-int Screen::prevPromptRow(int current_row) const {
-    // Find the nearest prompt marker above current_row
-    int best = -1;
-    for (const auto& marker : prompt_markers_) {
-        int abs_row = marker.row - (static_cast<int>(scrollback_.size()) - marker.scrollback_offset);
-        if (abs_row < current_row) {
-            if (best < 0 || abs_row > best) {
-                best = abs_row;
-            }
-        }
-    }
-    return best;
 }
 
 // --- OSC 4: Set/query palette color ---
@@ -479,6 +470,57 @@ void Screen::handleOscResetColor(int osc_number, const std::string& str) {
             dynamic_color_callback_({slot, 0});
         }
     }
+}
+
+// --- Prompt navigation methods ---
+
+int Screen::previousPromptRow(int from_row) const {
+    // from_row is an absolute row (scrollback + visible).
+    // Search prompt_rows_ for the nearest row strictly above from_row.
+    int best = -1;
+    for (int r : prompt_rows_) {
+        if (r < from_row) {
+            best = r;
+        }
+    }
+    return best;
+}
+
+int Screen::nextPromptRow(int from_row) const {
+    // Search prompt_rows_ for the nearest row strictly below from_row.
+    for (int r : prompt_rows_) {
+        if (r > from_row) {
+            return r;
+        }
+    }
+    return -1;
+}
+
+std::pair<int,int> Screen::outputRegionAt(int row) const {
+    // Find the output region containing or nearest to the given absolute row.
+    // Output region: from a 'C' marker to the next 'A' marker (or end of content).
+    int output_start = -1;
+    int output_end = -1;
+
+    for (size_t i = 0; i < prompt_markers_.size(); ++i) {
+        if (prompt_markers_[i].type == PromptState::Output &&
+            prompt_markers_[i].absolute_row <= row) {
+            output_start = prompt_markers_[i].absolute_row;
+            // Find the end: next A marker or end of content
+            output_end = static_cast<int>(scrollback_.size()) + rows_;
+            for (size_t j = i + 1; j < prompt_markers_.size(); ++j) {
+                if (prompt_markers_[j].type == PromptState::Prompt) {
+                    output_end = prompt_markers_[j].absolute_row;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (output_start >= 0 && row < output_end) {
+        return {output_start, output_end};
+    }
+    return {-1, -1};
 }
 
 } // namespace termcore

@@ -92,6 +92,63 @@ static const Theme kBuiltinThemes[] = {
             0x83a598, 0xd3869b, 0x8ec07c, 0xebdbb2,
         },
     },
+    // --- Light themes ---
+    {
+        "Solarized Light",
+        0xfdf6e3, // background
+        0x657b83, // foreground
+        0x586e75, // cursor_color
+        0xeee8d5, // selection_background
+        0x586e75, // selection_foreground
+        {
+            0x073642, 0xdc322f, 0x859900, 0xb58900,
+            0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+            0x002b36, 0xcb4b16, 0x586e75, 0x657b83,
+            0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+        },
+    },
+    {
+        "Catppuccin Latte",
+        0xeff1f5, // background
+        0x4c4f69, // foreground
+        0xdc8a78, // cursor_color
+        0xacb0be, // selection_background
+        0x4c4f69, // selection_foreground
+        {
+            0x5c5f77, 0xd20f39, 0x40a02b, 0xdf8e1d,
+            0x1e66f5, 0xea76cb, 0x179299, 0xbcc0cc,
+            0x6c6f85, 0xd20f39, 0x40a02b, 0xdf8e1d,
+            0x1e66f5, 0xea76cb, 0x179299, 0xacb0be,
+        },
+    },
+    {
+        "GitHub Light",
+        0xffffff, // background
+        0x24292e, // foreground
+        0x044289, // cursor_color
+        0xc8c8fa, // selection_background
+        0x24292e, // selection_foreground
+        {
+            0x24292e, 0xcf222e, 0x116329, 0x4d2d00,
+            0x0550ae, 0x8250df, 0x1b7c83, 0x6e7781,
+            0x57606a, 0xa40e26, 0x1a7f37, 0x633c01,
+            0x0969da, 0x6639ba, 0x3192aa, 0x8c959f,
+        },
+    },
+    {
+        "Gruvbox Light",
+        0xfbf1c7, // background
+        0x3c3836, // foreground
+        0x3c3836, // cursor_color
+        0xd5c4a1, // selection_background
+        0x3c3836, // selection_foreground
+        {
+            0xfbf1c7, 0xcc241d, 0x98971a, 0xd79921,
+            0x458588, 0xb16286, 0x689d6a, 0x7c6f64,
+            0x928374, 0x9d0006, 0x79740e, 0xb57614,
+            0x076678, 0x8f3f71, 0x427b58, 0x3c3836,
+        },
+    },
 };
 // clang-format on
 

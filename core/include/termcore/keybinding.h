@@ -37,6 +37,10 @@ enum class Action : uint16_t {
     FontIncrease, FontDecrease, FontReset,
     // Misc
     ResetTerminal, ClearScrollback, ShowNotifications, ReloadConfig,
+    // Prompt navigation (OSC 133)
+    JumpPromptUp, JumpPromptDown,
+    // Copy mode (vi-style navigation)
+    EnterCopyMode,
     // Sidebar / Workspace
     ToggleSidebar,
     SwitchWorkspace1, SwitchWorkspace2, SwitchWorkspace3, SwitchWorkspace4,

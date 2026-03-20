@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace breadterminal {
+namespace bread {
 
 /// Minimal Unix socket client for JSON-RPC communication.
 class CliClient {
@@ -26,4 +26,4 @@ private:
     std::string error_;
 };
 
-}  // namespace breadterminal
+}  // namespace bread

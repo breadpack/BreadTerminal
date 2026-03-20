@@ -19,6 +19,7 @@ enum class ConfigDirtyFlags : uint32_t {
     Opacity     = 1 << 7,   // background_opacity, background_blur
     Clipboard   = 1 << 8,   // clipboard_paste_protection, clipboard_paste_bracketed_safe
     Sidebar     = 1 << 9,   // sidebar_visible, sidebar_width
+    Notification = 1 << 10,  // notify_on_command_finish, notify_after_seconds
 };
 
 inline ConfigDirtyFlags operator|(ConfigDirtyFlags a, ConfigDirtyFlags b) {

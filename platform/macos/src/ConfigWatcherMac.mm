@@ -2,12 +2,26 @@
 
 #include "termcore/config.h"
 #include "termcore/config_diff.h"
+#include "termcore/theme_loader.h"
+
+#import <Cocoa/Cocoa.h>
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <dispatch/dispatch.h>
 
 namespace termcore {
+
+namespace {
+bool detectSystemIsDark() {
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName match = [NSApp.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[NSAppearanceNameDarkAqua, NSAppearanceNameAqua]];
+        return [match isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return true;  // Pre-Mojave: assume dark
+}
+} // namespace
 
 ConfigWatcherMac::ConfigWatcherMac() = default;
 
@@ -25,7 +39,8 @@ void ConfigWatcherMac::start(const std::string& path, ConfigReloadCallback callb
     try {
         last_good_config_ = parseConfigFile(path_);
         if (!last_good_config_.theme.empty()) {
-            auto* theme = getBuiltinTheme(last_good_config_.theme);
+            std::string resolved = resolveThemeForAppearance(last_good_config_.theme, detectSystemIsDark());
+            auto theme = findTheme(resolved);
             if (theme) applyTheme(last_good_config_, *theme);
         }
     } catch (...) {
@@ -38,6 +53,9 @@ void ConfigWatcherMac::start(const std::string& path, ConfigReloadCallback callb
 
 void ConfigWatcherMac::stop() {
     running_ = false;
+
+    // Signal all captured blocks that the watcher is no longer valid.
+    alive_->store(false);
 
     if (debounce_timer_) {
         dispatch_source_cancel(debounce_timer_);
@@ -55,6 +73,9 @@ void ConfigWatcherMac::stop() {
     }
 
     callback_ = nullptr;
+
+    // Allocate a fresh alive flag for any future start() call.
+    alive_ = std::make_shared<std::atomic<bool>>(true);
 }
 
 void ConfigWatcherMac::reloadNow() {
@@ -92,11 +113,13 @@ void ConfigWatcherMac::openAndWatch() {
         return;
     }
 
-    // Prevent captures from preventing destruction
+    // Capture a shared alive flag so dispatch blocks can safely detect
+    // that stop() has been called, even if the C++ object is already freed.
     __block ConfigWatcherMac* watcher = this;
+    std::shared_ptr<std::atomic<bool>> aliveFlag = alive_;
 
     dispatch_source_set_event_handler(source_, ^{
-        if (!watcher->running_) return;
+        if (!aliveFlag->load() || !watcher->running_) return;
 
         unsigned long flags = dispatch_source_get_data(watcher->source_);
 
@@ -112,9 +135,10 @@ void ConfigWatcherMac::openAndWatch() {
                 watcher->fd_ = -1;
             }
             // Re-open with retry (editor may atomically replace files)
+            std::shared_ptr<std::atomic<bool>> innerAlive = aliveFlag;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
                            dispatch_get_main_queue(), ^{
-                if (watcher->running_) {
+                if (innerAlive->load() && watcher->running_) {
                     watcher->openAndWatch();
                     // Also trigger a reload since the file was replaced
                     watcher->doReload();
@@ -135,11 +159,12 @@ void ConfigWatcherMac::openAndWatch() {
             dispatch_source_set_timer(watcher->debounce_timer_,
                                       dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC),
                                       DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
+            std::shared_ptr<std::atomic<bool>> timerAlive = aliveFlag;
             dispatch_source_set_event_handler(watcher->debounce_timer_, ^{
-                if (watcher->running_) {
+                if (timerAlive->load() && watcher->running_) {
                     watcher->doReload();
                 }
-                if (watcher->debounce_timer_) {
+                if (timerAlive->load() && watcher->debounce_timer_) {
                     dispatch_source_cancel(watcher->debounce_timer_);
                     watcher->debounce_timer_ = nullptr;
                 }
@@ -161,7 +186,8 @@ void ConfigWatcherMac::doReload() {
     try {
         Config new_config = parseConfigFile(path_);
         if (!new_config.theme.empty()) {
-            auto* theme = getBuiltinTheme(new_config.theme);
+            std::string resolved = resolveThemeForAppearance(new_config.theme, detectSystemIsDark());
+            auto theme = findTheme(resolved);
             if (theme) applyTheme(new_config, *theme);
         }
 

@@ -1,9 +1,21 @@
 #include "termcore/socket/socket_server.h"
 #include "termcore/socket/jsonrpc.h"
 
+#include <chrono>
 #include <cstdlib>
+#include <thread>
 
 namespace termcore {
+
+/// Constant-time string comparison to prevent timing side-channel attacks.
+static bool constantTimeEqual(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    volatile unsigned char result = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        result |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+    }
+    return result == 0;
+}
 
 SocketServer::SocketServer(std::unique_ptr<ISocketTransport> transport,
                            std::shared_ptr<CommandDispatcher> dispatcher)
@@ -57,7 +69,10 @@ void SocketServer::acceptLoop() {
     while (running_.load()) {
         int client_fd = transport_->acceptClient();
         if (client_fd < 0) {
-            // Shutdown or error
+            // Avoid busy-spin on persistent errors; sleep briefly before retrying.
+            if (running_.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
             continue;
         }
         // Spawn a detached thread per client
@@ -96,7 +111,7 @@ void SocketServer::clientLoop(int fd) {
                 if (!auth_token_.empty()) {
                     if (!req.params.contains("_auth") ||
                         !req.params["_auth"].is_string() ||
-                        req.params["_auth"].get<std::string>() != auth_token_) {
+                        !constantTimeEqual(req.params["_auth"].get<std::string>(), auth_token_)) {
                         auth_ok = false;
                     } else {
                         // Strip _auth before dispatching

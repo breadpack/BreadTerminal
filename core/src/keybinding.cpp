@@ -82,6 +82,9 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"clear_scrollback", Action::ClearScrollback},
         {"show_notifications", Action::ShowNotifications},
         {"reload_config", Action::ReloadConfig},
+        {"jump_prompt_up", Action::JumpPromptUp},
+        {"jump_prompt_down", Action::JumpPromptDown},
+        {"enter_copy_mode", Action::EnterCopyMode},
         {"toggle_sidebar", Action::ToggleSidebar},
         {"switch_workspace_1", Action::SwitchWorkspace1},
         {"switch_workspace_2", Action::SwitchWorkspace2},
@@ -230,17 +233,13 @@ void KeybindingManager::initDefaults() {
     b("cmd+-",       Action::FontDecrease);
     b("cmd+0",       Action::FontReset);
     b("cmd+k",       Action::ClearScrollback);
+    b("cmd+up",      Action::JumpPromptUp);
+    b("cmd+down",    Action::JumpPromptDown);
     b("cmd+n",       Action::NewWindow);
     b("cmd+shift+,", Action::ReloadConfig);
+    b("cmd+shift+x", Action::EnterCopyMode);
     b("cmd+shift+b", Action::ToggleSidebar);
-    b("cmd+1",       Action::SwitchWorkspace1);
-    b("cmd+2",       Action::SwitchWorkspace2);
-    b("cmd+3",       Action::SwitchWorkspace3);
-    b("cmd+4",       Action::SwitchWorkspace4);
-    b("cmd+5",       Action::SwitchWorkspace5);
-    b("cmd+6",       Action::SwitchWorkspace6);
-    b("cmd+7",       Action::SwitchWorkspace7);
-    b("cmd+8",       Action::SwitchWorkspace8);
+    // Cmd+1~9 reserved for native macOS tab switching (handled by menu system)
 }
 
 } // namespace termcore

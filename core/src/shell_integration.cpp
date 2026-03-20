@@ -71,6 +71,12 @@ printf '\033]133;A\007'
 
 # OSC 133;B — prompt end (inserted via PS1 suffix)
 PS1="${PS1}\[\033]133;B\007\]"
+
+# SSH wrapper: downgrade TERM for remote hosts that lack our terminfo
+__breadterm_ssh() {
+    TERM="${BREADTERMINAL_SSH_TERM:-xterm-256color}" command ssh "$@"
+}
+alias ssh=__breadterm_ssh
 )SCRIPT";
 
 static const char* zsh_integration_script = R"SCRIPT(
@@ -105,6 +111,12 @@ precmd_functions+=(__breadterm_prompt_end)
 __breadterm_prompt_end() {
     PS1="${PS1}%{$(printf '\033]133;B\007')%}"
 }
+
+# SSH wrapper: downgrade TERM for remote hosts that lack our terminfo
+__breadterm_ssh() {
+    TERM="${BREADTERMINAL_SSH_TERM:-xterm-256color}" command ssh "$@"
+}
+alias ssh=__breadterm_ssh
 )SCRIPT";
 
 static const char* fish_integration_script = R"SCRIPT(
@@ -131,6 +143,12 @@ function __breadterm_fish_postexec --on-event fish_postexec
     printf '\033]133;D;%s\007' $status
     # OSC 7 — report current working directory
     printf '\033]7;file://%s%s\007' (hostname) $PWD
+end
+
+# SSH wrapper: downgrade TERM for remote hosts that lack our terminfo
+function ssh --wraps=ssh
+    set -lx TERM (set -q BREADTERMINAL_SSH_TERM; and echo $BREADTERMINAL_SSH_TERM; or echo xterm-256color)
+    command ssh $argv
 end
 )SCRIPT";
 

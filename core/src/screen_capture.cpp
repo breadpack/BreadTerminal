@@ -57,11 +57,11 @@ ScreenCapture::captureStructured(const Screen& screen, int line_count) {
         if (next <= pr) break;  // avoid infinite loop
         pr = next;
     }
-    // Also check prevPromptRow from the bottom
-    pr = screen.prevPromptRow(total_rows);
+    // Also check previousPromptRow from the bottom
+    pr = screen.previousPromptRow(total_rows);
     while (pr >= 0 && pr < total_rows) {
         is_prompt_row[pr] = true;
-        int prev = screen.prevPromptRow(pr);
+        int prev = screen.previousPromptRow(pr);
         if (prev >= pr) break;
         pr = prev;
     }

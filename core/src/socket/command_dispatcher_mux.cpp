@@ -72,11 +72,44 @@ rpc::Response CommandDispatcher::handleWorkspaceList(
     for (WorkspaceId wid = 1; wid <= 1000; ++wid) {
         auto* ws = mux_.getWorkspace(wid);
         if (!ws) continue;
+
+        std::string ws_ref = "ws:" + std::to_string(ws->id);
+
+        // Build nested tabs with ref IDs
+        nlohmann::json tabs_arr = nlohmann::json::array();
+        for (const auto& tab : ws->tabs) {
+            std::string tab_ref = ws_ref + "/tab:" + std::to_string(tab->id);
+            auto all_panes = mux_.allPanes(wid, tab->id);
+            auto active_pane = mux_.activePaneId(wid, tab->id);
+
+            // Build nested panes with ref IDs
+            nlohmann::json panes_arr = nlohmann::json::array();
+            for (auto pid : all_panes) {
+                std::string pane_ref = tab_ref + "/pane:" + std::to_string(pid);
+                panes_arr.push_back({
+                    {"id", pid},
+                    {"ref", pane_ref},
+                    {"is_active", pid == active_pane}
+                });
+            }
+
+            tabs_arr.push_back({
+                {"id", tab->id},
+                {"ref", tab_ref},
+                {"title", tab->title},
+                {"pane_count", all_panes.size()},
+                {"active_pane_id", active_pane},
+                {"panes", panes_arr}
+            });
+        }
+
         workspaces.push_back({
             {"id", ws->id},
+            {"ref", ws_ref},
             {"name", ws->name},
             {"tab_count", ws->tabs.size()},
-            {"active", ws->id == active_ws}
+            {"active", ws->id == active_ws},
+            {"tabs", tabs_arr}
         });
     }
 
@@ -140,14 +173,16 @@ rpc::Response CommandDispatcher::handleTabList(
         return rpc::makeError(id, rpc::kNotFound, "Workspace not found");
     }
 
+    std::string ws_ref = "ws:" + std::to_string(ws_id);
+
     nlohmann::json tabs = nlohmann::json::array();
     for (const auto& tab : ws->tabs) {
-        std::vector<PaneId> panes;
-        // Collect panes from tab's root
+        std::string tab_ref = ws_ref + "/tab:" + std::to_string(tab->id);
         auto all_panes = mux_.allPanes(ws_id, tab->id);
         auto active_pane = mux_.activePaneId(ws_id, tab->id);
         tabs.push_back({
             {"id", tab->id},
+            {"ref", tab_ref},
             {"title", tab->title},
             {"pane_count", all_panes.size()},
             {"active_pane_id", active_pane}
@@ -255,10 +290,15 @@ rpc::Response CommandDispatcher::handlePaneList(
     auto panes = mux_.allPanes(ws_id, tab_id);
     auto active = mux_.activePaneId(ws_id, tab_id);
 
+    std::string base_ref = "ws:" + std::to_string(ws_id)
+                         + "/tab:" + std::to_string(tab_id);
+
     nlohmann::json pane_list = nlohmann::json::array();
     for (auto pid : panes) {
+        std::string pane_ref = base_ref + "/pane:" + std::to_string(pid);
         pane_list.push_back({
             {"id", pid},
+            {"ref", pane_ref},
             {"is_active", pid == active}
         });
     }

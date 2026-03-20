@@ -104,6 +104,7 @@ add_executable(BreadTerminal MACOSX_BUNDLE
     src/FontCardView.mm
     src/FontDownloader.mm
     src/FontHubViewController.mm
+    src/QuickTerminalPanel.mm
 )
 
 target_include_directories(BreadTerminal PRIVATE
@@ -121,6 +122,9 @@ target_link_libraries(BreadTerminal PRIVATE
     "-framework QuartzCore"
     "-framework CoreText"
     "-framework CoreGraphics"
+    "-framework CoreVideo"
+    "-framework UserNotifications"
+    "-framework Carbon"
 )
 
 # Enable Objective-C++ with ARC for app source files
@@ -148,6 +152,7 @@ set_source_files_properties(
     src/FontCardView.mm
     src/FontDownloader.mm
     src/FontHubViewController.mm
+    src/QuickTerminalPanel.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
 )
 

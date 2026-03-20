@@ -52,8 +52,14 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
 
     // --- WindowSize ---
     if (old_cfg.window_width != new_cfg.window_width ||
-        old_cfg.window_height != new_cfg.window_height) {
+        old_cfg.window_height != new_cfg.window_height ||
+        old_cfg.window_padding != new_cfg.window_padding) {
         flags |= ConfigDirtyFlags::WindowSize;
+    }
+
+    // --- Minimum contrast ---
+    if (std::abs(old_cfg.minimum_contrast - new_cfg.minimum_contrast) > 0.001f) {
+        flags |= ConfigDirtyFlags::Colors;
     }
 
     // --- Theme ---
@@ -77,6 +83,12 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
     if (old_cfg.sidebar_visible != new_cfg.sidebar_visible ||
         old_cfg.sidebar_width != new_cfg.sidebar_width) {
         flags |= ConfigDirtyFlags::Sidebar;
+    }
+
+    // --- Notification ---
+    if (old_cfg.notify_on_command_finish != new_cfg.notify_on_command_finish ||
+        std::abs(old_cfg.notify_after_seconds - new_cfg.notify_after_seconds) > 0.001f) {
+        flags |= ConfigDirtyFlags::Notification;
     }
 
     return flags;

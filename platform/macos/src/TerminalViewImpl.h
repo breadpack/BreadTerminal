@@ -22,6 +22,9 @@
 
 #include <dispatch/dispatch.h>
 #include <memory>
+#include <mutex>
+#include <CoreVideo/CVDisplayLink.h>
+#import <QuartzCore/CADisplayLink.h>
 
 /// Private C++ implementation details for TerminalView.
 struct TerminalViewImpl {
@@ -43,16 +46,59 @@ struct TerminalViewImpl {
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
     __strong dispatch_source_t ptyReadSource = nullptr;
-    NSTimer* renderTimer = nil;
-    bool needsRender = false;
+
+    // --- Display link / timer ---
+    CADisplayLink* displayLink API_AVAILABLE(macos(14.0)) = nil;
+    CVDisplayLinkRef cvDisplayLink = nullptr;  // fallback for < macOS 14
+    bool useCADisplayLink = false;
+    // renderTimer removed — replaced by CADisplayLink / CVDisplayLink
+
+    // --- PTY serial queue + mutex ---
+    dispatch_queue_t ptyQueue = nullptr;
+    std::mutex screenMutex;
+
+    // --- Idle downclock ---
+    uint64_t lastActivityTime = 0;  // mach_absolute_time
+    bool idleMode = false;
+    NSTimer* idleTimer = nil;  // fires at reduced rate when idle
+
+    bool needsRender = true;  // Start with initial render needed
+    bool notifyOnCommandFinish = true;
+    int windowPadding = 0;  // logical pixels, stored for grid calculation
+    std::string currentThemeString;  // Stores the raw theme config value (may be adaptive)
+
+    // Copy mode state (vi-style keyboard navigation)
+    bool copyModeActive = false;
+    int copyModeCursorRow = 0;    // Visible row (can be negative for scrollback)
+    int copyModeCursorCol = 0;
+    bool copyModeSelecting = false;
+    bool copyModeLineSelect = false;
+    int copyModeSelectStartRow = 0;
+    int copyModeSelectStartCol = 0;
+    bool copyModeSearchMode = false;  // '/' search input active
+    bool copyModeWaitingG = false;    // Waiting for second 'g' in 'gg'
 
     ~TerminalViewImpl() {
         if (ptyReadSource) {
             dispatch_source_cancel(ptyReadSource);
             ptyReadSource = nullptr;
         }
-        [renderTimer invalidate];
-        renderTimer = nil;
+
+        // Stop display link
+        if (@available(macOS 14.0, *)) {
+            if (useCADisplayLink && displayLink) {
+                [displayLink invalidate];
+                displayLink = nil;
+            }
+        }
+        if (cvDisplayLink) {
+            CVDisplayLinkStop(cvDisplayLink);
+            CVDisplayLinkRelease(cvDisplayLink);
+            cvDisplayLink = nullptr;
+        }
+
+        [idleTimer invalidate];
+        idleTimer = nil;
     }
 };
 
@@ -67,6 +113,7 @@ struct TerminalViewImpl {
     NSPoint _selectionStart;
     NSPoint _selectionEnd;
     BOOL _selecting;
+    BOOL _blockSelection;   // Alt+drag rectangular selection
     int _scrollOffset;
     BOOL _searchActive;
     NSTextField* _searchField;
@@ -75,17 +122,25 @@ struct TerminalViewImpl {
     // IME composition state
     NSString* _markedText;
     NSRange _markedSelectedRange;
+    // Copy mode indicator label
+    NSTextField* _copyModeLabel;
     // Note: _termRows and _termCols are synthesized properties on TerminalView.
 }
 
 /// Internal helper: write raw bytes to the PTY.
 - (void)writePty:(const char*)str;
 
+/// Render a single frame (called by display link or idle timer).
+- (void)renderFrame;
+
 /// Accessors for socket API integration.
 - (termcore::Mux&)mux;
 - (termcore::NotificationStore&)notifications;
 - (termcore::AgentTracker&)agentTracker;
 - (termcore::Pty*)pty;
+
+/// Post a macOS desktop notification for command completion.
+- (void)postCommandFinishNotification:(double)duration;
 
 @end
 

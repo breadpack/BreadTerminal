@@ -12,6 +12,15 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#include <io.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -294,27 +303,51 @@ bool SessionManager::save(const SessionData& data, const std::string& dir) {
     }
     j["workspaces"] = workspaces_j;
 
-    // Atomic write: write to tmp file, then rename
+    // Atomic write: write to tmp file, then rename into place.
     std::string tmp_path = filepath + ".tmp";
+    std::string json_str = j.dump(2);
     {
-        std::ofstream ofs(tmp_path, std::ios::binary);
-        if (!ofs) return false;
-        ofs << j.dump(2);
-        if (!ofs) return false;
-    }
-
-    // Set permissions 0600
-    fs::permissions(tmp_path,
-                    fs::perms::owner_read | fs::perms::owner_write,
-                    fs::perm_options::replace, ec);
-    if (ec) {
-        fs::remove(tmp_path, ec);
-        return false;
+#if defined(_WIN32)
+        int fd = -1;
+        _sopen_s(&fd, tmp_path.c_str(), _O_CREAT | _O_WRONLY | _O_TRUNC,
+                  _SH_DENYWR, _S_IREAD | _S_IWRITE);
+        if (fd < 0) return false;
+        size_t total = 0;
+        while (total < json_str.size()) {
+            int n = _write(fd, json_str.data() + total,
+                           static_cast<unsigned>(json_str.size() - total));
+            if (n < 0) {
+                _close(fd);
+                fs::remove(tmp_path, ec);
+                return false;
+            }
+            total += static_cast<size_t>(n);
+        }
+        _close(fd);
+#else
+        int fd = ::open(tmp_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+        if (fd < 0) return false;
+        size_t total = 0;
+        while (total < json_str.size()) {
+            ssize_t n = ::write(fd, json_str.data() + total, json_str.size() - total);
+            if (n < 0) {
+                ::close(fd);
+                ::unlink(tmp_path.c_str());
+                return false;
+            }
+            total += static_cast<size_t>(n);
+        }
+        ::close(fd);
+#endif
     }
 
     fs::rename(tmp_path, filepath, ec);
     if (ec) {
+#if defined(_WIN32)
         fs::remove(tmp_path, ec);
+#else
+        ::unlink(tmp_path.c_str());
+#endif
         return false;
     }
 

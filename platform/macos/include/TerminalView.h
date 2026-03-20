@@ -53,6 +53,10 @@ enum class Action : uint16_t;
 /// Show a transient config error banner at the top of the view.
 - (void)showConfigError:(NSString*)message;
 
+/// Apply a named theme (resolves from built-in and user themes).
+/// Updates screen dynamic colors and triggers re-render.
+- (void)applyThemeByName:(const std::string&)themeName;
+
 @property (nonatomic, readonly) int termRows;
 @property (nonatomic, readonly) int termCols;
 
@@ -78,6 +82,18 @@ enum class Action : uint16_t;
 
 /// Capture debug screenshot + state dump (Cmd+Shift+S)
 - (void)captureScreenshot;
+
+/// Enter copy mode (vi-style navigation).
+- (void)enterCopyMode;
+
+/// Exit copy mode and reset all state.
+- (void)exitCopyMode;
+
+/// Handle a key event while in copy mode.
+- (BOOL)handleCopyModeKey:(NSEvent*)event;
+
+/// Yank (copy) the current copy mode selection to clipboard.
+- (void)copyModeYank;
 
 @end
 

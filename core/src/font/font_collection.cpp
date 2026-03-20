@@ -269,6 +269,9 @@ float FontCollection::calculateScaleFactor(FontFaceId face_id) {
 }
 
 CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
+    // Cap the font chain to prevent unbounded growth
+    static constexpr size_t kMaxChainSize = 32;
+
     FontStyle style = FontStyle::Regular;
     if (!chain_.empty()) {
         style = chain_[0].descriptor.style;
@@ -294,6 +297,12 @@ CollectionFaceId FontCollection::trySystemFallback(char32_t codepoint) {
             codepoint_cache_[codepoint] = SIZE_MAX;
             return kInvalidCollectionFace;
         }
+    }
+
+    // Don't add more fonts if chain is at max capacity
+    if (chain_.size() >= kMaxChainSize) {
+        codepoint_cache_[codepoint] = SIZE_MAX;
+        return kInvalidCollectionFace;
     }
 
     // Add new font to chain

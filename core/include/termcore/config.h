@@ -2,6 +2,7 @@
 #define TERMCORE_CONFIG_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +38,13 @@ struct Config {
     // Window
     int window_width = 800;
     int window_height = 600;
+    int window_padding = 0;           // pixels, all sides
+
+    // Minimum contrast ratio (WCAG 2.0): 1.0 = disabled, up to 21.0
+    float minimum_contrast = 1.0f;
+
+    // Quick terminal / visor mode hotkey (e.g., "ctrl+`")
+    std::string quick_terminal_hotkey;
 
     // Terminal
     int scrollback_limit = 10000;
@@ -51,6 +59,10 @@ struct Config {
 
     // OSC 52 clipboard write from applications (default: false for security)
     bool allow_clipboard_write = false;
+
+    // Command completion notifications
+    bool notify_on_command_finish = true;
+    float notify_after_seconds = 5.0f;  // only notify if command took > N seconds
 
     // Background transparency
     float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
@@ -110,6 +122,22 @@ std::vector<std::string> listBuiltinThemes();
 
 /// Apply a theme to a config.
 void applyTheme(Config& config, const Theme& theme);
+
+/// Parsed adaptive theme: dark and light theme names from "dark:name,light:name" format.
+struct AdaptiveTheme {
+    std::string dark_theme;
+    std::string light_theme;
+};
+
+/// Check if a theme string uses adaptive "dark:name,light:name" format.
+bool isAdaptiveTheme(const std::string& theme_str);
+
+/// Parse an adaptive theme string. Returns nullopt if not in adaptive format.
+std::optional<AdaptiveTheme> parseAdaptiveTheme(const std::string& theme_str);
+
+/// Resolve theme name for current appearance mode (true = dark, false = light).
+/// If the theme is adaptive, returns the appropriate variant; otherwise returns the theme as-is.
+std::string resolveThemeForAppearance(const std::string& theme_str, bool is_dark);
 
 } // namespace termcore
 #endif

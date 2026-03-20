@@ -18,7 +18,7 @@ public:
     };
     struct CsiEvent {
         char32_t final_char;
-        std::vector<int> params;
+        std::vector<VtParam> params;
         std::string intermediates;
     };
     struct EscEvent {
@@ -43,7 +43,7 @@ public:
         executes.push_back({byte});
     }
     void onCsiDispatch(char32_t final_char,
-                       const std::vector<int>& params,
+                       const std::vector<VtParam>& params,
                        const std::string& intermediates) override {
         csis.push_back({final_char, params, intermediates});
     }
@@ -86,7 +86,7 @@ TEST_F(VtParserTest, CsiEraseDisplay) {
     ASSERT_EQ(handler.csis.size(), 1u);
     EXPECT_EQ(handler.csis[0].final_char, U'J');
     ASSERT_EQ(handler.csis[0].params.size(), 1u);
-    EXPECT_EQ(handler.csis[0].params[0], 2);
+    EXPECT_EQ(handler.csis[0].params[0].value, 2);
     EXPECT_TRUE(handler.csis[0].intermediates.empty());
 }
 
@@ -96,8 +96,8 @@ TEST_F(VtParserTest, CsiSgrBoldRed) {
     ASSERT_EQ(handler.csis.size(), 1u);
     EXPECT_EQ(handler.csis[0].final_char, U'm');
     ASSERT_EQ(handler.csis[0].params.size(), 2u);
-    EXPECT_EQ(handler.csis[0].params[0], 1);
-    EXPECT_EQ(handler.csis[0].params[1], 31);
+    EXPECT_EQ(handler.csis[0].params[0].value, 1);
+    EXPECT_EQ(handler.csis[0].params[1].value, 31);
 }
 
 // Test 4: ESC [ m -> onCsiDispatch with final='m', params={}
@@ -134,7 +134,7 @@ TEST_F(VtParserTest, Utf8Korean) {
     EXPECT_EQ(handler.prints[0].codepoint, U'\uD55C');
 }
 
-// Test 7b: UTF-8 4-byte character (emoji: 😀 U+1F600)
+// Test 7b: UTF-8 4-byte character (emoji: U+1F600)
 TEST_F(VtParserTest, Utf8Emoji) {
     feed("\xF0\x9F\x98\x80");
     ASSERT_EQ(handler.prints.size(), 1u);
@@ -155,9 +155,9 @@ TEST_F(VtParserTest, MixedContent) {
     // CSI: bold on, reset
     ASSERT_EQ(handler.csis.size(), 2u);
     EXPECT_EQ(handler.csis[0].final_char, U'm');
-    EXPECT_EQ(handler.csis[0].params[0], 1);
+    EXPECT_EQ(handler.csis[0].params[0].value, 1);
     EXPECT_EQ(handler.csis[1].final_char, U'm');
-    EXPECT_EQ(handler.csis[1].params[0], 0);
+    EXPECT_EQ(handler.csis[1].params[0].value, 0);
 }
 
 // Test 9: Partial/split sequences - ESC in one feed, [ in next
@@ -170,7 +170,7 @@ TEST_F(VtParserTest, SplitSequence) {
     ASSERT_EQ(handler.csis.size(), 1u);
     EXPECT_EQ(handler.csis[0].final_char, U'm');
     ASSERT_EQ(handler.csis[0].params.size(), 1u);
-    EXPECT_EQ(handler.csis[0].params[0], 31);
+    EXPECT_EQ(handler.csis[0].params[0].value, 31);
 }
 
 // Test 10: ESC D -> onEscDispatch
@@ -195,8 +195,8 @@ TEST_F(VtParserTest, CsiDefaultParams) {
     ASSERT_EQ(handler.csis.size(), 1u);
     EXPECT_EQ(handler.csis[0].final_char, U'H');
     ASSERT_EQ(handler.csis[0].params.size(), 2u);
-    EXPECT_EQ(handler.csis[0].params[0], -1);  // default
-    EXPECT_EQ(handler.csis[0].params[1], -1);  // default
+    EXPECT_EQ(handler.csis[0].params[0].value, -1);  // default
+    EXPECT_EQ(handler.csis[0].params[1].value, -1);  // default
 }
 
 // Additional: CSI with private marker (ESC [ ? 25 h - show cursor)
@@ -205,7 +205,7 @@ TEST_F(VtParserTest, CsiPrivateMode) {
     ASSERT_EQ(handler.csis.size(), 1u);
     EXPECT_EQ(handler.csis[0].final_char, U'h');
     ASSERT_EQ(handler.csis[0].params.size(), 1u);
-    EXPECT_EQ(handler.csis[0].params[0], 25);
+    EXPECT_EQ(handler.csis[0].params[0].value, 25);
     EXPECT_EQ(handler.csis[0].intermediates, "?");
 }
 
@@ -234,13 +234,13 @@ TEST_F(VtParserTest, C0WithinCsi) {
     ASSERT_EQ(handler.executes.size(), 1u);
     EXPECT_EQ(handler.executes[0].byte, '\n');
     ASSERT_EQ(handler.csis.size(), 1u);
-    EXPECT_EQ(handler.csis[0].params[0], 1);
-    EXPECT_EQ(handler.csis[0].params[1], 31);
+    EXPECT_EQ(handler.csis[0].params[0].value, 1);
+    EXPECT_EQ(handler.csis[0].params[1].value, 31);
 }
 
 // Additional: Multiple UTF-8 characters in sequence
 TEST_F(VtParserTest, Utf8MultipleChars) {
-    // "한글" = U+D55C U+AE00
+    // "han-geul" = U+D55C U+AE00
     feed("\xED\x95\x9C\xEA\xB8\x80");
     ASSERT_EQ(handler.prints.size(), 2u);
     EXPECT_EQ(handler.prints[0].codepoint, U'\uD55C');
@@ -256,6 +256,68 @@ TEST_F(VtParserTest, CanCancelsSequence) {
     ASSERT_EQ(handler.prints.size(), 1u);
     EXPECT_EQ(handler.prints[0].codepoint, U'A');
     EXPECT_TRUE(handler.csis.empty());
+}
+
+// --- Sub-parameter parsing tests ---
+
+// Colon-separated sub-parameters: ESC[4:3m -> param 4 with sub=[3]
+TEST_F(VtParserTest, ColonSubParam) {
+    feed("\x1B[4:3m");
+    ASSERT_EQ(handler.csis.size(), 1u);
+    EXPECT_EQ(handler.csis[0].final_char, U'm');
+    ASSERT_EQ(handler.csis[0].params.size(), 1u);
+    EXPECT_EQ(handler.csis[0].params[0].value, 4);
+    ASSERT_EQ(handler.csis[0].params[0].sub.size(), 1u);
+    EXPECT_EQ(handler.csis[0].params[0].sub[0], 3);
+}
+
+// Multiple colons: ESC[58:2::255:0:0m
+TEST_F(VtParserTest, ColonMultiSubParam) {
+    feed("\x1B[58:2::255:0:0m");
+    ASSERT_EQ(handler.csis.size(), 1u);
+    ASSERT_EQ(handler.csis[0].params.size(), 1u);
+    EXPECT_EQ(handler.csis[0].params[0].value, 58);
+    // sub = [2, -1, 255, 0, 0]
+    ASSERT_EQ(handler.csis[0].params[0].sub.size(), 5u);
+    EXPECT_EQ(handler.csis[0].params[0].sub[0], 2);
+    EXPECT_EQ(handler.csis[0].params[0].sub[1], -1);  // empty between ::
+    EXPECT_EQ(handler.csis[0].params[0].sub[2], 255);
+    EXPECT_EQ(handler.csis[0].params[0].sub[3], 0);
+    EXPECT_EQ(handler.csis[0].params[0].sub[4], 0);
+}
+
+// Mixed semicolon and colon: ESC[4:3;38:2::128:0:255m
+TEST_F(VtParserTest, MixedSemicolonColon) {
+    feed("\x1B[4:3;38:2::128:0:255m");
+    ASSERT_EQ(handler.csis.size(), 1u);
+    ASSERT_EQ(handler.csis[0].params.size(), 2u);
+    // First param: 4:3
+    EXPECT_EQ(handler.csis[0].params[0].value, 4);
+    ASSERT_EQ(handler.csis[0].params[0].sub.size(), 1u);
+    EXPECT_EQ(handler.csis[0].params[0].sub[0], 3);
+    // Second param: 38:2::128:0:255
+    EXPECT_EQ(handler.csis[0].params[1].value, 38);
+    ASSERT_EQ(handler.csis[0].params[1].sub.size(), 5u);
+    EXPECT_EQ(handler.csis[0].params[1].sub[0], 2);
+    EXPECT_EQ(handler.csis[0].params[1].sub[1], -1);
+    EXPECT_EQ(handler.csis[0].params[1].sub[2], 128);
+    EXPECT_EQ(handler.csis[0].params[1].sub[3], 0);
+    EXPECT_EQ(handler.csis[0].params[1].sub[4], 255);
+}
+
+// Simple param without sub-params should have empty sub vector
+TEST_F(VtParserTest, NoSubParams) {
+    feed("\x1B[38;2;128;0;255m");
+    ASSERT_EQ(handler.csis.size(), 1u);
+    ASSERT_EQ(handler.csis[0].params.size(), 5u);
+    for (size_t i = 0; i < 5; ++i) {
+        EXPECT_TRUE(handler.csis[0].params[i].sub.empty());
+    }
+    EXPECT_EQ(handler.csis[0].params[0].value, 38);
+    EXPECT_EQ(handler.csis[0].params[1].value, 2);
+    EXPECT_EQ(handler.csis[0].params[2].value, 128);
+    EXPECT_EQ(handler.csis[0].params[3].value, 0);
+    EXPECT_EQ(handler.csis[0].params[4].value, 255);
 }
 
 } // namespace
