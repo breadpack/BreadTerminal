@@ -631,13 +631,19 @@ static bool isCopyModeWordChar(char32_t cp) {
 
 - (NSPoint)cellPositionForEvent:(NSEvent*)event {
     NSPoint loc = [self convertPoint:event.locationInWindow fromView:nil];
-    float flippedY = self.bounds.size.height - loc.y;
-    // loc is in points; _cellWidth/_cellHeight are in physical pixels.
-    // Scale points to physical pixels before dividing by cell dimensions.
-    CGFloat scale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0;
+    // NSView default: Y=0 at bottom. Terminal row 0 at top. Flip Y.
+    CGFloat flippedY = self.bounds.size.height - loc.y;
+    // Compute effective scale from actual drawable vs bounds (works regardless of Retina state)
+    NSSize ds = _metalLayer.drawableSize;
+    NSSize bs = self.bounds.size;
+    CGFloat scaleX = (bs.width > 0 && ds.width > 0) ? ds.width / bs.width : 2.0;
+    CGFloat scaleY = (bs.height > 0 && ds.height > 0) ? ds.height / bs.height : 2.0;
     float padding = _impl->windowPadding;  // logical pixels
-    int col = std::max(0, std::min((int)((loc.x - padding) * scale / _cellWidth), self.termCols - 1));
-    int row = std::max(0, std::min((int)((flippedY - padding) * scale / _cellHeight), self.termRows - 1));
+    // _cellWidth/_cellHeight are in drawable pixels
+    float cellPtW = _cellWidth / scaleX;
+    float cellPtH = _cellHeight / scaleY;
+    int col = std::max(0, std::min((int)((loc.x - padding) / cellPtW), self.termCols - 1));
+    int row = std::max(0, std::min((int)((flippedY - padding) / cellPtH), self.termRows - 1));
     return NSMakePoint(col, row);
 }
 

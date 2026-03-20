@@ -61,15 +61,17 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _impl = new TerminalViewImpl();
     _markedText = nil;
 
-    // Metal layer
-    self.wantsLayer = YES;
+    // Metal layer — manually managed (NOT via makeBackingLayer)
+    // We need direct control of drawableSize for Retina support
+    self.wantsLayer = YES;  // Creates default backing layer
     _metalLayer = [CAMetalLayer layer];
     _metalLayer.device = _device;
     _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     _metalLayer.framebufferOnly = YES;
+    _metalLayer.contentsScale = 2.0;
     _metalLayer.frame = self.bounds;
-    _metalLayer.contentsScale = self.window.backingScaleFactor ?: 2.0;
-    self.layer = _metalLayer;
+    _metalLayer.drawableSize = NSMakeSize(self.bounds.size.width * 2, self.bounds.size.height * 2);
+    [self.layer addSublayer:_metalLayer];
 
     // Font stack
     _impl->rasterizer = termcore::createCoreTextRasterizer();
@@ -121,9 +123,7 @@ static double machTimeToSeconds(uint64_t elapsed) {
 
     _searchActive = NO;
 
-    // Set initial drawable size and viewport — both in physical pixels
-    _metalLayer.drawableSize = NSMakeSize(frame.size.width * scale, frame.size.height * scale);
-    _impl->renderer->resize(frame.size.width * scale, frame.size.height * scale);
+    // Drawable size and viewport will be synced in first renderFrame
     _impl->needsRender = true;
 
     // Create PTY serial queue
@@ -153,7 +153,16 @@ static double machTimeToSeconds(uint64_t elapsed) {
             if (!s) { [timer invalidate]; return; }
             [s renderFrame];
         }];
-        _metalLayer.contentsScale = self.window.backingScaleFactor;
+        CGFloat scale = self.window.backingScaleFactor;
+        _metalLayer.contentsScale = scale;
+        // Force correct drawable size for Retina
+        NSSize sz = self.bounds.size;
+        if (sz.width > 0 && sz.height > 0) {
+            _metalLayer.drawableSize = NSMakeSize(sz.width * scale, sz.height * scale);
+            _impl->renderer->resize(sz.width * scale, sz.height * scale);
+        }
+        [self updateGridSize];
+        _impl->needsRender = true;
     }
 }
 
@@ -319,29 +328,27 @@ static double machTimeToSeconds(uint64_t elapsed) {
 
 #pragma mark - NSView overrides
 
-- (BOOL)wantsLayer { return YES; }
+- (void)layout {
+    [super layout];
+    _metalLayer.frame = self.bounds;
+}
+
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)becomeFirstResponder  { return YES; }
-- (BOOL)wantsUpdateLayer { return YES; }
 
-- (CALayer*)makeBackingLayer {
-    if (!_metalLayer) {
-        _metalLayer = [CAMetalLayer layer];
-        _metalLayer.device = _device;
-        _metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    }
-    return _metalLayer;
-}
+// Metal layer is a sublayer, not the backing layer
+// This gives us direct control of drawableSize/contentsScale
 
 // viewDidMoveToWindow is implemented above (line 144)
 
 - (void)setFrameSize:(NSSize)newSize {
     [super setFrameSize:newSize];
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2.0;
     _metalLayer.frame = self.bounds;
-    _metalLayer.drawableSize = NSMakeSize(
-        newSize.width * _metalLayer.contentsScale,
-        newSize.height * _metalLayer.contentsScale);
+    _metalLayer.drawableSize = NSMakeSize(newSize.width * scale, newSize.height * scale);
+    _impl->renderer->resize(newSize.width * scale, newSize.height * scale);
     [self updateGridSize];
+    _impl->needsRender = true;
 }
 
 - (void)viewDidEndLiveResize {
@@ -355,7 +362,8 @@ static double machTimeToSeconds(uint64_t elapsed) {
     // Cell dimensions are in physical pixels; convert view bounds to pixels
     float cw = _cellWidth  > 0 ? _cellWidth  : 16;
     float ch = _cellHeight > 0 ? _cellHeight : 32;
-    float gridScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    // Use 2.0 for Retina (backingScaleFactor may return 1.0 incorrectly on some setups)
+    float gridScale = 2.0f;
     float paddingPx = _impl->windowPadding * gridScale;
     float viewWidthPx  = self.bounds.size.width  * gridScale - paddingPx * 2;
     float viewHeightPx = self.bounds.size.height * gridScale - paddingPx * 2;
@@ -372,7 +380,7 @@ static double machTimeToSeconds(uint64_t elapsed) {
     _impl->screen->resize(rows, cols);
     if (_impl->pty && _impl->pty->isAlive()) _impl->pty->resize(rows, cols);
     // Viewport in physical pixels (matches drawableSize)
-    float gridScale = _metalLayer.contentsScale > 0 ? _metalLayer.contentsScale : 2.0f;
+    float gridScale = self.window.backingScaleFactor > 0 ? (float)self.window.backingScaleFactor : 2.0f;
     float w = self.bounds.size.width * gridScale;
     float h = self.bounds.size.height * gridScale;
     _impl->renderer->resize(w, h);
@@ -383,7 +391,9 @@ static double machTimeToSeconds(uint64_t elapsed) {
 
 - (void)startShell {
     _impl->pty = termcore::createPty();
-    if (!_impl->pty->spawn("", {}, "", _termRows, _termCols)) {
+    std::string homeDir;
+    if (const char* home = std::getenv("HOME")) homeDir = home;
+    if (!_impl->pty->spawn("", {}, homeDir, _termRows, _termCols)) {
         NSLog(@"BreadTerminal: failed to spawn shell");
         return;
     }
@@ -522,13 +532,14 @@ static double machTimeToSeconds(uint64_t elapsed) {
     if (!_impl->needsRender && !cursorNeedsRedraw) return;
     _impl->needsRender = false;
 
-    // Ensure drawable size is valid
-    if (_metalLayer.drawableSize.width <= 0 || _metalLayer.drawableSize.height <= 0) {
-        CGFloat drawScale = self.window.backingScaleFactor ?: 2.0;
+    // Force Retina drawable size every frame (AppKit resets contentsScale to 1)
+    {
+        CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2.0;
         NSSize sz = self.bounds.size;
         if (sz.width > 0 && sz.height > 0) {
-            float pxW = sz.width * drawScale;
-            float pxH = sz.height * drawScale;
+            float pxW = sz.width * scale;
+            float pxH = sz.height * scale;
+            // contentsScale may be reset by AppKit, but drawableSize is authoritative
             _metalLayer.drawableSize = NSMakeSize(pxW, pxH);
             _impl->renderer->resize(pxW, pxH);
         }

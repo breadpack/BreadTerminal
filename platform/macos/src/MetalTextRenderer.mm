@@ -770,6 +770,23 @@ void MetalTextRenderer::render(const Screen& screen) {
     dispatch_semaphore_wait(impl_->frameSemaphore, DISPATCH_TIME_FOREVER);
 
     @autoreleasepool {
+        // Force Retina: set both contentsScale AND drawableSize before nextDrawable
+        {
+            CGFloat scale = 2.0; // Retina Mac
+            impl_->layer.contentsScale = scale;
+            CGSize bounds = impl_->layer.bounds.size;
+            if (bounds.width > 0 && bounds.height > 0) {
+                float w = bounds.width * scale;
+                float h = bounds.height * scale;
+                impl_->layer.drawableSize = CGSizeMake(w, h);
+                // If viewport changed, update and force full cell rebuild
+                if (fabs(impl_->viewportWidth - w) > 1 || fabs(impl_->viewportHeight - h) > 1) {
+                    impl_->viewportWidth = w;
+                    impl_->viewportHeight = h;
+                    impl_->buildCellBuffer(screen);
+                }
+            }
+        }
         id<CAMetalDrawable> drawable = [impl_->layer nextDrawable];
         if (!drawable) {
             dispatch_semaphore_signal(impl_->frameSemaphore);
