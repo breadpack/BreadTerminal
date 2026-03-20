@@ -68,6 +68,12 @@ set(TERMCORE_SOURCES
     src/socket/socket_server.cpp
     src/screen_capture.cpp
     src/mcp_server_spec.cpp
+    src/terminal_controller.cpp
+    src/font_manager.cpp
+    src/selection_manager.cpp
+    src/search_controller.cpp
+    src/tab_controller.cpp
+    src/config_applier.cpp
 )
 
 if(UNIX)
