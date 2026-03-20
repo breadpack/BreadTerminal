@@ -323,6 +323,18 @@ static uint8_t modsFromEvent(NSEvent* event) {
         [[NSNotificationCenter defaultCenter]
             postNotificationName:@"BreadTerminalReloadConfig" object:nil];
         break;
+    case termcore::Action::OpenSettings:
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"BreadTerminalOpenSettings" object:nil];
+        break;
+    case termcore::Action::OpenThemeHub:
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"BreadTerminalOpenThemeHub" object:nil];
+        break;
+    case termcore::Action::OpenFontHub:
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"BreadTerminalOpenFontHub" object:nil];
+        break;
     case termcore::Action::JumpPromptUp: {
         if (!_impl->screen) break;
         // Current top visible absolute row

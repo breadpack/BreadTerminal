@@ -4,9 +4,6 @@
 #import "PrefsFontViewController.h"
 #import "PrefsKeybindingsViewController.h"
 #import "PrefsClipboardViewController.h"
-#import "PrefsSidebarViewController.h"
-#import "ThemeHubViewController.h"
-#import "FontHubViewController.h"
 
 static NSString* const kToolbarIdentifier = @"PreferencesToolbar";
 static NSString* const kTabGeneral      = @"General";
@@ -14,9 +11,6 @@ static NSString* const kTabAppearance   = @"Appearance";
 static NSString* const kTabFont         = @"Font";
 static NSString* const kTabKeybindings  = @"Keybindings";
 static NSString* const kTabClipboard    = @"Clipboard";
-static NSString* const kTabSidebar      = @"Sidebar";
-static NSString* const kTabThemes       = @"Themes";
-static NSString* const kTabFonts        = @"Fonts";
 
 @implementation PreferencesWindowController {
     termcore::Config _liveConfig;
@@ -76,7 +70,7 @@ static NSString* const kTabFonts        = @"Fonts";
 #pragma mark - Tab Switching
 
 - (NSArray<NSString*>*)tabIdentifiers {
-    return @[kTabGeneral, kTabAppearance, kTabFont, kTabKeybindings, kTabClipboard, kTabSidebar, kTabThemes, kTabFonts];
+    return @[kTabGeneral, kTabAppearance, kTabFont, kTabKeybindings, kTabClipboard];
 }
 
 - (void)switchToTab:(NSString*)tabId {
@@ -126,21 +120,6 @@ static NSString* const kTabFonts        = @"Fonts";
         return vc;
     } else if ([tabId isEqualToString:kTabClipboard]) {
         PrefsClipboardViewController* vc = [[PrefsClipboardViewController alloc] init];
-        vc.config = _liveConfig;
-        vc.saveBlock = saveBlock;
-        return vc;
-    } else if ([tabId isEqualToString:kTabSidebar]) {
-        PrefsSidebarViewController* vc = [[PrefsSidebarViewController alloc] init];
-        vc.config = _liveConfig;
-        vc.saveBlock = saveBlock;
-        return vc;
-    } else if ([tabId isEqualToString:kTabThemes]) {
-        ThemeHubViewController* vc = [[ThemeHubViewController alloc] init];
-        vc.config = _liveConfig;
-        vc.saveBlock = saveBlock;
-        return vc;
-    } else if ([tabId isEqualToString:kTabFonts]) {
-        FontHubViewController* vc = [[FontHubViewController alloc] init];
         vc.config = _liveConfig;
         vc.saveBlock = saveBlock;
         return vc;
@@ -210,9 +189,6 @@ static NSString* const kTabFonts        = @"Fonts";
     if ([tabId isEqualToString:kTabFont])        return @"textformat";
     if ([tabId isEqualToString:kTabKeybindings]) return @"keyboard";
     if ([tabId isEqualToString:kTabClipboard])   return @"doc.on.clipboard";
-    if ([tabId isEqualToString:kTabSidebar])     return @"sidebar.left";
-    if ([tabId isEqualToString:kTabThemes])     return @"paintpalette";
-    if ([tabId isEqualToString:kTabFonts])      return @"character.textbox";
     return nil;
 }
 

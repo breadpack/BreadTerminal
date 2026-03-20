@@ -82,6 +82,11 @@ struct Config {
     std::unordered_map<std::string, std::string> raw;
 };
 
+/// Load config with automatic format detection.
+/// Tries config.lua first (if Lua is available), then falls back to legacy format.
+/// This is the recommended entry point for all platforms.
+Config loadConfig();
+
 /// Parse a config file. Returns Config with parsed values.
 Config parseConfigFile(const std::string& path);
 

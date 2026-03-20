@@ -152,6 +152,9 @@ else()
     message(STATUS "Lua plugin system: DISABLED (Lua 5.4 not found)")
 endif()
 
+# lua_config.cpp has both TERMCORE_HAS_LUA and stub paths, always compile it
+list(APPEND TERMCORE_SOURCES src/lua_config.cpp)
+
 add_library(termcore STATIC ${TERMCORE_SOURCES})
 
 target_include_directories(termcore

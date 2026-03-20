@@ -5,6 +5,8 @@
 #import "SidebarViewController.h"
 #import "TerminalContentViewController.h"
 #import "PreferencesWindowController.h"
+#import "ThemeHubViewController.h"
+#import "FontHubViewController.h"
 #import "QuickTerminalPanel.h"
 #import <Metal/Metal.h>
 
@@ -32,11 +34,18 @@
     // Preferences
     PreferencesWindowController* _prefsController;
 
+    // Theme Hub / Font Hub standalone windows
+    NSWindowController* _themeHubWindowController;
+    NSWindowController* _fontHubWindowController;
+
     // Quick Terminal (visor mode)
     QuickTerminalPanel* _quickTerminalPanel;
 
-    // Notification observer token (must be removed on termination)
+    // Notification observer tokens (must be removed on termination)
     id _reloadConfigObserver;
+    id _openSettingsObserver;
+    id _openThemeHubObserver;
+    id _openFontHubObserver;
 
     // Saved for creating new tabs
     id<MTLDevice> _device;
@@ -234,6 +243,32 @@
         }
     }];
 
+    // Listen for OpenSettings / OpenThemeHub / OpenFontHub keybinding actions
+    _openSettingsObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:@"BreadTerminalOpenSettings"
+                    object:nil
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification* _Nonnull note) {
+        AppDelegate* strongSelf = weakSelf;
+        if (strongSelf) [strongSelf openPreferences:nil];
+    }];
+    _openThemeHubObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:@"BreadTerminalOpenThemeHub"
+                    object:nil
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification* _Nonnull note) {
+        AppDelegate* strongSelf = weakSelf;
+        if (strongSelf) [strongSelf openThemeHub:nil];
+    }];
+    _openFontHubObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:@"BreadTerminalOpenFontHub"
+                    object:nil
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification* _Nonnull note) {
+        AppDelegate* strongSelf = weakSelf;
+        if (strongSelf) [strongSelf openFontHub:nil];
+    }];
+
     // --- Preferences window controller ---
     _prefsController = [[PreferencesWindowController alloc]
         initWithConfigPath:_configPath
@@ -251,10 +286,18 @@
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
-    if (_reloadConfigObserver) {
-        [[NSNotificationCenter defaultCenter] removeObserver:_reloadConfigObserver];
-        _reloadConfigObserver = nil;
+    for (id observer in @[_reloadConfigObserver ?: [NSNull null],
+                           _openSettingsObserver ?: [NSNull null],
+                           _openThemeHubObserver ?: [NSNull null],
+                           _openFontHubObserver ?: [NSNull null]]) {
+        if (observer != [NSNull null]) {
+            [[NSNotificationCenter defaultCenter] removeObserver:observer];
+        }
     }
+    _reloadConfigObserver = nil;
+    _openSettingsObserver = nil;
+    _openThemeHubObserver = nil;
+    _openFontHubObserver = nil;
 
     // Destroy preferences controller first — it holds a raw IConfigWatcher* that
     // will become dangling once _configWatcher is destroyed.
@@ -380,6 +423,93 @@
 - (IBAction)openPreferences:(id)sender {
     (void)sender;
     [_prefsController showPreferences];
+}
+
+#pragma mark - Theme Hub / Font Hub (standalone windows)
+
+- (PrefsSaveBlock)makeSaveBlock {
+    __weak AppDelegate* weakSelf = self;
+    return ^(const termcore::Config& updated) {
+        AppDelegate* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_config = updated;
+        termcore::writeConfigFile(strongSelf->_configPath, updated);
+        if (strongSelf->_configWatcher) {
+            strongSelf->_configWatcher->reloadNow();
+        }
+    };
+}
+
+- (IBAction)openThemeHub:(id)sender {
+    (void)sender;
+
+    // If the window already exists, just bring it to front
+    if (_themeHubWindowController.window &&
+        _themeHubWindowController.window.isVisible) {
+        [_themeHubWindowController.window makeKeyAndOrderFront:nil];
+        return;
+    }
+
+    // Reload config from disk
+    termcore::Config config = termcore::parseConfigFile(_configPath);
+    if (!config.theme.empty()) {
+        auto* theme = termcore::getBuiltinTheme(config.theme);
+        if (theme) termcore::applyTheme(config, *theme);
+    }
+
+    ThemeHubViewController* vc = [[ThemeHubViewController alloc] init];
+    vc.config = config;
+    vc.saveBlock = [self makeSaveBlock];
+
+    NSWindowStyleMask style = NSWindowStyleMaskTitled
+                            | NSWindowStyleMaskClosable
+                            | NSWindowStyleMaskResizable;
+    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 520)
+                                                   styleMask:style
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:YES];
+    window.title = @"Theme Hub";
+    window.contentViewController = vc;
+    [window center];
+
+    _themeHubWindowController = [[NSWindowController alloc] initWithWindow:window];
+    [_themeHubWindowController showWindow:nil];
+}
+
+- (IBAction)openFontHub:(id)sender {
+    (void)sender;
+
+    // If the window already exists, just bring it to front
+    if (_fontHubWindowController.window &&
+        _fontHubWindowController.window.isVisible) {
+        [_fontHubWindowController.window makeKeyAndOrderFront:nil];
+        return;
+    }
+
+    // Reload config from disk
+    termcore::Config config = termcore::parseConfigFile(_configPath);
+    if (!config.theme.empty()) {
+        auto* theme = termcore::getBuiltinTheme(config.theme);
+        if (theme) termcore::applyTheme(config, *theme);
+    }
+
+    FontHubViewController* vc = [[FontHubViewController alloc] init];
+    vc.config = config;
+    vc.saveBlock = [self makeSaveBlock];
+
+    NSWindowStyleMask style = NSWindowStyleMaskTitled
+                            | NSWindowStyleMaskClosable
+                            | NSWindowStyleMaskResizable;
+    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 520)
+                                                   styleMask:style
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:YES];
+    window.title = @"Font Hub";
+    window.contentViewController = vc;
+    [window center];
+
+    _fontHubWindowController = [[NSWindowController alloc] initWithWindow:window];
+    [_fontHubWindowController showWindow:nil];
 }
 
 @end

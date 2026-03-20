@@ -45,6 +45,11 @@ enum class Action : uint16_t {
     ToggleSidebar,
     SwitchWorkspace1, SwitchWorkspace2, SwitchWorkspace3, SwitchWorkspace4,
     SwitchWorkspace5, SwitchWorkspace6, SwitchWorkspace7, SwitchWorkspace8,
+    // Tab switching by number (1-9)
+    SwitchTab1, SwitchTab2, SwitchTab3, SwitchTab4, SwitchTab5,
+    SwitchTab6, SwitchTab7, SwitchTab8, SwitchTab9,
+    // Hub / Settings windows
+    OpenSettings, OpenThemeHub, OpenFontHub,
     // Custom (string-based action)
     Custom,
 };

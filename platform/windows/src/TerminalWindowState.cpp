@@ -255,11 +255,8 @@ void TerminalWindowState::updateTabBar() {
 // --- Terminal initialization ---
 
 void TerminalWindowState::initTerminal() {
-    // Load config
-    std::string configPath = termcore::defaultConfigPath();
-    if (!configPath.empty()) {
-        config = termcore::parseConfigFile(configPath);
-    }
+    // Load config (Lua first, then legacy fallback)
+    config = termcore::loadConfig();
 
     // Apply font settings from config (fallback to Consolas 14pt)
     fontFamily = config.font_family.empty() ? "Consolas" : config.font_family;

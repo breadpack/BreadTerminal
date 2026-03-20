@@ -1,9 +1,11 @@
 #include "termcore/config.h"
+#include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -187,6 +189,31 @@ std::string defaultConfigPath() {
     if (!home) return "";
     return std::string(home) + "/.config/breadterminal/config";
 #endif
+}
+
+Config loadConfig() {
+    // 1. Try Lua config first (config.lua)
+    std::string luaPath = defaultLuaConfigPath();
+    if (!luaPath.empty() && loadConfigLua(luaPath)) {
+        return luaConfig();
+    }
+
+    // 2. Also check if config.lua exists alongside legacy config
+    std::string legacyPath = defaultConfigPath();
+    if (!legacyPath.empty()) {
+        namespace fs = std::filesystem;
+        fs::path luaAlt = fs::path(legacyPath).parent_path() / "config.lua";
+        if (fs::exists(luaAlt) && loadConfigLua(luaAlt.string())) {
+            return luaConfig();
+        }
+    }
+
+    // 3. Fall back to legacy key-value config
+    if (!legacyPath.empty()) {
+        return parseConfigFile(legacyPath);
+    }
+
+    return Config{};
 }
 
 bool writeDefaultConfig(const std::string& path) {

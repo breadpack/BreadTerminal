@@ -390,11 +390,8 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
 
     auto state = std::make_unique<TerminalWindowState>();
 
-    // Pre-load config for window dimensions and opacity
-    std::string configPath = termcore::defaultConfigPath();
-    if (!configPath.empty()) {
-        state->config = termcore::parseConfigFile(configPath);
-    }
+    // Pre-load config for window dimensions and opacity (Lua first, then legacy)
+    state->config = termcore::loadConfig();
 
     int winW = state->config.window_width > 0 ? state->config.window_width : 800;
     int winH = state->config.window_height > 0 ? state->config.window_height : 600;

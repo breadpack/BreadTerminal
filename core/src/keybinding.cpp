@@ -94,6 +94,14 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"switch_workspace_6", Action::SwitchWorkspace6},
         {"switch_workspace_7", Action::SwitchWorkspace7},
         {"switch_workspace_8", Action::SwitchWorkspace8},
+        {"switch_tab_1", Action::SwitchTab1}, {"switch_tab_2", Action::SwitchTab2},
+        {"switch_tab_3", Action::SwitchTab3}, {"switch_tab_4", Action::SwitchTab4},
+        {"switch_tab_5", Action::SwitchTab5}, {"switch_tab_6", Action::SwitchTab6},
+        {"switch_tab_7", Action::SwitchTab7}, {"switch_tab_8", Action::SwitchTab8},
+        {"switch_tab_9", Action::SwitchTab9},
+        {"open_settings", Action::OpenSettings},
+        {"open_theme_hub", Action::OpenThemeHub},
+        {"open_font_hub", Action::OpenFontHub},
         {"custom", Action::Custom},
     };
     return map;
@@ -217,29 +225,78 @@ void KeybindingManager::initDefaults() {
         bind(parseCombo(trigger), action);
     };
 
-    b("cmd+t",       Action::NewTab);
-    b("cmd+w",       Action::CloseTab);
-    b("cmd+shift+]", Action::NextTab);
-    b("cmd+shift+[", Action::PrevTab);
-    b("cmd+d",       Action::SplitRight);
-    b("cmd+shift+d", Action::SplitDown);
-    b("cmd+c",       Action::Copy);
-    b("cmd+v",       Action::Paste);
-    b("cmd+a",       Action::SelectAll);
-    b("cmd+f",       Action::SearchOpen);
-    b("cmd+g",       Action::SearchNext);
-    b("cmd+shift+g", Action::SearchPrev);
-    b("cmd+=",       Action::FontIncrease);
-    b("cmd+-",       Action::FontDecrease);
-    b("cmd+0",       Action::FontReset);
-    b("cmd+k",       Action::ClearScrollback);
-    b("cmd+up",      Action::JumpPromptUp);
-    b("cmd+down",    Action::JumpPromptDown);
-    b("cmd+n",       Action::NewWindow);
-    b("cmd+shift+,", Action::ReloadConfig);
-    b("cmd+shift+x", Action::EnterCopyMode);
-    b("cmd+shift+b", Action::ToggleSidebar);
-    // Cmd+1~9 reserved for native macOS tab switching (handled by menu system)
+    // Platform-adaptive modifier: cmd on macOS, ctrl on Windows/Linux.
+    // The config file can use either "cmd+" or "ctrl+" regardless of platform;
+    // initDefaults() uses the platform-native modifier for sensible defaults.
+#if defined(__APPLE__)
+    const char* M = "cmd";       // Cmd
+    const char* MS = "cmd+shift"; // Cmd+Shift
+#else
+    const char* M = "ctrl";       // Ctrl
+    const char* MS = "ctrl+shift"; // Ctrl+Shift
+#endif
+    auto mk = [&](const char* mod, const char* key) -> std::string {
+        return std::string(mod) + "+" + key;
+    };
+
+    // --- Unified keybindings (same logical actions on all platforms) ---
+
+    // Tab / Pane
+    b(mk(M, "t"),       Action::NewTab);
+    b(mk(M, "w"),       Action::CloseTab);
+    b(mk(MS, "]"),      Action::NextTab);
+    b(mk(MS, "["),      Action::PrevTab);
+    b(mk(M, "d"),       Action::SplitRight);
+    b(mk(MS, "d"),      Action::SplitDown);
+
+    // Tab switching by number
+    b(mk(M, "1"), Action::SwitchTab1);
+    b(mk(M, "2"), Action::SwitchTab2);
+    b(mk(M, "3"), Action::SwitchTab3);
+    b(mk(M, "4"), Action::SwitchTab4);
+    b(mk(M, "5"), Action::SwitchTab5);
+    b(mk(M, "6"), Action::SwitchTab6);
+    b(mk(M, "7"), Action::SwitchTab7);
+    b(mk(M, "8"), Action::SwitchTab8);
+    b(mk(M, "9"), Action::SwitchTab9);
+
+    // Clipboard
+    b(mk(M, "c"),       Action::Copy);
+    b(mk(M, "v"),       Action::Paste);
+    b(mk(M, "a"),       Action::SelectAll);
+
+    // Search
+    b(mk(M, "f"),       Action::SearchOpen);
+    b(mk(M, "g"),       Action::SearchNext);
+    b(mk(MS, "g"),      Action::SearchPrev);
+
+    // Font
+    b(mk(M, "="),       Action::FontIncrease);
+    b(mk(M, "-"),       Action::FontDecrease);
+    b(mk(M, "0"),       Action::FontReset);
+
+    // Scroll
+    b("shift+pageup",   Action::ScrollPageUp);
+    b("shift+pagedown", Action::ScrollPageDown);
+    b("shift+home",     Action::ScrollToTop);
+    b("shift+end",      Action::ScrollToBottom);
+
+    // Window
+    b(mk(M, "n"),       Action::NewWindow);
+    b(mk(M, "enter"),   Action::ToggleFullscreen);
+
+    // Misc
+    b(mk(M, "k"),       Action::ClearScrollback);
+    b(mk(M, "up"),      Action::JumpPromptUp);
+    b(mk(M, "down"),    Action::JumpPromptDown);
+    b(mk(MS, ","),      Action::ReloadConfig);
+    b(mk(MS, "x"),      Action::EnterCopyMode);
+    b(mk(MS, "b"),      Action::ToggleSidebar);
+
+    // Hub / Settings
+    b(mk(M, ","),       Action::OpenSettings);
+    b(mk(MS, "t"),      Action::OpenThemeHub);
+    b(mk(MS, "p"),      Action::OpenFontHub);
 }
 
 } // namespace termcore

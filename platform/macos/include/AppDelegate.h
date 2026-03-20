@@ -15,6 +15,12 @@
 /// Open the Preferences window (Cmd+,).
 - (IBAction)openPreferences:(id)sender;
 
+/// Open the Theme Hub window (Cmd+Shift+T).
+- (IBAction)openThemeHub:(id)sender;
+
+/// Open the Font Hub window (Cmd+Shift+P).
+- (IBAction)openFontHub:(id)sender;
+
 /// Create a new tab (Cmd+T).
 - (IBAction)newTab:(id)sender;
 

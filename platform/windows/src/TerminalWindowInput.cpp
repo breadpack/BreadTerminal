@@ -52,9 +52,11 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
         if (keycode >= 'A' && keycode <= 'Z') {
             keycode = keycode - 'A' + 'a';  // lowercase
         }
-        // Map Windows OEM virtual keys to ASCII equivalents
-        // so keybindings using characters like ], [, =, -, etc. work
+        // Map Windows VK_ codes to core keybinding keycodes.
+        // OEM keys map to ASCII; navigation/function keys map to core's
+        // special key constants (0xF7xx range) so keybinding lookup works.
         switch (keycode) {
+            // OEM keys -> ASCII
             case VK_OEM_4:     keycode = '['; break;
             case VK_OEM_6:     keycode = ']'; break;
             case VK_OEM_PLUS:  keycode = '='; break;
@@ -66,6 +68,34 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
             case VK_OEM_3:     keycode = '`'; break;
             case VK_OEM_5:     keycode = '\\'; break;
             case VK_OEM_7:     keycode = '\''; break;
+            // Navigation keys -> core special keycodes
+            case VK_UP:        keycode = 0xF700; break;
+            case VK_DOWN:      keycode = 0xF701; break;
+            case VK_LEFT:      keycode = 0xF702; break;
+            case VK_RIGHT:     keycode = 0xF703; break;
+            case VK_HOME:      keycode = 0xF704; break;
+            case VK_END:       keycode = 0xF705; break;
+            case VK_PRIOR:     keycode = 0xF706; break;  // PageUp
+            case VK_NEXT:      keycode = 0xF707; break;  // PageDown
+            case VK_TAB:       keycode = 0xF708; break;
+            case VK_RETURN:    keycode = 0xF709; break;
+            case VK_ESCAPE:    keycode = 0xF70A; break;
+            case VK_BACK:      keycode = 0xF70B; break;
+            case VK_SPACE:     keycode = 0xF70C; break;
+            case VK_DELETE:    keycode = 0xF70D; break;
+            // Function keys
+            case VK_F1:        keycode = 0xF710; break;
+            case VK_F2:        keycode = 0xF711; break;
+            case VK_F3:        keycode = 0xF712; break;
+            case VK_F4:        keycode = 0xF713; break;
+            case VK_F5:        keycode = 0xF714; break;
+            case VK_F6:        keycode = 0xF715; break;
+            case VK_F7:        keycode = 0xF716; break;
+            case VK_F8:        keycode = 0xF717; break;
+            case VK_F9:        keycode = 0xF718; break;
+            case VK_F10:       keycode = 0xF719; break;
+            case VK_F11:       keycode = 0xF71A; break;
+            case VK_F12:       keycode = 0xF71B; break;
             default: break;
         }
 
@@ -211,37 +241,137 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
                         }
                     }
                     return;
+                case termcore::Action::SwitchTab1:
+                case termcore::Action::SwitchTab2:
+                case termcore::Action::SwitchTab3:
+                case termcore::Action::SwitchTab4:
+                case termcore::Action::SwitchTab5:
+                case termcore::Action::SwitchTab6:
+                case termcore::Action::SwitchTab7:
+                case termcore::Action::SwitchTab8:
+                case termcore::Action::SwitchTab9:
+                    if (mux) {
+                        auto* ws = mux->getWorkspace(wsId);
+                        if (ws && !ws->tabs.empty()) {
+                            size_t idx = static_cast<size_t>(action)
+                                       - static_cast<size_t>(termcore::Action::SwitchTab1);
+                            if (idx < ws->tabs.size()) {
+                                mux->setActiveTab(wsId, ws->tabs[idx]->id);
+                                syncActivePointers();
+                                updateTabBar();
+                                needsRender = true;
+                            }
+                        }
+                    }
+                    return;
+                case termcore::Action::OpenSettings:
+                    if (!settingsWin) {
+                        settingsWin = std::make_unique<termcore::SettingsWindow>();
+                    }
+                    settingsWin->setConfig(config);
+                    settingsWin->setSaveCallback([this](const termcore::Config& updated) {
+                        config = updated;
+                        // Apply font changes
+                        std::string newFont = config.font_family.empty() ? "Consolas" : config.font_family;
+                        if (newFont != fontFamily || config.font_size != currentFontSize) {
+                            fontFamily = newFont;
+                            currentFontSize = config.font_size > 0 ? config.font_size : 14.0f;
+                            fontCollection->setPrimaryFont(fontFamily, currentFontSize);
+                            auto m = fontCollection->primaryMetrics();
+                            cellWidth = m.cell_width > 0 ? m.cell_width : 8.0f;
+                            cellHeight = m.cell_height > 0 ? m.cell_height : 16.0f;
+                            if (cache) cache->clear();
+                            RECT rc;
+                            GetClientRect(hwnd, &rc);
+                            int w2 = rc.right - rc.left, h2 = rc.bottom - rc.top;
+                            int c2 = (std::max)(1, static_cast<int>(w2 / cellWidth));
+                            int r2 = (std::max)(1, static_cast<int>(h2 / cellHeight));
+                            if (r2 != termRows || c2 != termCols) {
+                                termRows = r2; termCols = c2;
+                                for (auto& [id, ps] : panes) {
+                                    if (ps->screen) ps->screen->resize(r2, c2);
+                                    if (ps->pty && ps->pty->isAlive()) ps->pty->resize(r2, c2);
+                                }
+                            }
+                        }
+                        // Apply color changes to all panes
+                        for (auto& [id, ps] : panes) {
+                            if (ps->screen) ps->screen->initDynamicColors(config);
+                        }
+                        updateTabBar();
+                        needsRender = true;
+                    });
+                    settingsWin->show(hwnd);
+                    return;
+                case termcore::Action::OpenThemeHub:
+                    if (!themeHub) {
+                        themeHub = std::make_unique<termcore::ThemeHubWindow>();
+                    }
+                    themeHub->setConfig(config);
+                    themeHub->setApplyCallback([this](const std::string& name,
+                                                        const termcore::ThemeMetadata* meta) {
+                        config.theme = name;
+                        auto theme = termcore::findTheme(name);
+                        if (theme) {
+                            termcore::applyTheme(config, *theme);
+                        } else if (meta) {
+                            // Fallback: apply colors from theme index metadata
+                            config.background = meta->background;
+                            config.foreground = meta->foreground;
+                            for (int i = 0; i < 16; ++i)
+                                config.palette[i] = meta->palette[i];
+                        }
+                        // Update all panes with new colors
+                        for (auto& [id, ps] : panes) {
+                            if (ps->screen) ps->screen->initDynamicColors(config);
+                        }
+                        updateTabBar();
+                        applyTitleBarTheme(hwnd);
+                        // Update the ThemeHub popup itself with new theme colors
+                        themeHub->setConfig(config);
+                        needsRender = true;
+                    });
+                    themeHub->show(hwnd);
+                    return;
+                case termcore::Action::OpenFontHub:
+                    if (!fontHub) {
+                        fontHub = std::make_unique<termcore::FontHubWindow>();
+                    }
+                    fontHub->setConfig(config);
+                    fontHub->setApplyCallback([this](const std::string& name) {
+                        config.font_family = name;
+                        fontFamily = name;
+                        fontCollection->setPrimaryFont(fontFamily, currentFontSize);
+                        auto metrics = fontCollection->primaryMetrics();
+                        cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
+                        cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
+                        if (cache) cache->clear();
+                        RECT rc;
+                        GetClientRect(hwnd, &rc);
+                        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+                        int cols = (std::max)(1, static_cast<int>(w / cellWidth));
+                        int rows = (std::max)(1, static_cast<int>(h / cellHeight));
+                        if (rows != termRows || cols != termCols) {
+                            termRows = rows; termCols = cols;
+                            for (auto& [id, ps] : panes) {
+                                if (ps->screen) ps->screen->resize(rows, cols);
+                                if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
+                            }
+                        }
+                        needsRender = true;
+                    });
+                    fontHub->show(hwnd);
+                    return;
                 default:
                     break;
             }
         }
     }
 
+    // --- VT100 key sequences (terminal protocol, not configurable keybindings) ---
     bool appCursor = screen && screen->appCursorKeys();
     const char* pfx = appCursor ? "\x1bO" : "\x1b[";
     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-
-    // Shift+key scrollback navigation
-    if (shift && screen) {
-        switch (wParam) {
-            case VK_PRIOR:
-                screen->scrollViewportUp(termRows);
-                needsRender = true;
-                return;
-            case VK_NEXT:
-                screen->scrollViewportDown(termRows);
-                needsRender = true;
-                return;
-            case VK_HOME:
-                screen->scrollViewportToTop();
-                needsRender = true;
-                return;
-            case VK_END:
-                screen->scrollViewportToBottom();
-                needsRender = true;
-                return;
-        }
-    }
 
     switch (wParam) {
         case VK_UP:
@@ -271,6 +401,7 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
             sendPtyData("\x1b[6~", 4); return;
         case VK_DELETE:
             sendPtyData("\x1b[3~", 4); return;
+        // F-keys: search-mode F3/Shift+F3 are context-dependent
         case VK_F1:
             sendPtyData("\x1bOP", 3); return;
         case VK_F2:
@@ -303,142 +434,11 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
             break;
     }
 
-    // Ctrl+key
+    // Ctrl+letter -> send control character to PTY (for keys not handled by keybindings)
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    if (ctrl) {
-        if (wParam == VK_OEM_PLUS || wParam == VK_ADD) {
-            changeFontSize(1.0f);
-            return;
-        }
-        if (wParam == VK_OEM_MINUS || wParam == VK_SUBTRACT) {
-            changeFontSize(-1.0f);
-            return;
-        }
-        if (wParam == '0' || wParam == VK_NUMPAD0) {
-            resetFontSize();
-            return;
-        }
-        if (wParam == 'F') {
-            openSearch();
-            return;
-        }
-        if (wParam == 'T' && shift) {
-            // Ctrl+Shift+T: open Theme Hub
-            if (!themeHub) {
-                themeHub = std::make_unique<termcore::ThemeHubWindow>();
-            }
-            themeHub->setConfig(config);
-            themeHub->setApplyCallback([this](const std::string& name,
-                                                const termcore::ThemeMetadata* meta) {
-                config.theme = name;
-                auto theme = termcore::findTheme(name);
-                if (theme) {
-                    termcore::applyTheme(config, *theme);
-                } else if (meta) {
-                    // Fallback: apply colors from theme index metadata
-                    config.background = meta->background;
-                    config.foreground = meta->foreground;
-                    for (int i = 0; i < 16; ++i)
-                        config.palette[i] = meta->palette[i];
-                }
-                // Update all panes with new colors
-                for (auto& [id, ps] : panes) {
-                    if (ps->screen) ps->screen->initDynamicColors(config);
-                }
-                updateTabBar();
-                applyTitleBarTheme(hwnd);
-                // Update the ThemeHub popup itself with new theme colors
-                themeHub->setConfig(config);
-                needsRender = true;
-            });
-            themeHub->show(hwnd);
-            return;
-        }
-        if (wParam == 'P' && shift) {
-            // Ctrl+Shift+P: open Font Hub
-            if (!fontHub) {
-                fontHub = std::make_unique<termcore::FontHubWindow>();
-            }
-            fontHub->setConfig(config);
-            fontHub->setApplyCallback([this](const std::string& name) {
-                config.font_family = name;
-                fontFamily = name;
-                fontCollection->setPrimaryFont(fontFamily, currentFontSize);
-                auto metrics = fontCollection->primaryMetrics();
-                cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
-                cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
-                if (cache) cache->clear();
-                RECT rc;
-                GetClientRect(hwnd, &rc);
-                int w = rc.right - rc.left, h = rc.bottom - rc.top;
-                int cols = (std::max)(1, static_cast<int>(w / cellWidth));
-                int rows = (std::max)(1, static_cast<int>(h / cellHeight));
-                if (rows != termRows || cols != termCols) {
-                    termRows = rows; termCols = cols;
-                    for (auto& [id, ps] : panes) {
-                        if (ps->screen) ps->screen->resize(rows, cols);
-                        if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
-                    }
-                }
-                needsRender = true;
-            });
-            fontHub->show(hwnd);
-            return;
-        }
-        if (wParam == VK_OEM_COMMA) {
-            // Ctrl+, : open Settings
-            if (!settingsWin) {
-                settingsWin = std::make_unique<termcore::SettingsWindow>();
-            }
-            settingsWin->setConfig(config);
-            settingsWin->setSaveCallback([this](const termcore::Config& updated) {
-                config = updated;
-                // Apply font changes
-                std::string newFont = config.font_family.empty() ? "Consolas" : config.font_family;
-                if (newFont != fontFamily || config.font_size != currentFontSize) {
-                    fontFamily = newFont;
-                    currentFontSize = config.font_size > 0 ? config.font_size : 14.0f;
-                    fontCollection->setPrimaryFont(fontFamily, currentFontSize);
-                    auto m = fontCollection->primaryMetrics();
-                    cellWidth = m.cell_width > 0 ? m.cell_width : 8.0f;
-                    cellHeight = m.cell_height > 0 ? m.cell_height : 16.0f;
-                    if (cache) cache->clear();
-                    RECT rc;
-                    GetClientRect(hwnd, &rc);
-                    int w2 = rc.right - rc.left, h2 = rc.bottom - rc.top;
-                    int c2 = (std::max)(1, static_cast<int>(w2 / cellWidth));
-                    int r2 = (std::max)(1, static_cast<int>(h2 / cellHeight));
-                    if (r2 != termRows || c2 != termCols) {
-                        termRows = r2; termCols = c2;
-                        for (auto& [id, ps] : panes) {
-                            if (ps->screen) ps->screen->resize(r2, c2);
-                            if (ps->pty && ps->pty->isAlive()) ps->pty->resize(r2, c2);
-                        }
-                    }
-                }
-                // Apply color changes to all panes
-                for (auto& [id, ps] : panes) {
-                    if (ps->screen) ps->screen->initDynamicColors(config);
-                }
-                updateTabBar();
-                needsRender = true;
-            });
-            settingsWin->show(hwnd);
-            return;
-        }
-        if (wParam == 'C' && hasSelection) {
-            copySelectionToClipboard();
-            clearSelection();
-            return;
-        }
-        if (wParam == 'V') {
-            pasteFromClipboard();
-            return;
-        }
-        if (wParam >= 'A' && wParam <= 'Z') {
-            char c = static_cast<char>(wParam - 'A' + 1);
-            sendPtyData(&c, 1);
-        }
+    if (ctrl && wParam >= 'A' && wParam <= 'Z') {
+        char c = static_cast<char>(wParam - 'A' + 1);
+        sendPtyData(&c, 1);
     }
 }
 

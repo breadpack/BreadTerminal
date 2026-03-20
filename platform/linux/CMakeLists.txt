@@ -16,6 +16,7 @@ add_library(termcore_linux STATIC
     src/GLAtlasUploader.cpp
     src/GLTextRenderer.cpp
     src/TerminalWidget.cpp
+    src/TerminalInput.cpp
 )
 
 target_include_directories(termcore_linux
