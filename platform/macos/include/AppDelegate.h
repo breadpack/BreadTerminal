@@ -15,6 +15,12 @@
 /// Open the Preferences window (Cmd+,).
 - (IBAction)openPreferences:(id)sender;
 
+/// Create a new tab (Cmd+T).
+- (IBAction)newTab:(id)sender;
+
+/// Close the current tab (Cmd+W).
+- (IBAction)closeTab:(id)sender;
+
 @end
 
 #endif // BREADTERMINAL_APP_DELEGATE_H

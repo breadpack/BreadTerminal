@@ -37,6 +37,10 @@
 
     // Notification observer token (must be removed on termination)
     id _reloadConfigObserver;
+
+    // Saved for creating new tabs
+    id<MTLDevice> _device;
+    termcore::Config _config;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
@@ -57,7 +61,9 @@
     }
 
     // --- Metal device ---
+    _config = config;
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    _device = device;
     if (!device) {
         NSLog(@"BreadTerminal: Metal is not supported on this machine.");
         [NSApp terminate:nil];
@@ -73,31 +79,20 @@
                             | NSWindowStyleMaskMiniaturizable
                             | NSWindowStyleMaskResizable;
 
-    self.mainWindow = [[NSWindow alloc] initWithContentRect:frame
-                                                  styleMask:style
-                                                    backing:NSBackingStoreBuffered
-                                                      defer:NO];
-    self.mainWindow.title = @"BreadTerminal";
+    self.mainWindow = [self createWindowWithFrame:frame style:style config:config device:device];
     [self.mainWindow center];
-    self.mainWindow.minSize = NSMakeSize(320, 240);
-
-    // --- Background transparency ---
-    if (config.background_opacity < 1.0f || config.background_blur > 0) {
-        self.mainWindow.opaque = NO;
-        self.mainWindow.backgroundColor = [NSColor clearColor];
-    }
-
-    // --- Terminal view (as subview of contentView) ---
-    NSView* contentView = self.mainWindow.contentView;
-    _terminalView = [[TerminalView alloc] initWithFrame:contentView.bounds device:device];
-    [_terminalView applyConfig:config];
-    _terminalView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [contentView addSubview:_terminalView];
 
     // --- Show & focus ---
     [NSApp activateIgnoringOtherApps:YES];
     [self.mainWindow makeKeyAndOrderFront:nil];
-    [self.mainWindow makeFirstResponder:_terminalView];
+
+    // Get the terminal view from the window (created by createWindowWithFrame)
+    for (NSView* subview in self.mainWindow.contentView.subviews) {
+        if ([subview isKindOfClass:[TerminalView class]]) {
+            _terminalView = (TerminalView*)subview;
+            break;
+        }
+    }
 
     // --- Socket API server ---
     {
@@ -178,8 +173,7 @@
         }
     }
 
-    // --- Start shell (after socket env var is set so child inherits it) ---
-    [_terminalView startShell];
+    // Shell already started in createWindowWithFrame
 
     // --- Wire WorkspaceStatusProvider to sidebar ---
     _statusProvider = std::make_unique<termcore::WorkspaceStatusProvider>(
@@ -289,6 +283,77 @@
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
     (void)sender;
     return YES;
+}
+
+#pragma mark - Window/Tab creation
+
+- (NSWindow*)createWindowWithFrame:(NSRect)frame
+                             style:(NSWindowStyleMask)style
+                            config:(const termcore::Config&)config
+                            device:(id<MTLDevice>)device {
+    NSWindow* window = [[NSWindow alloc] initWithContentRect:frame
+                                                   styleMask:style
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    window.title = @"BreadTerminal";
+    window.minSize = NSMakeSize(320, 240);
+    window.tabbingMode = NSWindowTabbingModePreferred;
+    window.tabbingIdentifier = @"BreadTerminalTabs";
+
+    // Background transparency
+    if (config.background_opacity < 1.0f || config.background_blur > 0) {
+        window.opaque = NO;
+        window.backgroundColor = [NSColor clearColor];
+    }
+
+    // Terminal view
+    NSView* contentView = window.contentView;
+    TerminalView* termView = [[TerminalView alloc] initWithFrame:contentView.bounds device:device];
+    [termView applyConfig:config];
+    termView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [contentView addSubview:termView];
+    [termView startShell];
+    [window makeFirstResponder:termView];
+
+    return window;
+}
+
+- (IBAction)newTab:(id)sender {
+    (void)sender;
+    NSWindow* keyWindow = [NSApp keyWindow];
+    if (!keyWindow) keyWindow = self.mainWindow;
+
+    NSRect frame = keyWindow.frame;
+    NSWindowStyleMask style = keyWindow.styleMask;
+    NSWindow* newWindow = [self createWindowWithFrame:frame style:style config:_config device:_device];
+    [keyWindow addTabbedWindow:newWindow ordered:NSWindowAbove];
+    [newWindow makeKeyAndOrderFront:nil];
+
+    // Focus the terminal view in the new tab
+    for (NSView* subview in newWindow.contentView.subviews) {
+        if ([subview isKindOfClass:[TerminalView class]]) {
+            [newWindow makeFirstResponder:subview];
+            break;
+        }
+    }
+}
+
+- (IBAction)closeTab:(id)sender {
+    (void)sender;
+    NSWindow* keyWindow = [NSApp keyWindow];
+    if (keyWindow) {
+        [keyWindow close];
+    }
+}
+
+- (IBAction)selectTabByNumber:(id)sender {
+    NSInteger index = [sender tag] - 1;  // tag is 1-based
+    NSWindow* keyWindow = [NSApp keyWindow];
+    if (!keyWindow) return;
+    NSArray<NSWindow*>* tabs = keyWindow.tabbedWindows;
+    if (tabs && index >= 0 && index < (NSInteger)tabs.count) {
+        [tabs[index] makeKeyAndOrderFront:nil];
+    }
 }
 
 #pragma mark - SidebarViewControllerDelegate

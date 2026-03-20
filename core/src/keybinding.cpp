@@ -239,14 +239,7 @@ void KeybindingManager::initDefaults() {
     b("cmd+shift+,", Action::ReloadConfig);
     b("cmd+shift+x", Action::EnterCopyMode);
     b("cmd+shift+b", Action::ToggleSidebar);
-    b("cmd+1",       Action::SwitchWorkspace1);
-    b("cmd+2",       Action::SwitchWorkspace2);
-    b("cmd+3",       Action::SwitchWorkspace3);
-    b("cmd+4",       Action::SwitchWorkspace4);
-    b("cmd+5",       Action::SwitchWorkspace5);
-    b("cmd+6",       Action::SwitchWorkspace6);
-    b("cmd+7",       Action::SwitchWorkspace7);
-    b("cmd+8",       Action::SwitchWorkspace8);
+    // Cmd+1~9 reserved for native macOS tab switching (handled by menu system)
 }
 
 } // namespace termcore
