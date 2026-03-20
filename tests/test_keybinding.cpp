@@ -3,6 +3,15 @@
 
 using namespace termcore;
 
+// Platform-adaptive modifier: cmd on macOS, ctrl on Windows/Linux
+#if defined(__APPLE__)
+#define PM "cmd"
+#define PMS "cmd+shift"
+#else
+#define PM "ctrl"
+#define PMS "ctrl+shift"
+#endif
+
 class KeybindingTest : public ::testing::Test {
 protected:
     KeybindingManager mgr;
@@ -13,15 +22,15 @@ TEST_F(KeybindingTest, DefaultBindingsExist) {
     EXPECT_GT(mgr.count(), 0u);
 }
 
-// 2. lookup cmd+t -> NewTab
+// 2. lookup platform_mod+t -> NewTab
 TEST_F(KeybindingTest, LookupCmdT_NewTab) {
-    auto combo = KeybindingManager::parseCombo("cmd+t");
+    auto combo = KeybindingManager::parseCombo(std::string(PM) + "+t");
     EXPECT_EQ(mgr.lookup(combo), Action::NewTab);
 }
 
-// 3. lookup cmd+c -> Copy
+// 3. lookup platform_mod+c -> Copy
 TEST_F(KeybindingTest, LookupCmdC_Copy) {
-    auto combo = KeybindingManager::parseCombo("cmd+c");
+    auto combo = KeybindingManager::parseCombo(std::string(PM) + "+c");
     EXPECT_EQ(mgr.lookup(combo), Action::Copy);
 }
 
@@ -40,7 +49,7 @@ TEST_F(KeybindingTest, BindNewKey) {
 
 // 6. unbind -> lookup returns None
 TEST_F(KeybindingTest, Unbind) {
-    auto combo = KeybindingManager::parseCombo("cmd+t");
+    auto combo = KeybindingManager::parseCombo(std::string(PM) + "+t");
     EXPECT_EQ(mgr.lookup(combo), Action::NewTab);
     mgr.unbind(combo);
     EXPECT_EQ(mgr.lookup(combo), Action::None);
@@ -103,7 +112,7 @@ TEST_F(KeybindingTest, ResetDefaults) {
 
 // 14. Override existing binding
 TEST_F(KeybindingTest, OverrideExistingBinding) {
-    auto combo = KeybindingManager::parseCombo("cmd+t");
+    auto combo = KeybindingManager::parseCombo(std::string(PM) + "+t");
     EXPECT_EQ(mgr.lookup(combo), Action::NewTab);
     size_t before = mgr.count();
     mgr.bind(combo, Action::CloseTab);
