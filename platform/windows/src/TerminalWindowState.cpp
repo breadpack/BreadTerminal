@@ -4,10 +4,72 @@
 #include "DirectWriteRasterizer.h"
 #include "DirectWriteDiscovery.h"
 
+using termcore::D3DTextRenderer;
+
 #include <algorithm>
+#include <commctrl.h>
 #include <dwmapi.h>
+#include <thread>
+
+namespace termcore {
+    void positionImeWindow(HWND hwnd, int x, int y, int height);
+}
 
 #pragma comment(lib, "dwmapi.lib")
+
+namespace {
+
+constexpr UINT_PTR kSearchEditSubclassId = 1;
+
+// Subclass procedure for the search EDIT control to handle Enter/Escape
+LRESULT CALLBACK SearchEditSubclassProc(
+        HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
+        UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
+    auto* state = reinterpret_cast<TerminalWindowState*>(dwRefData);
+
+    switch (msg) {
+        case WM_KEYDOWN:
+            if (wParam == VK_ESCAPE) {
+                if (state->controller) {
+                    state->controller->onSearchQuery("");
+                }
+                state->hideSearchBar();
+                return 0;
+            }
+            if (wParam == VK_RETURN) {
+                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                if (state->controller) {
+                    if (shift) state->controller->onSearchPrev();
+                    else state->controller->onSearchNext();
+                }
+                return 0;
+            }
+            if (wParam == VK_F3) {
+                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                if (state->controller) {
+                    if (shift) state->controller->onSearchPrev();
+                    else state->controller->onSearchNext();
+                }
+                return 0;
+            }
+            break;
+
+        case WM_CHAR:
+            if (wParam == '\r' || wParam == 27) {
+                return 0;
+            }
+            break;
+
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hWnd, SearchEditSubclassProc,
+                                 kSearchEditSubclassId);
+            break;
+    }
+
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+} // namespace
 
 // --- D3D11 lifecycle ---
 
@@ -81,213 +143,42 @@ void TerminalWindowState::resizeSwapChain(int width, int height) {
                          static_cast<float>(height));
     }
 
-    // Recalculate terminal dimensions
-    if (cellWidth > 0 && cellHeight > 0) {
-        // Reserve space for tab bar when visible (2+ tabs)
-        bool tabBarVisible = mux && mux->getWorkspace(wsId)
-            && mux->getWorkspace(wsId)->tabs.size() > 1;
-        float tabBarH = tabBarVisible ? cellHeight * D3DTextRenderer::kTabBarHeightScale : 0.0f;
-        float contentH = height - tabBarH;
-        int cols = (std::max)(1, static_cast<int>(width / cellWidth));
-        int rows = (std::max)(1, static_cast<int>(contentH / cellHeight));
-
-        if (rows != termRows || cols != termCols) {
-            termRows = rows;
-            termCols = cols;
-            // Resize ALL panes
-            for (auto& [id, ps] : panes) {
-                if (ps->screen) ps->screen->resize(rows, cols);
-                if (ps->pty && ps->pty->isAlive()) {
-                    ps->pty->resize(rows, cols);
-                }
-            }
-            needsRender = true;
-        }
+    // Delegate grid recalculation to controller
+    if (controller) {
+        controller->onResize(width, height);
 
         // Track resize overlay state
         showResizeOverlay = true;
         resizeOverlayStart = std::chrono::steady_clock::now();
-        resizeOverlayCols = screen ? screen->cols() : 0;
-        resizeOverlayRows = screen ? screen->rows() : 0;
+        resizeOverlayCols = controller->termCols();
+        resizeOverlayRows = controller->termRows();
         needsRender = true;
     }
-}
-
-// --- Pane management ---
-
-PaneState* TerminalWindowState::activePane() const {
-    if (!mux) return nullptr;
-    auto* tab = mux->activeTab(wsId);
-    if (!tab) return nullptr;
-    PaneId pid = tab->active_pane;
-    auto it = panes.find(pid);
-    return it != panes.end() ? it->second.get() : nullptr;
-}
-
-PaneState* TerminalWindowState::paneById(PaneId id) const {
-    auto it = panes.find(id);
-    return it != panes.end() ? it->second.get() : nullptr;
-}
-
-void TerminalWindowState::syncActivePointers() {
-    auto* ap = activePane();
-    if (ap) {
-        screen = ap->screen.get();
-        pty = ap->pty.get();
-    } else {
-        screen = nullptr;
-        pty = nullptr;
-    }
-}
-
-PaneId TerminalWindowState::createPaneState(int rows, int cols) {
-    PaneId id = nextPaneId++;
-    auto ps = std::make_unique<PaneState>();
-    ps->id = id;
-    ps->screen = std::make_unique<Screen>(rows, cols);
-    ps->parser = std::make_unique<VtParser>(*ps->screen);
-    ps->screen->initDynamicColors(config);
-
-    ps->pty = termcore::createPty();
-    if (!ps->pty->spawn(config.shell, {}, "", rows, cols)) {
-        OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
-    }
-
-    panes[id] = std::move(ps);
-    return id;
-}
-
-void TerminalWindowState::destroyPaneState(PaneId id) {
-    panes.erase(id);
-}
-
-bool TerminalWindowState::hasAnyAlivePty() const {
-    for (const auto& [id, ps] : panes) {
-        if (ps->pty && ps->pty->isAlive()) return true;
-    }
-    return false;
-}
-
-void TerminalWindowState::setupMuxCallbacks() {
-    mux->setPaneCallbacks(
-        // PaneCreateCallback
-        [this](int rows, int cols) -> PaneId {
-            return createPaneState(rows, cols);
-        },
-        // PaneDestroyCallback
-        [this](PaneId id) {
-            destroyPaneState(id);
-        }
-    );
-
-    mux->setOnChanged([this]() {
-        syncActivePointers();
-        updateTabBar();
-        needsRender = true;
-    });
-}
-
-void TerminalWindowState::updateTabBar() {
-    if (!mux || !renderer) return;
-    auto* ws = mux->getWorkspace(wsId);
-    if (!ws) return;
-
-    D3DTextRenderer::TabBarInfo tabInfo;
-    // Only show tab bar when there are 2+ tabs
-    tabInfo.visible = ws->tabs.size() > 1;
-
-    // Derive tab bar colors from theme
-    uint32_t bgR = (config.background >> 16) & 0xFF;
-    uint32_t bgG = (config.background >> 8) & 0xFF;
-    uint32_t bgB = config.background & 0xFF;
-    int lum = bgR * 299 + bgG * 587 + bgB * 114;
-    bool isDark = lum < 128000;
-
-    // Tab bar bg: darker/lighter than terminal bg for depth
-    if (isDark) {
-        tabInfo.bg_color =
-            ((uint32_t)(bgR * 0.7f) << 16) |
-            ((uint32_t)(bgG * 0.7f) << 8) |
-             (uint32_t)(bgB * 0.7f);
-    } else {
-        tabInfo.bg_color =
-            ((uint32_t)(bgR * 0.92f) << 16) |
-            ((uint32_t)(bgG * 0.92f) << 8) |
-             (uint32_t)(bgB * 0.92f);
-    }
-    // Active tab = terminal bg (seamless connection to content)
-    tabInfo.active_bg_color = config.background;
-    // Inactive tab = blends into tab bar
-    tabInfo.inactive_bg_color = tabInfo.bg_color;
-    tabInfo.fg_color = config.foreground;
-    // Accent from palette blue (index 4)
-    tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
-
-    for (size_t i = 0; i < ws->tabs.size(); ++i) {
-        auto& tab = ws->tabs[i];
-        D3DTextRenderer::TabInfo ti;
-
-        // Get title from the active pane's screen (reflects running process)
-        std::string screenTitle;
-        PaneId activePaneId = mux->activePaneId(wsId, tab->id);
-        if (activePaneId != termcore::kInvalidPane) {
-            auto it = panes.find(activePaneId);
-            if (it != panes.end() && it->second->screen) {
-                screenTitle = it->second->screen->title();
-            }
-        }
-
-        if (!screenTitle.empty()) {
-            ti.title = screenTitle;
-        } else if (!tab->title.empty()) {
-            ti.title = tab->title;
-        } else {
-            ti.title = "Tab " + std::to_string(i + 1);
-        }
-
-        ti.active = (i == ws->active_tab_index);
-        tabInfo.tabs.push_back(ti);
-    }
-
-    renderer->setTabBar(tabInfo);
 }
 
 // --- Terminal initialization ---
 
 void TerminalWindowState::initTerminal() {
-    // Load config (Lua first, then legacy fallback)
-    config = termcore::loadConfig();
+    // Load config
+    termcore::Config config = termcore::loadConfig();
 
     // Apply font settings from config (fallback to Consolas 14pt)
-    fontFamily = config.font_family.empty() ? "Consolas" : config.font_family;
+    std::string fontFamily = config.font_family.empty() ? "Consolas" : config.font_family;
     if (fontFamily == "Menlo") fontFamily = "Consolas";
-    baseFontSize = config.font_size > 0 ? config.font_size : 14.0f;
-    currentFontSize = baseFontSize;
+    config.font_family = fontFamily;
 
-    // Font stack
-    rasterizer = createDirectWriteRasterizer();
-    discovery = createDirectWriteDiscovery();
-    shaper = std::make_unique<FontShaper>();
-    fontCollection = std::make_unique<FontCollection>(
+    // Font rasterization stack
+    rasterizer = termcore::createDirectWriteRasterizer();
+    discovery = termcore::createDirectWriteDiscovery();
+    shaper = std::make_unique<termcore::FontShaper>();
+    fontCollection = std::make_unique<termcore::FontCollection>(
         *rasterizer, *discovery, *shaper);
-    fontCollection->setPrimaryFont(fontFamily, currentFontSize);
-    atlas = std::make_unique<GlyphAtlas>();
-    cache = std::make_unique<GlyphCache>();
 
-    // Cell dimensions
-    auto metrics = fontCollection->primaryMetrics();
-    cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
-    cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
+    float fontSize = config.font_size > 0 ? config.font_size : 14.0f;
+    fontCollection->setPrimaryFont(fontFamily, fontSize);
 
-    // Calculate actual rows/cols from window client area
-    RECT initRc;
-    GetClientRect(hwnd, &initRc);
-    int initWidth = initRc.right - initRc.left;
-    int initHeight = initRc.bottom - initRc.top;
-    if (initWidth > 0 && initHeight > 0 && cellWidth > 0 && cellHeight > 0) {
-        termCols = (std::max)(1, static_cast<int>(initWidth / cellWidth));
-        termRows = (std::max)(1, static_cast<int>(initHeight / cellHeight));
-    }
+    atlas = std::make_unique<termcore::GlyphAtlas>();
+    cache = std::make_unique<termcore::GlyphCache>();
 
     // Renderer
     renderer = std::make_unique<D3DTextRenderer>();
@@ -303,163 +194,39 @@ void TerminalWindowState::initTerminal() {
     renderer->resize(static_cast<float>(rc.right - rc.left),
                      static_cast<float>(rc.bottom - rc.top));
 
-    // Keybinding manager
-    keybindings = std::make_unique<termcore::KeybindingManager>();
-    if (!config.keybindings.empty()) {
-        std::vector<std::pair<std::string, std::string>> bindings;
-        for (const auto& kb : config.keybindings) {
-            bindings.emplace_back(kb.trigger, kb.action);
-        }
-        keybindings->loadFromConfig(bindings);
-    }
-
-    // Mux, notifications, agent tracking
-    mux = std::make_unique<termcore::Mux>();
+    // Notifications, agent tracking
     notifications = std::make_unique<termcore::NotificationStore>();
     agentTracker = std::make_unique<termcore::AgentTracker>();
 
-    // Set up Mux callbacks and create initial workspace + tab
-    setupMuxCallbacks();
-    wsId = mux->createWorkspace("default");
-    mux->createTab(wsId, termRows, termCols);
-    syncActivePointers();
+    // Create controller with this as the IPlatformHost
+    controller = std::make_unique<termcore::TerminalController>(
+        this, std::move(config), fontCollection.get());
+    controller->initTerminal();
+
     updateTabBar();
-}
-
-void TerminalWindowState::startShell() {
-    // Shell is now spawned per-pane in createPaneState().
-    // This method is kept for compatibility; the first pane is
-    // already created by initTerminal() via mux->createTab().
-}
-
-// --- Font size ---
-
-void TerminalWindowState::changeFontSize(float delta) {
-    float newSize = currentFontSize + delta;
-    newSize = (std::max)(6.0f, (std::min)(72.0f, newSize));
-    if (newSize == currentFontSize) return;
-    currentFontSize = newSize;
-
-    fontCollection->setPrimaryFont(fontFamily, currentFontSize);
-
-    auto metrics = fontCollection->primaryMetrics();
-    cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
-    cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
-
-    if (cache) cache->clear();
-
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    int width = rc.right - rc.left;
-    int height = rc.bottom - rc.top;
-    int cols = (std::max)(1, static_cast<int>(width / cellWidth));
-    int rows = (std::max)(1, static_cast<int>(height / cellHeight));
-    if (rows != termRows || cols != termCols) {
-        termRows = rows;
-        termCols = cols;
-        for (auto& [id, ps] : panes) {
-            if (ps->screen) ps->screen->resize(rows, cols);
-            if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
-        }
-    }
-
-    needsRender = true;
-}
-
-void TerminalWindowState::resetFontSize() {
-    if (currentFontSize == baseFontSize) return;
-    currentFontSize = baseFontSize;
-
-    fontCollection->setPrimaryFont(fontFamily, currentFontSize);
-
-    auto metrics = fontCollection->primaryMetrics();
-    cellWidth = metrics.cell_width > 0 ? metrics.cell_width : 8.0f;
-    cellHeight = metrics.cell_height > 0 ? metrics.cell_height : 16.0f;
-
-    if (cache) cache->clear();
-
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    int width = rc.right - rc.left;
-    int height = rc.bottom - rc.top;
-    int cols = (std::max)(1, static_cast<int>(width / cellWidth));
-    int rows = (std::max)(1, static_cast<int>(height / cellHeight));
-    if (rows != termRows || cols != termCols) {
-        termRows = rows;
-        termCols = cols;
-        for (auto& [id, ps] : panes) {
-            if (ps->screen) ps->screen->resize(rows, cols);
-            if (ps->pty && ps->pty->isAlive()) ps->pty->resize(rows, cols);
-        }
-    }
-
     needsRender = true;
 }
 
 // --- PTY / rendering ---
 
 void TerminalWindowState::pollPty() {
-    // Poll ALL panes for PTY output
-    std::vector<PaneId> deadPanes;
-    char buf[8192];
+    if (!controller) return;
 
-    for (auto& [id, ps] : panes) {
-        if (!ps->pty) continue;
-
-        bool wasAtBottom = ps->screen ? ps->screen->isViewportAtBottom() : true;
-
-        int n = ps->pty->read(buf, sizeof(buf));
-        while (n > 0) {
-            ps->parser->feed(buf, static_cast<size_t>(n));
-            needsRender = true;
-            n = ps->pty->read(buf, sizeof(buf));
-        }
-
-        if (needsRender && wasAtBottom && ps->screen) {
-            ps->screen->scrollViewportToBottom();
-        }
-
-        // Track dead panes for cleanup
-        if (!ps->pty->isAlive()) {
-            deadPanes.push_back(id);
-        }
-    }
-
-    // Auto-close dead panes
-    for (PaneId deadId : deadPanes) {
-        if (!mux) continue;
-        auto* tab = mux->activeTab(wsId);
-        if (!tab) continue;
-
-        // Find which tab contains this pane and close it
-        auto tabIds = mux->allTabIds(wsId);
-        for (auto tid : tabIds) {
-            auto allPanesInTab = mux->allPanes(wsId, tid);
-            for (auto pid : allPanesInTab) {
-                if (pid == deadId) {
-                    if (allPanesInTab.size() == 1 && tabIds.size() == 1) {
-                        // Last pane in last tab — close window
-                        PostMessageW(hwnd, WM_CLOSE, 0, 0);
-                        return;
-                    }
-                    mux->closePane(wsId, tid, deadId);
-                    syncActivePointers();
-                    updateTabBar();
-                    goto nextDead;
-                }
-            }
-        }
-        nextDead:;
-    }
-
-    // Detect URLs in active screen
-    if (needsRender && screen) {
-        detectedUrls = urlDetector.detectInScreen(*screen);
+    controller->pollPty();
+    if (controller->needsRender()) {
+        needsRender = true;
+        controller->clearNeedsRender();
     }
 }
 
 void TerminalWindowState::renderFrame() {
-    if (!renderer || !screen) return;
+    if (!renderer || !controller) return;
+
+    termcore::Screen* screen = controller->activeScreen();
+    if (!screen) return;
+
+    // Update selection on renderer
+    updateRendererSelection();
 
     renderer->render(*screen);
 
@@ -480,10 +247,61 @@ void TerminalWindowState::renderFrame() {
     }
 }
 
-void TerminalWindowState::sendPtyData(const char* data, size_t len) {
-    if (pty && pty->isAlive()) {
-        pty->write(data, len);
+// --- Helpers ---
+
+void TerminalWindowState::updateTabBar() {
+    if (!renderer || !controller) return;
+
+    auto tabs = controller->tabBarInfo();
+    const auto& config = controller->config();
+    float cellH = controller->cellHeight();
+
+    D3DTextRenderer::TabBarInfo tabInfo;
+    tabInfo.visible = static_cast<int>(tabs.size()) > 1;
+
+    // Derive tab bar colors from theme
+    uint32_t bgR = (config.background >> 16) & 0xFF;
+    uint32_t bgG = (config.background >> 8) & 0xFF;
+    uint32_t bgB = config.background & 0xFF;
+    int lum = bgR * 299 + bgG * 587 + bgB * 114;
+    bool isDark = lum < 128000;
+
+    if (isDark) {
+        tabInfo.bg_color =
+            ((uint32_t)(bgR * 0.7f) << 16) |
+            ((uint32_t)(bgG * 0.7f) << 8) |
+             (uint32_t)(bgB * 0.7f);
+    } else {
+        tabInfo.bg_color =
+            ((uint32_t)(bgR * 0.92f) << 16) |
+            ((uint32_t)(bgG * 0.92f) << 8) |
+             (uint32_t)(bgB * 0.92f);
     }
+    tabInfo.active_bg_color = config.background;
+    tabInfo.inactive_bg_color = tabInfo.bg_color;
+    tabInfo.fg_color = config.foreground;
+    tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        D3DTextRenderer::TabInfo ti;
+        ti.title = tabs[i].title;
+        ti.active = tabs[i].active;
+        tabInfo.tabs.push_back(ti);
+    }
+
+    renderer->setTabBar(tabInfo);
+}
+
+void TerminalWindowState::updateRendererSelection() {
+    if (!renderer || !controller) return;
+    const auto& sel = controller->selection();
+    D3DTextRenderer::Selection dSel;
+    dSel.active = sel.hasSelection();
+    dSel.startRow = sel.start().row;
+    dSel.startCol = sel.start().col;
+    dSel.endRow = sel.end().row;
+    dSel.endCol = sel.end().col;
+    renderer->setSelection(dSel);
 }
 
 // --- Fullscreen ---
@@ -528,21 +346,16 @@ void TerminalWindowState::toggleFullscreen() {
 // --- DWM title bar theming ---
 
 void TerminalWindowState::applyTitleBarTheme(HWND hwnd) {
-    // DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-    // DWMWA_CAPTION_COLOR = 35
-    // DWMWA_TEXT_COLOR = 36
+    const auto& config = controller ? controller->config() : termcore::Config{};
 
-    // Determine if theme is dark (simple luminance check)
     uint32_t bg = config.background;
     int lum = ((bg >> 16) & 0xFF) * 299 + ((bg >> 8) & 0xFF) * 587 + (bg & 0xFF) * 114;
     BOOL useDark = (lum < 128000) ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20, &useDark, sizeof(useDark));
 
-    // Set caption color to match terminal background
     COLORREF captionColor = RGB((bg >> 16) & 0xFF, (bg >> 8) & 0xFF, bg & 0xFF);
     DwmSetWindowAttribute(hwnd, 35, &captionColor, sizeof(captionColor));
 
-    // Set title text color to match terminal foreground
     uint32_t fg = config.foreground;
     COLORREF textColor = RGB((fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF);
     DwmSetWindowAttribute(hwnd, 36, &textColor, sizeof(textColor));
@@ -551,16 +364,14 @@ void TerminalWindowState::applyTitleBarTheme(HWND hwnd) {
 // --- DWM background blur ---
 
 void TerminalWindowState::applyBackgroundBlur(HWND hwnd) {
+    const auto& config = controller ? controller->config() : termcore::Config{};
     if (config.background_blur <= 0) return;
 
-    // Try Windows 11 Mica/Acrylic first (DWM_SYSTEMBACKDROP_TYPE)
-    // DWMWA_SYSTEMBACKDROP_TYPE = 38
     enum { DWMSBT_NONE = 1, DWMSBT_MAINWINDOW = 2, DWMSBT_TRANSIENTWINDOW = 3, DWMSBT_TABBEDWINDOW = 4 };
-    int backdrop = DWMSBT_TRANSIENTWINDOW; // Acrylic
+    int backdrop = DWMSBT_TRANSIENTWINDOW;
     HRESULT hr = DwmSetWindowAttribute(hwnd, 38, &backdrop, sizeof(backdrop));
 
     if (FAILED(hr)) {
-        // Fallback for older Windows: use DWM blur behind
         DWM_BLURBEHIND bb = {};
         bb.dwFlags = DWM_BB_ENABLE;
         bb.fEnable = TRUE;
@@ -571,7 +382,7 @@ void TerminalWindowState::applyBackgroundBlur(HWND hwnd) {
 // --- DPI ---
 
 void TerminalWindowState::handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRect) {
-    dpiScale = static_cast<float>(dpi) / 96.0f;
+    dpiScale_ = static_cast<float>(dpi) / 96.0f;
 
     if (newRect) {
         SetWindowPos(hwnd, nullptr,
@@ -581,9 +392,300 @@ void TerminalWindowState::handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRe
             SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
-    // Font size needs to be recalculated with new DPI
-    // The font system already handles this through changeFontSize/resetFontSize
     needsRender = true;
+}
+
+// --- IPlatformHost implementation ---
+
+void TerminalWindowState::invalidate() {
+    needsRender = true;
+}
+
+void TerminalWindowState::getViewportSize(int& w, int& h) {
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    w = rc.right - rc.left;
+    h = rc.bottom - rc.top;
+}
+
+std::string TerminalWindowState::getClipboardText() {
+    std::string utf8;
+    if (!OpenClipboard(hwnd)) return utf8;
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (hData) {
+        const wchar_t* pData = static_cast<const wchar_t*>(GlobalLock(hData));
+        if (pData) {
+            int wlen = static_cast<int>(wcslen(pData));
+            int utf8Len = WideCharToMultiByte(CP_UTF8, 0, pData, wlen,
+                                               nullptr, 0, nullptr, nullptr);
+            if (utf8Len > 0) {
+                utf8.resize(utf8Len);
+                WideCharToMultiByte(CP_UTF8, 0, pData, wlen,
+                                    &utf8[0], utf8Len, nullptr, nullptr);
+            }
+            GlobalUnlock(hData);
+        }
+    }
+    CloseClipboard();
+    return utf8;
+}
+
+void TerminalWindowState::setClipboardText(const std::string& text) {
+    if (text.empty()) return;
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                                    text.c_str(), static_cast<int>(text.size()),
+                                    nullptr, 0);
+    if (wlen <= 0) return;
+
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (wlen + 1) * sizeof(wchar_t));
+    if (!hMem) return;
+
+    wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
+    if (pMem) {
+        MultiByteToWideChar(CP_UTF8, 0,
+                            text.c_str(), static_cast<int>(text.size()),
+                            pMem, wlen);
+        pMem[wlen] = L'\0';
+        GlobalUnlock(hMem);
+
+        if (OpenClipboard(hwnd)) {
+            EmptyClipboard();
+            SetClipboardData(CF_UNICODETEXT, hMem);
+            CloseClipboard();
+        } else {
+            GlobalFree(hMem);
+        }
+    } else {
+        GlobalFree(hMem);
+    }
+}
+
+void TerminalWindowState::setWindowTitle(const std::string& title) {
+    int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                                    title.c_str(), static_cast<int>(title.size()),
+                                    nullptr, 0);
+    if (wlen > 0) {
+        std::wstring wtitle(wlen, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0,
+                            title.c_str(), static_cast<int>(title.size()),
+                            &wtitle[0], wlen);
+        SetWindowTextW(hwnd, wtitle.c_str());
+    }
+}
+
+void TerminalWindowState::closeWindow() {
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+}
+
+void TerminalWindowState::showConfirmDialog(const std::string& msg,
+                                             std::function<void(bool)> cb) {
+    // Run dialog in a separate thread to avoid blocking the event loop
+    std::string capturedMsg = msg;
+    HWND capturedHwnd = hwnd;
+    std::thread([capturedMsg, capturedHwnd, cb = std::move(cb)]() {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                                        capturedMsg.c_str(),
+                                        static_cast<int>(capturedMsg.size()),
+                                        nullptr, 0);
+        std::wstring wmsg(wlen, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0,
+                            capturedMsg.c_str(),
+                            static_cast<int>(capturedMsg.size()),
+                            &wmsg[0], wlen);
+
+        int result = MessageBoxW(capturedHwnd, wmsg.c_str(),
+                                 L"BreadTerminal",
+                                 MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+        if (cb) cb(result == IDYES);
+    }).detach();
+}
+
+void TerminalWindowState::showSearchBar() {
+    if (searchActive && searchEditHwnd) {
+        SetFocus(searchEditHwnd);
+        SendMessageW(searchEditHwnd, EM_SETSEL, 0, -1);
+        return;
+    }
+
+    searchActive = true;
+
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    constexpr int kSearchBarWidth = 300;
+    constexpr int kSearchBarHeight = 24;
+    constexpr int kSearchBarMargin = 8;
+
+    int x = rc.right - kSearchBarWidth - kSearchBarMargin;
+    int y = kSearchBarMargin;
+
+    searchEditHwnd = CreateWindowExW(
+        0, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+        x, y, kSearchBarWidth, kSearchBarHeight,
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)),
+        GetModuleHandleW(nullptr),
+        nullptr);
+
+    if (!searchEditHwnd) {
+        searchActive = false;
+        return;
+    }
+
+    // Subclass for Enter/Escape handling
+    SetWindowSubclass(searchEditHwnd, SearchEditSubclassProc,
+                      kSearchEditSubclassId,
+                      reinterpret_cast<DWORD_PTR>(this));
+
+    // Set font to match terminal feel
+    HFONT hFont = CreateFontW(
+        -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+        L"Consolas");
+    if (hFont) {
+        SendMessageW(searchEditHwnd, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(hFont), TRUE);
+    }
+
+    SetFocus(searchEditHwnd);
+}
+
+void TerminalWindowState::hideSearchBar() {
+    if (searchEditHwnd) {
+        HFONT hFont = reinterpret_cast<HFONT>(
+            SendMessageW(searchEditHwnd, WM_GETFONT, 0, 0));
+        DestroyWindow(searchEditHwnd);
+        if (hFont) {
+            DeleteObject(hFont);
+        }
+        searchEditHwnd = nullptr;
+    }
+
+    searchActive = false;
+
+    // Clear search highlights from renderer
+    if (renderer) {
+        renderer->setSearchHighlights({}, -1);
+    }
+
+    SetFocus(hwnd);
+    needsRender = true;
+}
+
+void TerminalWindowState::updateSearchResults(int current, int total) {
+    // For now, we don't display match count in the search bar.
+    // Could add a label next to the edit control in future.
+    (void)current;
+    (void)total;
+    needsRender = true;
+}
+
+void TerminalWindowState::positionIME(int x, int y, int height) {
+    termcore::positionImeWindow(hwnd, x, y, height);
+}
+
+void TerminalWindowState::onFontChanged(float cellW, float cellH) {
+    if (cache) cache->clear();
+    needsRender = true;
+}
+
+void TerminalWindowState::onColorsChanged() {
+    applyTitleBarTheme(hwnd);
+    updateTabBar();
+    needsRender = true;
+}
+
+void TerminalWindowState::onGridSizeChanged(int rows, int cols) {
+    // Resize overlay
+    showResizeOverlay = true;
+    resizeOverlayStart = std::chrono::steady_clock::now();
+    resizeOverlayCols = cols;
+    resizeOverlayRows = rows;
+    updateTabBar();
+    needsRender = true;
+}
+
+void TerminalWindowState::showNotification(const std::string& title,
+                                            const std::string& body) {
+    // TODO: Win32 notification toast
+    (void)title;
+    (void)body;
+}
+
+void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
+    if (!settingsWin) {
+        settingsWin = std::make_unique<termcore::SettingsWindow>();
+    }
+    settingsWin->setConfig(config);
+    settingsWin->setSaveCallback([this](const termcore::Config& updated) {
+        if (controller) {
+            controller->onConfigChanged(updated);
+        }
+    });
+    settingsWin->show(hwnd);
+}
+
+void TerminalWindowState::openThemeHub(const termcore::Config& config) {
+    if (!themeHub) {
+        themeHub = std::make_unique<termcore::ThemeHubWindow>();
+    }
+    themeHub->setConfig(config);
+    themeHub->setApplyCallback([this](const std::string& name,
+                                       const termcore::ThemeMetadata* /*meta*/) {
+        if (controller) {
+            controller->onThemeChanged(name);
+            // Update the ThemeHub popup itself with new theme colors
+            themeHub->setConfig(controller->config());
+        }
+    });
+    themeHub->show(hwnd);
+}
+
+void TerminalWindowState::openFontHub(const termcore::Config& config) {
+    if (!fontHub) {
+        fontHub = std::make_unique<termcore::FontHubWindow>();
+    }
+    fontHub->setConfig(config);
+    fontHub->setApplyCallback([this](const std::string& name) {
+        if (controller) {
+            controller->onFontChanged(name);
+        }
+    });
+    fontHub->show(hwnd);
+}
+
+float TerminalWindowState::dpiScale() {
+    return dpiScale_;
+}
+
+std::unique_ptr<termcore::Pty> TerminalWindowState::createPty(
+        const std::string& shell, int rows, int cols) {
+    auto pty = termcore::createPty();
+    if (!pty->spawn(shell, {}, "", rows, cols)) {
+        OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
+    }
+    return pty;
+}
+
+void TerminalWindowState::repositionSearchBar() {
+    if (!searchEditHwnd) return;
+
+    constexpr int kSearchBarWidth = 300;
+    constexpr int kSearchBarHeight = 24;
+    constexpr int kSearchBarMargin = 8;
+
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    int x = rc.right - kSearchBarWidth - kSearchBarMargin;
+    int y = kSearchBarMargin;
+
+    SetWindowPos(searchEditHwnd, nullptr, x, y,
+                 kSearchBarWidth, kSearchBarHeight,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 #endif // _WIN32

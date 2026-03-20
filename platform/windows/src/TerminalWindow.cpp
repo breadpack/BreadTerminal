@@ -45,7 +45,6 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 return -1;
             }
             newState->initTerminal();
-            newState->startShell();
 
             newState->needsRender = true;
 
@@ -100,31 +99,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 0;
 
         case WM_MOUSEWHEEL:
-            if (state && state->screen) {
+            if (state) {
                 int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-                int lines = (std::max)(1, std::abs(delta / WHEEL_DELTA) * 3);
-
-                if (state->screen->mouseMode() != MouseMode::None) {
-                    POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-                    ScreenToClient(hWnd, &pt);
-                    MouseEventType scrollType = delta > 0
-                        ? MouseEventType::ScrollUp
-                        : MouseEventType::ScrollDown;
-                    MouseButton scrollBtn = delta > 0
-                        ? MouseButton::ScrollUp
-                        : MouseButton::ScrollDown;
-                    for (int i = 0; i < lines; ++i) {
-                        state->sendMouseEvent(scrollType, scrollBtn,
-                                              pt.x, pt.y);
-                    }
-                } else {
-                    if (delta > 0) {
-                        state->screen->scrollViewportUp(lines);
-                    } else {
-                        state->screen->scrollViewportDown(lines);
-                    }
-                }
-                state->needsRender = true;
+                POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+                ScreenToClient(hWnd, &pt);
+                state->handleMouseWheel(delta, pt.x, pt.y);
             }
             return 0;
 
@@ -133,72 +112,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
                 // Check if click is in tab bar area
-                if (state->mux && state->cellHeight > 0) {
-                    float tabBarH = state->cellHeight * D3DTextRenderer::kTabBarHeightScale;
-                    auto* ws = state->mux->getWorkspace(state->wsId);
-                    if (ws && ws->tabs.size() > 1 && my < static_cast<int>(tabBarH)) {
-                        RECT rc;
-                        GetClientRect(hWnd, &rc);
-                        int viewW = rc.right - rc.left;
-                        int tabCount = static_cast<int>(ws->tabs.size());
-                        float cW = state->cellWidth;
-
-                        // Match layout constants from D3DCellBuilderOverlays
-                        float tabGap = 4.0f;
-                        float tabMinW = cW * 12.0f;
-                        float tabMaxW = cW * 24.0f;
-                        float leftMargin = 8.0f;
-                        float closeW = cW * 1.5f;
-                        float plusBtnW = cW * 2.0f;
-
-                        float availW = viewW - leftMargin - plusBtnW - 8.0f;
-                        float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
-                        tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
-
-                        float fmx = static_cast<float>(mx);
-
-                        // Check "+" button
-                        float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
-                        if (fmx >= plusX && fmx < plusX + plusBtnW) {
-                            state->mux->createTab(state->wsId,
-                                state->termRows, state->termCols);
-                            state->syncActivePointers();
-                            state->updateTabBar();
-                            state->needsRender = true;
-                            return 0;
-                        }
-
-                        // Check which tab was clicked
-                        for (int t = 0; t < tabCount; ++t) {
-                            float tabX = leftMargin + t * (tabW + tabGap);
-                            if (fmx >= tabX && fmx < tabX + tabW) {
-                                // Check close button area (right side of tab)
-                                float closeHitX = tabX + tabW - closeW - 4.0f;
-                                if (fmx >= closeHitX) {
-                                    // Close this tab
-                                    auto tabId = ws->tabs[t]->id;
-                                    if (ws->tabs.size() <= 1) {
-                                        PostMessageW(hWnd, WM_CLOSE, 0, 0);
-                                    } else {
-                                        state->mux->destroyTab(state->wsId, tabId);
-                                        state->syncActivePointers();
-                                        state->updateTabBar();
-                                        state->needsRender = true;
-                                    }
-                                } else {
-                                    // Switch to this tab
-                                    state->mux->setActiveTab(state->wsId, ws->tabs[t]->id);
-                                    state->syncActivePointers();
-                                    state->updateTabBar();
-                                    state->needsRender = true;
-                                }
-                                break;
-                            }
-                        }
-                        return 0;
-                    }
+                if (!state->handleTabBarClick(mx, my)) {
+                    state->handleMouseDown(mx, my);
                 }
-                state->handleMouseDown(mx, my);
             }
             return 0;
 
@@ -206,60 +122,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             if (state) {
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
-                // Update tab bar hover state
-                if (state->mux && state->cellHeight > 0 && state->renderer) {
-                    float tabBarH = state->cellHeight * D3DTextRenderer::kTabBarHeightScale;
-                    auto* ws = state->mux->getWorkspace(state->wsId);
-                    if (ws && ws->tabs.size() > 1 && my < (int)tabBarH) {
-                        int tabCount = (int)ws->tabs.size();
-                        float cW = state->cellWidth;
-                        float tabGap = 4.0f, tabMinW = cW * 12.0f, tabMaxW = cW * 24.0f;
-                        float leftMargin = 8.0f, closeW = cW * 1.5f;
-                        float plusBtnW = cW * 2.0f;
-                        RECT rc; GetClientRect(hWnd, &rc);
-                        float availW = (rc.right - rc.left) - leftMargin - plusBtnW - 8.0f;
-                        float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
-                        tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
-                        float fmx = (float)mx;
-                        int newHover = -1; bool newCloseHover = false; bool newPlusHover = false;
-
-                        // Check tab hover
-                        for (int t = 0; t < tabCount; ++t) {
-                            float tabX = leftMargin + t * (tabW + tabGap);
-                            if (fmx >= tabX && fmx < tabX + tabW) {
-                                newHover = t;
-                                newCloseHover = (fmx >= tabX + tabW - closeW - 4.0f);
-                                break;
-                            }
-                        }
-
-                        // Check "+" button hover
-                        float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
-                        if (fmx >= plusX && fmx < plusX + plusBtnW) {
-                            newPlusHover = true;
-                        }
-
-                        auto tabInfo = state->renderer->getTabBar();
-                        if (tabInfo.hovered_tab != newHover
-                            || tabInfo.hover_close != newCloseHover
-                            || tabInfo.hover_plus != newPlusHover) {
-                            tabInfo.hovered_tab = newHover;
-                            tabInfo.hover_close = newCloseHover;
-                            tabInfo.hover_plus = newPlusHover;
-                            state->renderer->setTabBar(tabInfo);
-                            state->needsRender = true;
-                        }
-                    } else {
-                        auto tabInfo = state->renderer->getTabBar();
-                        if (tabInfo.hovered_tab != -1 || tabInfo.hover_plus) {
-                            tabInfo.hovered_tab = -1;
-                            tabInfo.hover_close = false;
-                            tabInfo.hover_plus = false;
-                            state->renderer->setTabBar(tabInfo);
-                            state->needsRender = true;
-                        }
-                    }
-                }
+                state->handleTabBarHover(mx, my);
                 state->handleMouseMove(mx, my);
             }
             return 0;
@@ -277,7 +140,30 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
         case WM_COMMAND:
             if (state && HIWORD(wParam) == EN_CHANGE &&
                 LOWORD(wParam) == TerminalWindowState::kSearchEditId) {
-                state->performSearch();
+                // Get text from edit control and send to controller
+                if (state->searchEditHwnd && state->controller) {
+                    int len = GetWindowTextLengthW(state->searchEditHwnd);
+                    if (len > 0) {
+                        std::wstring wquery(len + 1, L'\0');
+                        GetWindowTextW(state->searchEditHwnd, &wquery[0], len + 1);
+                        wquery.resize(len);
+                        // Convert to UTF-8
+                        int utf8Len = WideCharToMultiByte(CP_UTF8, 0,
+                            wquery.c_str(), static_cast<int>(wquery.size()),
+                            nullptr, 0, nullptr, nullptr);
+                        std::string utf8Query(utf8Len, '\0');
+                        WideCharToMultiByte(CP_UTF8, 0,
+                            wquery.c_str(), static_cast<int>(wquery.size()),
+                            &utf8Query[0], utf8Len, nullptr, nullptr);
+                        state->controller->onSearchQuery(utf8Query);
+                    } else {
+                        state->controller->onSearchQuery("");
+                    }
+                    if (state->controller->needsRender()) {
+                        state->needsRender = true;
+                        state->controller->clearNeedsRender();
+                    }
+                }
             }
             return 0;
 
@@ -312,7 +198,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 1;
 
         case WM_CLOSE:
-            if (state && state->hasAnyAlivePty()) {
+            if (state && state->controller &&
+                state->controller->tabs() &&
+                state->controller->tabs()->hasAnyAlivePty()) {
                 int result = MessageBoxW(hWnd,
                     L"A process is still running. Close anyway?",
                     L"BreadTerminal",
@@ -323,26 +211,28 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 0;
 
         case WM_IME_STARTCOMPOSITION:
-            if (state && state->fontCollection) {
-                auto m = state->fontCollection->primaryMetrics();
+            if (state && state->controller) {
+                float cw = state->controller->cellWidth();
+                float ch = state->controller->cellHeight();
+                termcore::Screen* scr = state->controller->activeScreen();
                 int cursorX = 0, cursorY = 0;
-                if (state->screen) {
-                    cursorX = static_cast<int>(state->screen->cursorCol() * m.cell_width);
-                    cursorY = static_cast<int>(state->screen->cursorRow() * m.cell_height);
+                if (scr) {
+                    cursorX = static_cast<int>(scr->cursorCol() * cw);
+                    cursorY = static_cast<int>(scr->cursorRow() * ch);
                 }
                 termcore::handleImeStartComposition(hWnd, cursorX, cursorY,
-                                                     static_cast<int>(m.cell_height));
+                                                     static_cast<int>(ch));
             }
             break;
 
         case WM_IME_COMPOSITION: {
             std::string result = termcore::handleImeComposition(hWnd, lParam);
-            if (!result.empty() && state) {
-                state->sendPtyData(result.data(), result.size());
-                if (state->screen && !state->screen->isViewportAtBottom()) {
-                    state->screen->scrollViewportToBottom();
+            if (!result.empty() && state && state->controller) {
+                state->controller->onCharInput(result);
+                if (state->controller->needsRender()) {
+                    state->needsRender = true;
+                    state->controller->clearNeedsRender();
                 }
-                state->needsRender = true;
             }
             return 0;
         }
@@ -390,14 +280,14 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
 
     auto state = std::make_unique<TerminalWindowState>();
 
-    // Pre-load config for window dimensions and opacity (Lua first, then legacy)
-    state->config = termcore::loadConfig();
+    // Pre-load config for window dimensions and opacity
+    termcore::Config preConfig = termcore::loadConfig();
 
-    int winW = state->config.window_width > 0 ? state->config.window_width : 800;
-    int winH = state->config.window_height > 0 ? state->config.window_height : 600;
+    int winW = preConfig.window_width > 0 ? preConfig.window_width : 800;
+    int winH = preConfig.window_height > 0 ? preConfig.window_height : 600;
 
     DWORD exStyle = 0;
-    if (state->config.background_opacity < 1.0f) {
+    if (preConfig.background_opacity < 1.0f) {
         exStyle |= WS_EX_LAYERED;
     }
 
@@ -409,8 +299,8 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
 
     if (!hwnd) return 1;
 
-    if (state->config.background_opacity < 1.0f) {
-        BYTE alpha = static_cast<BYTE>(state->config.background_opacity * 255.0f);
+    if (preConfig.background_opacity < 1.0f) {
+        BYTE alpha = static_cast<BYTE>(preConfig.background_opacity * 255.0f);
         SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
     }
 

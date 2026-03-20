@@ -5,10 +5,8 @@
 
 #include "D3DTextRenderer.h"
 
-#include "termcore/screen.h"
-#include "termcore/mouse.h"
-#include "termcore/vt_parser.h"
-#include "termcore/pty.h"
+#include "termcore/terminal_controller.h"
+#include "termcore/platform_host.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/font_shaper.h"
 #include "termcore/font/glyph_atlas.h"
@@ -16,10 +14,6 @@
 #include "termcore/font/i_font_rasterizer.h"
 #include "termcore/font/i_font_discovery.h"
 #include "termcore/config.h"
-#include "termcore/search.h"
-#include "termcore/keybinding.h"
-#include "termcore/url_detector.h"
-#include "termcore/mux.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
 #include "ThemeHubWindow.h"
@@ -37,21 +31,12 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 using Microsoft::WRL::ComPtr;
-using namespace termcore;
-
-/// Per-pane terminal state (PTY + Screen + Parser).
-struct PaneState {
-    PaneId id = kInvalidPane;
-    std::unique_ptr<Screen> screen;
-    std::unique_ptr<VtParser> parser;
-    std::unique_ptr<Pty> pty;
-};
 
 /// Terminal window state, stored as GWLP_USERDATA on the HWND.
-struct TerminalWindowState {
+/// Implements IPlatformHost to bridge TerminalController with Win32.
+struct TerminalWindowState : public termcore::IPlatformHost {
     HWND hwnd = nullptr;
 
     // D3D11 device
@@ -60,68 +45,33 @@ struct TerminalWindowState {
     ComPtr<IDXGISwapChain1> swapChain;
     ComPtr<ID3D11RenderTargetView> rtv;
 
-    // Per-pane terminal state (owned by panes map)
-    std::unordered_map<PaneId, std::unique_ptr<PaneState>> panes;
-    PaneId nextPaneId = 1;
+    // Core controller — owns all terminal state
+    std::unique_ptr<termcore::TerminalController> controller;
 
-    // Active pane raw pointers — updated by syncActivePointers()
-    // All existing code uses these; they always point to the active pane.
-    Screen* screen = nullptr;
-    Pty* pty = nullptr;
-
-    // Mux workspace/tab IDs
-    WorkspaceId wsId = kInvalidWorkspace;
-
-    // --- Pane management ---
-    PaneState* activePane() const;
-    PaneState* paneById(PaneId id) const;
-    void syncActivePointers();  // call after any Mux active-pane change
-    void setupMuxCallbacks();
-    void updateTabBar();
-    PaneId createPaneState(int rows, int cols);
-    void destroyPaneState(PaneId id);
-    bool hasAnyAlivePty() const;
-
-    // Font stack
-    std::unique_ptr<IFontRasterizer> rasterizer;
-    std::unique_ptr<IFontDiscovery> discovery;
-    std::unique_ptr<FontShaper> shaper;
-    std::unique_ptr<FontCollection> fontCollection;
-    std::unique_ptr<GlyphAtlas> atlas;
-    std::unique_ptr<GlyphCache> cache;
+    // Font rasterization stack (platform-owned, shared with controller)
+    std::unique_ptr<termcore::IFontRasterizer> rasterizer;
+    std::unique_ptr<termcore::IFontDiscovery> discovery;
+    std::unique_ptr<termcore::FontShaper> shaper;
+    std::unique_ptr<termcore::FontCollection> fontCollection;
+    std::unique_ptr<termcore::GlyphAtlas> atlas;
+    std::unique_ptr<termcore::GlyphCache> cache;
 
     // Renderer
-    std::unique_ptr<D3DTextRenderer> renderer;
+    std::unique_ptr<termcore::D3DTextRenderer> renderer;
 
-    // Keybinding manager
-    std::unique_ptr<termcore::KeybindingManager> keybindings;
-
-    // URL detection
-    termcore::UrlDetector urlDetector;
-    std::vector<termcore::DetectedUrl> detectedUrls;
-
-    // Mux, notifications, agent tracking
-    std::unique_ptr<termcore::Mux> mux;
+    // Notifications, agent tracking
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
+
+    // UI windows
     std::unique_ptr<termcore::ThemeHubWindow> themeHub;
     std::unique_ptr<termcore::FontHubWindow> fontHub;
     std::unique_ptr<termcore::SettingsWindow> settingsWin;
 
-    // Configuration
-    termcore::Config config;
-    std::string fontFamily = "Consolas";
-    float baseFontSize = 14.0f;   // from config or default
-    float currentFontSize = 14.0f;
-
     // DPI
-    float dpiScale = 1.0f;
+    float dpiScale_ = 1.0f;
 
     // State
-    float cellWidth = 8.0f;
-    float cellHeight = 16.0f;
-    int termRows = 24;
-    int termCols = 80;
     bool needsRender = false;
     bool inLiveResize = false;
     bool cursorBlinkOn = true;
@@ -138,12 +88,10 @@ struct TerminalWindowState {
     int resizeOverlayCols = 0;
     int resizeOverlayRows = 0;
 
-    // Selection state
-    struct GridPos { int row = 0; int col = 0; };
-    GridPos selectionStart;
-    GridPos selectionEnd;
-    bool hasSelection = false;
-    bool isDragging = false;
+    // Search bar UI
+    bool searchActive = false;
+    HWND searchEditHwnd = nullptr;
+    static constexpr int kSearchEditId = 100;
 
     // --- D3D / terminal lifecycle ---
     bool initD3D(HWND hWnd);
@@ -151,16 +99,11 @@ struct TerminalWindowState {
     void destroyRenderTarget();
     void resizeSwapChain(int width, int height);
     void initTerminal();
-    void startShell();
     void pollPty();
     void renderFrame();
 
-    // --- Font size ---
-    void changeFontSize(float delta);
-    void resetFontSize();
-
     // --- Fullscreen ---
-    void toggleFullscreen();
+    void toggleFullscreen() override;
 
     // --- DWM title bar / blur ---
     void applyTitleBarTheme(HWND hwnd);
@@ -172,41 +115,52 @@ struct TerminalWindowState {
     // --- Input ---
     void handleKeyDown(WPARAM wParam, LPARAM lParam);
     void handleChar(WPARAM wParam);
-    void sendPtyData(const char* data, size_t len);
 
-    // --- Mouse / selection ---
-    GridPos pixelToGrid(int x, int y) const;
-    void clearSelection();
-    void updateRendererSelection();
+    // --- Mouse ---
     void handleMouseDown(int x, int y);
     void handleMouseMove(int x, int y);
     void handleMouseUp(int x, int y);
     void handleDoubleClick(int x, int y);
-    std::string handleClickToMoveCursor(int row, int col, const Screen& scr);
+    void handleMouseWheel(int delta, int x, int y);
 
-    // --- Mouse protocol reporting ---
-    bool sendMouseEvent(MouseEventType type, MouseButton button,
-                        int x, int y);
-
-    // --- Search ---
-    bool searchActive = false;
-    std::wstring searchQuery;
-    HWND searchEditHwnd = nullptr;
-    termcore::TerminalSearch terminalSearch;
-    int currentMatchIndex = -1;
-    static constexpr int kSearchEditId = 100;
-
-    void openSearch();
-    void closeSearch();
-    void performSearch();
-    void searchNext();
-    void searchPrev();
+    // --- Search bar UI ---
     void repositionSearchBar();
 
-    // --- Clipboard ---
-    void copySelectionToClipboard();
-    void pasteFromClipboard();
-    std::string getSelectedText() const;
+    // --- Tab bar click handling ---
+    bool handleTabBarClick(int x, int y);
+    void handleTabBarHover(int x, int y);
+
+    // --- IPlatformHost interface ---
+    void invalidate() override;
+    void getViewportSize(int& w, int& h) override;
+    std::string getClipboardText() override;
+    void setClipboardText(const std::string& text) override;
+    void setWindowTitle(const std::string& title) override;
+    // toggleFullscreen() declared above
+    void closeWindow() override;
+    void showConfirmDialog(const std::string& msg,
+                           std::function<void(bool)> cb) override;
+    void showSearchBar() override;
+    void hideSearchBar() override;
+    void updateSearchResults(int current, int total) override;
+    void positionIME(int x, int y, int height) override;
+    void onFontChanged(float cellW, float cellH) override;
+    void onColorsChanged() override;
+    void onGridSizeChanged(int rows, int cols) override;
+    void showNotification(const std::string& title,
+                          const std::string& body) override;
+    void openSettingsWindow(const termcore::Config& config) override;
+    void openThemeHub(const termcore::Config& config) override;
+    void openFontHub(const termcore::Config& config) override;
+    float dpiScale() override;
+    std::unique_ptr<termcore::Pty> createPty(const std::string& shell,
+                                              int rows, int cols) override;
+
+private:
+    // Helper: update tab bar on renderer from controller state
+    void updateTabBar();
+    // Helper: update selection on renderer from controller state
+    void updateRendererSelection();
 };
 
 #endif // _WIN32
