@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="BreadTerminal"
            Manufacturer="BreadTerminal Team"
-           Version="!(bind.FileVersion.BreadTerminalExe)"
+           Version="$(var.ProductVersion)"
            UpgradeCode="E8A1B2C3-D4E5-6F7A-8B9C-0D1E2F3A4B5C">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of BreadTerminal is already installed." />
@@ -18,9 +19,10 @@
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D">
         <File Id="BreadTerminalExe" Source="$(var.PackageDir)\BreadTerminal.exe" KeyPath="yes" />
       </Component>
-      <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
+      <!-- Runtime DLLs (only when vcpkg dynamic linking is used) -->
+      <!-- <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
         <File Source="$(var.PackageDir)\*.dll" />
-      </Component>
+      </Component> -->
     </ComponentGroup>
 
     <ComponentGroup Id="ShellScripts" Directory="ShellDir">
@@ -64,5 +66,7 @@
       <ComponentGroupRef Id="EnvironmentPath" />
       <ComponentGroupRef Id="Shortcuts" />
     </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
   </Package>
 </Wix>
