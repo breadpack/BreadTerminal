@@ -140,9 +140,9 @@ void UnifiedSettingsWindow::show(HWND parent) {
     int cy = (pr.top + pr.bottom) / 2 - kUsWinHeight / 2;
 
     hwnd_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW,
+        0,
         kClassName, L"Settings",
-        WS_POPUP | WS_CLIPCHILDREN | WS_THICKFRAME,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         cx, cy, kUsWinWidth, kUsWinHeight,
         parent, nullptr, hInst, this);
 
@@ -393,6 +393,11 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
             onSearchTextChanged();
             return 0;
         }
+        // Inline edit: commit on kill focus
+        if (LOWORD(wParam) == 1002 && HIWORD(wParam) == EN_KILLFOCUS) {
+            commitInlineEdit();
+            return 0;
+        }
         break;
 
     case WM_CTLCOLOREDIT: {
@@ -435,6 +440,17 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
         int mx = GET_X_LPARAM(lParam);
         int my = GET_Y_LPARAM(lParam);
 
+        // Commit any open inline edit if clicking outside it
+        if (inlineEdit_) {
+            POINT pt = { mx, my };
+            RECT er;
+            GetWindowRect(inlineEdit_, &er);
+            MapWindowPoints(HWND_DESKTOP, hwnd_, (LPPOINT)&er, 2);
+            if (!PtInRect(&er, pt)) {
+                commitInlineEdit();
+            }
+        }
+
         // Top bar clicks
         if (my < kUsTopBarH) {
             RECT rc;
@@ -446,12 +462,12 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
             float btnY = (kUsTopBarH - btnH) / 2.f;
             if ((float)mx >= btnX && (float)mx < btnX + btnW &&
                 (float)my >= btnY && (float)my < btnY + btnH) {
-                wchar_t appData[MAX_PATH];
-                if (SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appData) == S_OK) {
-                    std::wstring configPath = std::wstring(appData) + L"\\BreadTerminal\\config.lua";
+                const wchar_t* homeEnv = _wgetenv(L"USERPROFILE");
+                if (homeEnv) {
+                    std::wstring configPath = std::wstring(homeEnv) + L"\\.bt\\config.lua";
                     DWORD attr = GetFileAttributesW(configPath.c_str());
                     if (attr == INVALID_FILE_ATTRIBUTES) {
-                        std::wstring dir = std::wstring(appData) + L"\\BreadTerminal";
+                        std::wstring dir = std::wstring(homeEnv) + L"\\.bt";
                         CreateDirectoryW(dir.c_str(), nullptr);
                         HANDLE hFile = CreateFileW(configPath.c_str(), GENERIC_WRITE, 0,
                                                     nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -622,7 +638,15 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
     }
 
     case WM_KEYDOWN:
-        if (wParam == VK_ESCAPE) { close(); return 0; }
+        if (wParam == VK_ESCAPE) {
+            if (inlineEdit_) { cancelInlineEdit(); return 0; }
+            close();
+            return 0;
+        }
+        if (wParam == VK_RETURN && inlineEdit_) {
+            commitInlineEdit();
+            return 0;
+        }
         break;
 
     case WM_DESTROY:

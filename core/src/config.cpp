@@ -10,24 +10,13 @@
 namespace termcore {
 
 std::string defaultConfigPath() {
-#ifdef __APPLE__
-    const char* home = std::getenv("HOME");
-    if (!home) return "";
-    return std::string(home) + "/Library/Application Support/BreadTerminal/config";
-#elif defined(_WIN32)
-    const char* appdata = std::getenv("APPDATA");
-    if (!appdata) return "";
-    return std::string(appdata) + "\\BreadTerminal\\config";
+#if defined(_WIN32)
+    const char* home = std::getenv("USERPROFILE");
 #else
-    // Linux: respect XDG_CONFIG_HOME
-    const char* xdg = std::getenv("XDG_CONFIG_HOME");
-    if (xdg && xdg[0] != '\0') {
-        return std::string(xdg) + "/breadterminal/config";
-    }
     const char* home = std::getenv("HOME");
-    if (!home) return "";
-    return std::string(home) + "/.config/breadterminal/config";
 #endif
+    if (!home) return "";
+    return std::string(home) + "/.bt/config";
 }
 
 Config loadConfig() {

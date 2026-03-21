@@ -402,17 +402,36 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             break;
         }
 
+        case SettingType::Text: {
+            float fw = 300.f, fh = 28.f;
+            float fy = ctrlY;
+            if ((float)mx >= ctrlX && (float)mx < ctrlX + fw &&
+                (float)my >= fy && (float)my < fy + fh) {
+                std::string val = getStringValue(config_, item.key);
+                beginInlineEdit(item.key, SettingType::Text,
+                                ctrlX, fy, fw, fh, toWide(val));
+                return;
+            }
+            break;
+        }
+
         case SettingType::Number: {
             float btnSz = 28.f, fw = 120.f;
             float fy = ctrlY;
             // Minus button
             if ((float)mx >= ctrlX && (float)mx < ctrlX + btnSz &&
                 (float)my >= fy && (float)my < fy + btnSz) {
-                int val = getIntValue(config_, item.key);
-                int newVal = val - (int)item.meta.step;
-                if (item.meta.min != item.meta.max)
-                    newVal = (std::max)((int)item.meta.min, newVal);
-                setIntValue(config_, item.key, newVal);
+                if (item.key == "font_size") {
+                    float val = getFloatValue(config_, item.key);
+                    float newVal = (std::max)(item.meta.min, val - item.meta.step);
+                    setFloatValue(config_, item.key, newVal);
+                } else {
+                    int val = getIntValue(config_, item.key);
+                    int newVal = val - (int)item.meta.step;
+                    if (item.meta.min != item.meta.max)
+                        newVal = (std::max)((int)item.meta.min, newVal);
+                    setIntValue(config_, item.key, newVal);
+                }
                 if (model_) model_->refreshModified(config_);
                 notifySave();
                 if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -422,42 +441,35 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             float plusX = ctrlX + btnSz + 2.f + fw + 2.f;
             if ((float)mx >= plusX && (float)mx < plusX + btnSz &&
                 (float)my >= fy && (float)my < fy + btnSz) {
-                int val = getIntValue(config_, item.key);
-                int newVal = val + (int)item.meta.step;
-                if (item.meta.min != item.meta.max)
-                    newVal = (std::min)((int)item.meta.max, newVal);
-                setIntValue(config_, item.key, newVal);
+                if (item.key == "font_size") {
+                    float val = getFloatValue(config_, item.key);
+                    float newVal = (std::min)(item.meta.max, val + item.meta.step);
+                    setFloatValue(config_, item.key, newVal);
+                } else {
+                    int val = getIntValue(config_, item.key);
+                    int newVal = val + (int)item.meta.step;
+                    if (item.meta.min != item.meta.max)
+                        newVal = (std::min)((int)item.meta.max, newVal);
+                    setIntValue(config_, item.key, newVal);
+                }
                 if (model_) model_->refreshModified(config_);
                 notifySave();
                 if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
                 return;
             }
-            // Handle float-typed Number controls (e.g., font_size)
-            if (item.key == "font_size") {
-                // Minus
-                if ((float)mx >= ctrlX && (float)mx < ctrlX + btnSz &&
-                    (float)my >= fy && (float)my < fy + btnSz) {
-                    float val = getFloatValue(config_, item.key);
-                    float newVal = val - item.meta.step;
-                    newVal = (std::max)(item.meta.min, newVal);
-                    setFloatValue(config_, item.key, newVal);
-                    if (model_) model_->refreshModified(config_);
-                    notifySave();
-                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
-                    return;
+            // Click on the number field itself -> inline edit
+            float fieldX = ctrlX + btnSz + 2.f;
+            if ((float)mx >= fieldX && (float)mx < fieldX + fw &&
+                (float)my >= fy && (float)my < fy + 28.f) {
+                wchar_t buf[32];
+                if (item.key == "font_size") {
+                    _snwprintf_s(buf, _countof(buf), L"%.1f", getFloatValue(config_, item.key));
+                } else {
+                    _snwprintf_s(buf, _countof(buf), L"%d", getIntValue(config_, item.key));
                 }
-                // Plus
-                if ((float)mx >= plusX && (float)mx < plusX + btnSz &&
-                    (float)my >= fy && (float)my < fy + btnSz) {
-                    float val = getFloatValue(config_, item.key);
-                    float newVal = val + item.meta.step;
-                    newVal = (std::min)(item.meta.max, newVal);
-                    setFloatValue(config_, item.key, newVal);
-                    if (model_) model_->refreshModified(config_);
-                    notifySave();
-                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
-                    return;
-                }
+                beginInlineEdit(item.key, SettingType::Number,
+                                fieldX, fy, fw, 28.f, buf);
+                return;
             }
             break;
         }
@@ -550,6 +562,99 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
 
         curY = rowTop + 52.f + (float)kUsItemSpacing;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Inline edit: create a temporary EDIT control over a text/number field
+// ---------------------------------------------------------------------------
+
+static constexpr int kInlineEditId = 1002;
+
+void UnifiedSettingsWindow::beginInlineEdit(const std::string& key,
+                                             SettingType type,
+                                             float x, float y, float w, float h,
+                                             const std::wstring& currentValue) {
+    // Destroy any existing inline edit
+    cancelInlineEdit();
+
+    inlineEditKey_ = key;
+    inlineEditType_ = type;
+    inlineEditRect_ = { (int)x, (int)y, (int)(x + w), (int)(y + h) };
+
+    DWORD style = WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_BORDER;
+    if (type == SettingType::Number) {
+        style |= ES_NUMBER;
+    }
+
+    inlineEdit_ = CreateWindowExW(
+        0, L"EDIT", currentValue.c_str(),
+        style,
+        (int)x, (int)y, (int)w, (int)h,
+        hwnd_, (HMENU)(INT_PTR)kInlineEditId,
+        (HINSTANCE)GetWindowLongPtr(hwnd_, GWLP_HINSTANCE), nullptr);
+
+    if (inlineEdit_) {
+        // Set font
+        HFONT hFont = CreateFontW(
+            -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        SendMessageW(inlineEdit_, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+        // Select all text
+        SendMessageW(inlineEdit_, EM_SETSEL, 0, -1);
+        SetFocus(inlineEdit_);
+    }
+}
+
+void UnifiedSettingsWindow::commitInlineEdit() {
+    if (!inlineEdit_) return;
+
+    int len = GetWindowTextLengthW(inlineEdit_);
+    std::wstring wtext(len + 1, L'\0');
+    GetWindowTextW(inlineEdit_, wtext.data(), len + 1);
+    wtext.resize(len);
+
+    // Convert to UTF-8
+    std::string text;
+    if (!wtext.empty()) {
+        int sz = WideCharToMultiByte(CP_UTF8, 0, wtext.c_str(), (int)wtext.size(),
+                                      nullptr, 0, nullptr, nullptr);
+        text.resize(sz);
+        WideCharToMultiByte(CP_UTF8, 0, wtext.c_str(), (int)wtext.size(),
+                            text.data(), sz, nullptr, nullptr);
+    }
+
+    if (inlineEditType_ == SettingType::Text) {
+        setStringValue(config_, inlineEditKey_, text);
+    } else if (inlineEditType_ == SettingType::Number) {
+        // Try float first (for font_size), then int
+        if (inlineEditKey_ == "font_size") {
+            try {
+                float val = std::stof(text);
+                setFloatValue(config_, inlineEditKey_, val);
+            } catch (...) {}
+        } else {
+            try {
+                int val = std::stoi(text);
+                setIntValue(config_, inlineEditKey_, val);
+            } catch (...) {}
+        }
+    }
+
+    cancelInlineEdit();
+
+    if (model_) model_->refreshModified(config_);
+    notifySave();
+    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void UnifiedSettingsWindow::cancelInlineEdit() {
+    if (inlineEdit_) {
+        DestroyWindow(inlineEdit_);
+        inlineEdit_ = nullptr;
+    }
+    inlineEditKey_.clear();
 }
 
 } // namespace termcore

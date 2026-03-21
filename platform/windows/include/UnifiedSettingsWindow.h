@@ -196,6 +196,18 @@ private:
     ULONG_PTR gdiplusToken_ = 0;
     bool gdiplusOwned_      = false;
 
+    // Inline edit for text/number fields
+    HWND inlineEdit_         = nullptr;
+    std::string inlineEditKey_;       // config key being edited
+    SettingType inlineEditType_ = SettingType::Text;
+    RECT inlineEditRect_     = {};
+
+    void beginInlineEdit(const std::string& key, SettingType type,
+                         float x, float y, float w, float h,
+                         const std::wstring& currentValue);
+    void commitInlineEdit();
+    void cancelInlineEdit();
+
     // Search
     HWND searchEdit_         = nullptr;
     std::wstring searchText_;
