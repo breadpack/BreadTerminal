@@ -391,6 +391,10 @@ void D3DTextRenderer::markContentDirty() {
     impl_->contentDirty = true;
 }
 
+IAtlasUploader* D3DTextRenderer::atlasUploader() {
+    return impl_->atlasUploader.get();
+}
+
 void D3DTextRenderer::setSearchHighlights(
         const std::vector<SearchHighlight>& highlights, int currentIndex) {
     impl_->searchHighlights = highlights;

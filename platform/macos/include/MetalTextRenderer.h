@@ -1,6 +1,7 @@
 #ifndef TERMCORE_METAL_TEXT_RENDERER_H
 #define TERMCORE_METAL_TEXT_RENDERER_H
 
+#include "termcore/i_text_renderer.h"
 #include "termcore/screen.h"
 #include "termcore/font/glyph_cache.h"
 #include "termcore/font/glyph_atlas.h"
@@ -87,7 +88,7 @@ struct SelectionState {
 
 /// Metal-based terminal text renderer.
 /// Reads Screen data and renders cells using instanced draw calls.
-class MetalTextRenderer {
+class MetalTextRenderer : public ITextRenderer {
 public:
 #ifdef __OBJC__
     MetalTextRenderer(id<MTLDevice> device, CAMetalLayer* layer);
@@ -102,16 +103,16 @@ public:
     void setFontStack(FontCollection* collection,
                       GlyphCache* cache,
                       GlyphAtlas* atlas,
-                      IFontRasterizer* rasterizer);
+                      IFontRasterizer* rasterizer) override;
 
     /// Set the current selection state for rendering.
     void setSelection(const SelectionState& sel);
 
     /// Render a frame: read Screen data, build cell buffer, draw.
-    void render(const Screen& screen);
+    void render(const Screen& screen) override;
 
     /// Handle viewport resize.
-    void resize(float width, float height);
+    void resize(float width, float height) override;
 
     /// Set background opacity for transparency support (0.0 - 1.0).
     void setBackgroundOpacity(float opacity);
@@ -131,6 +132,9 @@ public:
     /// Set the URL highlight range for Cmd+hover underline rendering.
     /// row=-1 means no highlight.
     void setUrlHighlight(int row, int startCol, int endCol);
+
+    /// Return the atlas uploader for GPU texture management.
+    IAtlasUploader* atlasUploader() override;
 
 private:
     struct Impl;

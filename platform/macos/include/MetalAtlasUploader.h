@@ -1,6 +1,7 @@
 #ifndef TERMCORE_METAL_ATLAS_UPLOADER_H
 #define TERMCORE_METAL_ATLAS_UPLOADER_H
 
+#include "termcore/i_text_renderer.h"
 #include <cstdint>
 #include <memory>
 
@@ -15,7 +16,7 @@ enum class AtlasFormat : uint8_t;
 
 /// Uploads CPU-side GlyphAtlas pages to Metal textures.
 /// Each AtlasFormat (R8, BGRA) gets its own MTLTexture.
-class MetalAtlasUploader {
+class MetalAtlasUploader : public IAtlasUploader {
 public:
 #ifdef __OBJC__
     explicit MetalAtlasUploader(id<MTLDevice> device);
@@ -27,7 +28,7 @@ public:
     MetalAtlasUploader& operator=(const MetalAtlasUploader&) = delete;
 
     /// Upload dirty atlas pages to Metal textures.
-    void upload(GlyphAtlas& atlas);
+    void upload(GlyphAtlas& atlas) override;
 
 #ifdef __OBJC__
     /// Get the Metal texture for an atlas format.

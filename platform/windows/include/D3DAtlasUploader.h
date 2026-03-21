@@ -2,6 +2,7 @@
 #define TERMCORE_D3D_ATLAS_UPLOADER_H
 
 #include "termcore/font/glyph_atlas.h"
+#include "termcore/i_text_renderer.h"
 #include <cstdint>
 #include <memory>
 
@@ -15,7 +16,7 @@ namespace termcore {
 
 /// D3D11 atlas texture manager.
 /// Uploads GlyphAtlas pages to D3D11 textures for rendering.
-class D3DAtlasUploader {
+class D3DAtlasUploader : public IAtlasUploader {
 public:
     D3DAtlasUploader();
     ~D3DAtlasUploader();
@@ -28,7 +29,7 @@ public:
     void setDevice(ID3D11Device* device, ID3D11DeviceContext* context);
 
     /// Upload all dirty atlas pages to GPU textures.
-    void upload(GlyphAtlas& atlas);
+    void upload(GlyphAtlas& atlas) override;
 
     /// Get the shader resource view for a given atlas format.
     ID3D11ShaderResourceView* srvForFormat(AtlasFormat format) const;

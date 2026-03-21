@@ -1,6 +1,7 @@
 #ifndef TERMCORE_D3D_TEXT_RENDERER_H
 #define TERMCORE_D3D_TEXT_RENDERER_H
 
+#include "termcore/i_text_renderer.h"
 #include "termcore/screen.h"
 #include "termcore/mux.h"
 #include "termcore/font/glyph_cache.h"
@@ -33,7 +34,7 @@ struct D3DCellInstance {
 };
 
 /// D3D11-based terminal text renderer using instanced draw calls.
-class D3DTextRenderer {
+class D3DTextRenderer : public ITextRenderer {
 public:
     D3DTextRenderer();
     ~D3DTextRenderer();
@@ -53,13 +54,13 @@ public:
     void setFontStack(FontCollection* collection,
                       GlyphCache* cache,
                       GlyphAtlas* atlas,
-                      IFontRasterizer* rasterizer);
+                      IFontRasterizer* rasterizer) override;
 
     /// Render a frame: read Screen data, build cell buffer, draw.
-    void render(const Screen& screen);
+    void render(const Screen& screen) override;
 
     /// Handle viewport resize.
-    void resize(float width, float height);
+    void resize(float width, float height) override;
 
     /// Selection highlight state.
     struct Selection {
@@ -94,7 +95,7 @@ public:
 
     /// Mark content as dirty so next render does a full rebuild.
     /// Call this when screen content changes (e.g., after PTY output).
-    void markContentDirty();
+    void markContentDirty() override;
 
     /// Search highlight for a range of cells on a row.
     struct SearchHighlight {
@@ -161,6 +162,9 @@ public:
 
     /// Set pane border segments for rendering.
     void setPaneBorders(const PaneBorderInfo& info);
+
+    /// Return the atlas uploader for GPU texture management.
+    IAtlasUploader* atlasUploader() override;
 
     /// Per-pane progress bar information.
     struct PaneProgressInfo {

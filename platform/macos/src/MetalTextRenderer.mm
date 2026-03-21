@@ -224,4 +224,8 @@ void MetalTextRenderer::setUrlHighlight(int row, int startCol, int endCol) {
     impl_->urlHighlightEndCol = endCol;
 }
 
+IAtlasUploader* MetalTextRenderer::atlasUploader() {
+    return impl_->atlasUploader.get();
+}
+
 } // namespace termcore

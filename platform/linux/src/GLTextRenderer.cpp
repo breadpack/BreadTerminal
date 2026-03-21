@@ -416,4 +416,8 @@ void GLTextRenderer::resize(float width, float height) {
                static_cast<GLsizei>(height));
 }
 
+IAtlasUploader* GLTextRenderer::atlasUploader() {
+    return impl_->atlasUploader.get();
+}
+
 } // namespace termcore

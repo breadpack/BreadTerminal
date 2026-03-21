@@ -1,6 +1,7 @@
 #ifndef TERMCORE_GL_TEXT_RENDERER_H
 #define TERMCORE_GL_TEXT_RENDERER_H
 
+#include "termcore/i_text_renderer.h"
 #include "termcore/screen.h"
 #include "termcore/font/glyph_cache.h"
 #include "termcore/font/glyph_atlas.h"
@@ -22,7 +23,7 @@ struct GLCellInstance {
 };
 
 /// OpenGL-based terminal text renderer using instanced draw calls.
-class GLTextRenderer {
+class GLTextRenderer : public ITextRenderer {
 public:
     GLTextRenderer();
     ~GLTextRenderer();
@@ -37,13 +38,16 @@ public:
     void setFontStack(FontCollection* collection,
                       GlyphCache* cache,
                       GlyphAtlas* atlas,
-                      IFontRasterizer* rasterizer);
+                      IFontRasterizer* rasterizer) override;
 
     /// Render a frame: read Screen data, build cell buffer, draw.
-    void render(const Screen& screen);
+    void render(const Screen& screen) override;
 
     /// Handle viewport resize.
-    void resize(float width, float height);
+    void resize(float width, float height) override;
+
+    /// Return the atlas uploader for GPU texture management.
+    IAtlasUploader* atlasUploader() override;
 
 private:
     struct Impl;
