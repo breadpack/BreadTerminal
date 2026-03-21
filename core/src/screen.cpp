@@ -36,15 +36,15 @@ const TermCell& Screen::cellAt(int row, int col) const {
         // and the remaining rows come from the grid (shifted)
         int scrollback_rows_visible = std::min(viewport_offset_, rows_);
         if (row < scrollback_rows_visible) {
-            // This row comes from scrollback
+            // This row comes from scrollback (compressed)
             int sb_size = static_cast<int>(scrollback_.size());
             int sb_idx = sb_size - viewport_offset_ + row;
             if (sb_idx < 0 || sb_idx >= sb_size)
                 return empty;
-            const auto& sb_row = scrollback_[sb_idx];
-            if (col < static_cast<int>(sb_row.size()))
-                return sb_row[col];
-            return empty;
+            // Cache decompressed cell in thread-local static to return by reference
+            static thread_local TermCell cached_cell;
+            cached_cell = scrollback_[sb_idx].cellAt(col);
+            return cached_cell;
         } else {
             // This row comes from the grid
             int grid_row = row - scrollback_rows_visible;
@@ -111,7 +111,9 @@ void Screen::scrollUp(int top, int bottom, int count) {
     if (top == 0 && bottom == rows_ - 1) {
         for (int i = 0; i < count; ++i) {
             if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_) {
-                scrollback_.push_back(std::move(grid_.front()));
+                CompressedRow compressed;
+                compressed.compress(grid_.front());
+                scrollback_.push_back(std::move(compressed));
                 if (scrollback_.size() > max_scrollback_) {
                     scrollback_.pop_front();
                 }
@@ -125,7 +127,9 @@ void Screen::scrollUp(int top, int bottom, int count) {
     // Slow path: partial scroll region — O(region) shift
     for (int i = 0; i < count; ++i) {
         if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
-            scrollback_.push_back(std::move(grid_[top]));
+            CompressedRow compressed;
+            compressed.compress(grid_[top]);
+            scrollback_.push_back(std::move(compressed));
             if (scrollback_.size() > max_scrollback_) {
                 scrollback_.pop_front();
             }
@@ -510,29 +514,7 @@ std::string Screen::getScrollbackLineText(int line) const {
         return "";
     // line 0 = most recent = back of deque
     size_t idx = scrollback_.size() - 1 - static_cast<size_t>(line);
-    std::string result;
-    for (const auto& cell : scrollback_[idx]) {
-        char32_t cp = cell.codepoint;
-        if (cp < 0x80) result += static_cast<char>(cp);
-        else if (cp < 0x800) {
-            result += static_cast<char>(0xC0 | (cp >> 6));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        } else if (cp < 0x10000) {
-            result += static_cast<char>(0xE0 | (cp >> 12));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        } else {
-            result += static_cast<char>(0xF0 | (cp >> 18));
-            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        }
-    }
-    // Trim trailing spaces
-    auto pos = result.find_last_not_of(' ');
-    if (pos != std::string::npos) result.erase(pos + 1);
-    else result.clear();
-    return result;
+    return scrollback_[idx].text(cols_);
 }
 
 // --- Alt screen ---
