@@ -105,6 +105,11 @@ add_executable(BreadTerminal MACOSX_BUNDLE
     src/FontCardView.mm
     src/FontDownloader.mm
     src/FontHubViewController.mm
+    src/UnifiedSettingsWindowController.mm
+    src/UnifiedSettingsSidebar.mm
+    src/UnifiedSettingsContent.mm
+    src/UnifiedSettingsThemeCards.mm
+    src/UnifiedSettingsFontCards.mm
     src/QuickTerminalPanel.mm
 )
 
@@ -154,6 +159,11 @@ set_source_files_properties(
     src/FontCardView.mm
     src/FontDownloader.mm
     src/FontHubViewController.mm
+    src/UnifiedSettingsWindowController.mm
+    src/UnifiedSettingsSidebar.mm
+    src/UnifiedSettingsContent.mm
+    src/UnifiedSettingsThemeCards.mm
+    src/UnifiedSettingsFontCards.mm
     src/QuickTerminalPanel.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
 )

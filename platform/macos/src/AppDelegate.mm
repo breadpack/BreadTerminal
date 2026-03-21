@@ -7,6 +7,7 @@
 #import "PreferencesWindowController.h"
 #import "ThemeHubViewController.h"
 #import "FontHubViewController.h"
+#import "UnifiedSettingsWindowController.h"
 #import "QuickTerminalPanel.h"
 #import <Metal/Metal.h>
 
@@ -33,10 +34,13 @@
     TerminalContentViewController* _contentVC;
     std::unique_ptr<termcore::WorkspaceStatusProvider> _statusProvider;
 
-    // Preferences
+    // Preferences (legacy — kept for backward compatibility)
     PreferencesWindowController* _prefsController;
 
-    // Theme Hub / Font Hub standalone windows
+    // Unified settings window (new, replaces Prefs + ThemeHub + FontHub)
+    UnifiedSettingsWindowController* _unifiedSettingsController;
+
+    // Theme Hub / Font Hub standalone windows (legacy — kept for backward compatibility)
     NSWindowController* _themeHubWindowController;
     NSWindowController* _fontHubWindowController;
 
@@ -253,13 +257,14 @@
     }];
 
     // Listen for OpenSettings / OpenThemeHub / OpenFontHub keybinding actions
+    // All three now open the unified settings window, navigating to the appropriate section.
     _openSettingsObserver = [[NSNotificationCenter defaultCenter]
         addObserverForName:@"BreadTerminalOpenSettings"
                     object:nil
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(NSNotification* _Nonnull note) {
         AppDelegate* strongSelf = weakSelf;
-        if (strongSelf) [strongSelf openPreferences:nil];
+        if (strongSelf) [strongSelf openUnifiedSettings:nil];
     }];
     _openThemeHubObserver = [[NSNotificationCenter defaultCenter]
         addObserverForName:@"BreadTerminalOpenThemeHub"
@@ -267,7 +272,7 @@
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(NSNotification* _Nonnull note) {
         AppDelegate* strongSelf = weakSelf;
-        if (strongSelf) [strongSelf openThemeHub:nil];
+        if (strongSelf) [strongSelf openUnifiedSettingsAtTheme];
     }];
     _openFontHubObserver = [[NSNotificationCenter defaultCenter]
         addObserverForName:@"BreadTerminalOpenFontHub"
@@ -275,10 +280,15 @@
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(NSNotification* _Nonnull note) {
         AppDelegate* strongSelf = weakSelf;
-        if (strongSelf) [strongSelf openFontHub:nil];
+        if (strongSelf) [strongSelf openUnifiedSettingsAtFont];
     }];
 
-    // --- Preferences window controller ---
+    // --- Unified settings window controller ---
+    _unifiedSettingsController = [[UnifiedSettingsWindowController alloc]
+        initWithConfigPath:_configPath
+             configWatcher:_configWatcher.get()];
+
+    // --- Legacy preferences window controller (kept for backward compatibility) ---
     _prefsController = [[PreferencesWindowController alloc]
         initWithConfigPath:_configPath
              configWatcher:_configWatcher.get()];
@@ -309,6 +319,7 @@
     _openFontHubObserver = nil;
 
     _prefsController = nil;
+    _unifiedSettingsController = nil;
 
     if (_quickTerminalPanel) {
         [_quickTerminalPanel unregisterGlobalHotkey];
@@ -462,10 +473,28 @@
 
 - (IBAction)openPreferences:(id)sender {
     (void)sender;
-    [_prefsController showPreferences];
+    // Forward to unified settings window
+    [self openUnifiedSettings:sender];
 }
 
-#pragma mark - Theme Hub / Font Hub (standalone windows)
+#pragma mark - Unified Settings
+
+- (IBAction)openUnifiedSettings:(id)sender {
+    (void)sender;
+    [_unifiedSettingsController showSettings];
+}
+
+- (void)openUnifiedSettingsAtTheme {
+    [_unifiedSettingsController showSettings];
+    [_unifiedSettingsController navigateToCategory:"appearance.theme"];
+}
+
+- (void)openUnifiedSettingsAtFont {
+    [_unifiedSettingsController showSettings];
+    [_unifiedSettingsController navigateToCategory:"font.font_family"];
+}
+
+#pragma mark - Theme Hub / Font Hub (standalone windows — legacy)
 
 - (PrefsSaveBlock)makeSaveBlock {
     __weak AppDelegate* weakSelf = self;
