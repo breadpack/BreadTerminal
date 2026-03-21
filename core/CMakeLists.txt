@@ -13,6 +13,7 @@ set(TERMCORE_SOURCES
     src/vt_parser.cpp
     src/dynamic_colors.cpp
     src/contrast.cpp
+    src/compressed_row.cpp
     src/screen.cpp
     src/screen_csi.cpp
     src/screen_csi_ext.cpp
@@ -163,7 +164,8 @@ endif()
 
 # lua_config.cpp has both TERMCORE_HAS_LUA and stub paths, always compile it
 # lua_config_writer.cpp has no Lua runtime dependency — always compile it
-list(APPEND TERMCORE_SOURCES src/lua_config.cpp src/lua_config_writer.cpp)
+# plugin_manager.cpp has both TERMCORE_HAS_LUA and stub paths, always compile it
+list(APPEND TERMCORE_SOURCES src/lua_config.cpp src/lua_config_writer.cpp src/plugin_manager.cpp)
 
 add_library(termcore STATIC ${TERMCORE_SOURCES})
 
