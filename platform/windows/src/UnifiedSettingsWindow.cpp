@@ -58,9 +58,19 @@ void UnifiedSettingsWindow::setConfig(const Config& config) {
             if (f.is_open()) {
                 std::ostringstream ss;
                 ss << f.rdbuf();
-                fontIndex_.loadFromJSON(ss.str());
+                fontIndexReady_ = fontIndex_.loadFromJSON(ss.str());
             }
         }
+    }
+
+    // Set up installed predicate and refresh font install status
+    if (fontIndexReady_) {
+        fontIndex_.setInstalledPredicate([this](const std::string& psName) -> bool {
+            if (psName.empty()) return false;
+            return isFontInstalled(toWide(psName));
+        });
+        fontIndex_.refreshInstallStatus();
+        rebuildFontFilteredList();
     }
 
     // Try loading theme_index.json
@@ -177,6 +187,17 @@ void UnifiedSettingsWindow::drawRoundedRect(Gdiplus::Graphics& g,
     path.AddArc(x, y + h - d, d, d, 90.f, 90.f);
     path.CloseFigure();
     g.FillPath(brush, &path);
+}
+
+void UnifiedSettingsWindow::drawRoundedRectPath(Gdiplus::GraphicsPath& path,
+                                                  float x, float y, float w,
+                                                  float h, float r) const {
+    float d = r * 2.f;
+    path.AddArc(x, y, d, d, 180.f, 90.f);
+    path.AddArc(x + w - d, y, d, d, 270.f, 90.f);
+    path.AddArc(x + w - d, y + h - d, d, d, 0.f, 90.f);
+    path.AddArc(x, y + h - d, d, d, 90.f, 90.f);
+    path.CloseFigure();
 }
 
 void UnifiedSettingsWindow::notifySave() {
@@ -370,6 +391,62 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
             onSidebarClick(mx, my);
             return 0;
         }
+
+        // Content area clicks — font card grid
+        if (mx >= sidebarWidth_ && my >= kUsTopBarH &&
+            selectedCategoryId_.find("font.family") != std::string::npos) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            int contentX = sidebarWidth_ + kUsContentPad;
+
+            // Filter pill buttons
+            int fb = hitTestFontFilterButton(mx, my, contentX);
+            if (fb >= 0) {
+                activeFontFilter_ = static_cast<FontFilter>(fb);
+                rebuildFontFilteredList();
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+
+            // Card buttons
+            int ci = hitTestFontCard(mx, my);
+            if (ci >= 0) {
+                if (hitTestFontUninstallButton(ci, mx, my)) {
+                    onFontCardUninstall(ci);
+                    return 0;
+                }
+                if (hitTestFontCardButton(ci, mx, my)) {
+                    onFontCardClick(ci);
+                    return 0;
+                }
+            }
+        }
+
+        // Content area clicks — theme card grid
+        if (mx >= sidebarWidth_ && my >= kUsTopBarH &&
+            selectedCategoryId_.find("theme") != std::string::npos) {
+            int contentX = sidebarWidth_ + kUsContentPad;
+            int contentY = kUsTopBarH + kUsContentPad + 40; // after title
+
+            // Filter pill buttons (in the filter bar area)
+            if (my >= contentY - (int)scrollY_ && my < contentY - (int)scrollY_ + 26) {
+                int fb = hitTestThemeFilterButton(mx, my, contentX);
+                if (fb >= 0) {
+                    activeThemeFilter_ = static_cast<ThemeFilter>(fb);
+                    rebuildThemeFilteredList();
+                    scrollY_ = 0.f;
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                }
+            }
+
+            // Card button clicks
+            int ci = hitTestThemeCard(mx, my);
+            if (ci >= 0 && hitTestThemeCardButton(ci, mx, my)) {
+                onThemeCardApply(ci);
+                return 0;
+            }
+        }
         return 0;
     }
 
@@ -393,6 +470,44 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
 
     case WM_LBUTTONUP: {
         endSidebarResize();
+        return 0;
+    }
+
+    case WM_TIMER:
+        if (wParam == 300) {
+            KillTimer(hwnd, 300);
+            fontFailedCard_ = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wParam == 301) {
+            KillTimer(hwnd, 301);
+            fontIndex_.refreshInstallStatus();
+            rebuildFontFilteredList();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+
+    case WM_APP + 10: {
+        std::string installedFontName;
+        if (fontInstallingCard_ >= 0 &&
+            fontInstallingCard_ < (int)fontCardRects_.size()) {
+            if (fontCardRects_[fontInstallingCard_].meta)
+                installedFontName = fontCardRects_[fontInstallingCard_].meta->name;
+        }
+        if (wParam == 0) {
+            fontFailedCard_ = fontInstallingCard_;
+            fontInstallingCard_ = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            SetTimer(hwnd, 300, 3000, nullptr);
+            return 0;
+        }
+        fontInstallingCard_ = -1;
+        if (!installedFontName.empty())
+            fontIndex_.markInstalled(installedFontName);
+        fontIndex_.refreshInstallStatus();
+        if (!installedFontName.empty())
+            fontIndex_.markInstalled(installedFontName);
+        rebuildFontFilteredList();
+        InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
 
@@ -513,22 +628,6 @@ void UnifiedSettingsWindow::paintBottomBar(Gdiplus::Graphics& g, int w, int h) {
 // Content section STUBS (paintContent and paintSettingsItems are in
 // UnifiedSettingsContent.cpp)
 // ---------------------------------------------------------------------------
-
-void UnifiedSettingsWindow::paintThemeCards(Gdiplus::Graphics& g,
-                                             int x, int y, int w, int h) {
-    Gdiplus::Font font(L"Segoe UI", 10.f);
-    Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
-    Gdiplus::PointF pt((float)x, (float)y - scrollY_);
-    g.DrawString(L"[Theme cards will appear here]", -1, &font, pt, &dimBr);
-}
-
-void UnifiedSettingsWindow::paintFontCards(Gdiplus::Graphics& g,
-                                            int x, int y, int w, int h) {
-    Gdiplus::Font font(L"Segoe UI", 10.f);
-    Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
-    Gdiplus::PointF pt((float)x, (float)y - scrollY_);
-    g.DrawString(L"[Font cards will appear here]", -1, &font, pt, &dimBr);
-}
 
 void UnifiedSettingsWindow::paintKeybindingList(Gdiplus::Graphics& g,
                                                  int x, int y, int w, int h) {

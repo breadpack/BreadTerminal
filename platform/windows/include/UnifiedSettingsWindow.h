@@ -86,12 +86,42 @@ private:
     // Save
     void notifySave();
 
+    // Font card struct (must be defined before methods that reference it)
+    struct UsFontCardInfo {
+        const FontMetadata* meta = nullptr;
+        RECT cardRect      = {};
+        RECT buttonRect    = {};
+        RECT uninstallRect = {};
+        bool isActive      = false;
+        bool isInstalling  = false;
+        bool isFailed      = false;
+    };
+
+    // Font card helpers (UnifiedSettingsFontCards.cpp)
+    void paintFontSingleCard(Gdiplus::Graphics& g, const UsFontCardInfo& card);
+    void paintFontPreview(Gdiplus::Graphics& g, const UsFontCardInfo& card,
+                          float cx, float cy, float cw);
+    void paintFontBadges(Gdiplus::Graphics& g, const FontMetadata& meta,
+                         float x, float y, float maxW);
+    void paintFontCardButton(Gdiplus::Graphics& g, const UsFontCardInfo& card);
+    void rebuildFontFilteredList();
+    int  hitTestFontCard(int mx, int my) const;
+    bool hitTestFontCardButton(int idx, int mx, int my) const;
+    bool hitTestFontUninstallButton(int idx, int mx, int my) const;
+    int  hitTestFontFilterButton(int mx, int my, int contentX) const;
+    void onFontCardClick(int idx);
+    void onFontCardInstall(int idx);
+    void onFontCardUninstall(int idx);
+    bool isFontInstalled(const std::wstring& fontName) const;
+
     // Helpers
     std::wstring toWide(const std::string& s) const;
     Gdiplus::Color toGdipColor(uint32_t rgb, BYTE a = 255) const;
     Gdiplus::Color toGdipColorCR(COLORREF cr, BYTE a = 255) const;
     void drawRoundedRect(Gdiplus::Graphics& g, Gdiplus::Brush* brush,
                          float x, float y, float w, float h, float r);
+    void drawRoundedRectPath(Gdiplus::GraphicsPath& path,
+                             float x, float y, float w, float h, float r) const;
 
     // Index file discovery
     std::string findFontIndexPath() const;
@@ -119,6 +149,35 @@ private:
     bool sidebarResizing_      = false;
     int  sidebarResizeStartX_  = 0;
     int  sidebarResizeStartW_  = 0;
+
+    // Theme cards
+    enum class ThemeFilter { All, Dark, Light, Installed };
+    ThemeFilter activeThemeFilter_ = ThemeFilter::All;
+    std::vector<const ThemeMetadata*> filteredThemes_;
+
+    struct ThemeCardRect {
+        const ThemeMetadata* meta = nullptr;
+        RECT cardRect   = {};
+        RECT buttonRect = {};
+        bool isActive   = false;
+    };
+    std::vector<ThemeCardRect> themeCardRects_;
+
+    void paintSingleThemeCard(Gdiplus::Graphics& g, const ThemeCardRect& card);
+    void rebuildThemeFilteredList();
+    int  hitTestThemeCard(int mx, int my) const;
+    bool hitTestThemeCardButton(int idx, int mx, int my) const;
+    int  hitTestThemeFilterButton(int mx, int my, int contentX) const;
+    void onThemeCardApply(int idx);
+
+    // Font cards
+    enum class FontFilter { All, Installed, NerdFonts, Ligatures };
+    FontFilter activeFontFilter_ = FontFilter::All;
+    std::vector<const FontMetadata*> filteredFonts_;
+    std::vector<UsFontCardInfo> fontCardRects_;
+    int fontInstallingCard_ = -1;
+    int fontFailedCard_     = -1;
+    bool fontIndexReady_    = false;
 
     // Scroll
     float scrollY_ = 0.f;
