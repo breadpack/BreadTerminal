@@ -510,59 +510,9 @@ void UnifiedSettingsWindow::paintBottomBar(Gdiplus::Graphics& g, int w, int h) {
 }
 
 // ---------------------------------------------------------------------------
-// paintContent
+// Content section STUBS (paintContent and paintSettingsItems are in
+// UnifiedSettingsContent.cpp)
 // ---------------------------------------------------------------------------
-
-void UnifiedSettingsWindow::paintContent(Gdiplus::Graphics& g, int w, int h) {
-    int contentLeft = sidebarWidth_ + kUsContentPad;
-    int contentTop = kUsTopBarH + kUsContentPad;
-    int contentW = w - sidebarWidth_ - kUsContentPad * 2;
-    int contentH = h - kUsTopBarH - kUsBottomBarH - kUsContentPad * 2;
-
-    // Section title
-    const SettingsCategory* cat = model_ ? model_->category(selectedCategoryId_) : nullptr;
-    std::wstring title = cat ? toWide(cat->label) : L"Settings";
-
-    Gdiplus::Font titleFont(L"Segoe UI Semibold", 14.f);
-    Gdiplus::SolidBrush textBr(toGdipColorCR(chrome_.textColor));
-    Gdiplus::PointF titlePt((float)contentLeft, (float)contentTop - scrollY_);
-    g.DrawString(title.c_str(), -1, &titleFont, titlePt, &textBr);
-
-    int itemsY = contentTop + 36;
-    int itemsX = contentLeft;
-
-    if (!cat) return;
-
-    switch (cat->sectionType) {
-    case SectionType::CardGrid:
-        // Dispatch based on category - themes or fonts
-        if (cat->id.find("theme") != std::string::npos) {
-            paintThemeCards(g, itemsX, itemsY, contentW, contentH);
-        } else {
-            paintFontCards(g, itemsX, itemsY, contentW, contentH);
-        }
-        break;
-    case SectionType::KeybindingList:
-        paintKeybindingList(g, itemsX, itemsY, contentW, contentH);
-        break;
-    case SectionType::Settings:
-    default:
-        paintSettingsItems(g, itemsX, itemsY, contentW, contentH);
-        break;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Content section STUBS
-// ---------------------------------------------------------------------------
-
-void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
-                                                int x, int y, int w, int h) {
-    Gdiplus::Font font(L"Segoe UI", 10.f);
-    Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
-    Gdiplus::PointF pt((float)x, (float)y - scrollY_);
-    g.DrawString(L"[Settings items will appear here]", -1, &font, pt, &dimBr);
-}
 
 void UnifiedSettingsWindow::paintThemeCards(Gdiplus::Graphics& g,
                                              int x, int y, int w, int h) {

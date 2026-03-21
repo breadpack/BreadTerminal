@@ -46,6 +46,7 @@ set(TERMCORE_WIN_SOURCES
     src/SettingsControls.cpp
     src/UnifiedSettingsWindow.cpp
     src/UnifiedSettingsSidebar.cpp
+    src/UnifiedSettingsContent.cpp
 )
 
 if(HAS_WEBVIEW2)
