@@ -104,7 +104,10 @@ void FontIndex::refreshInstallStatus() {
     if (!installedPredicate_) return;
 
     for (auto& font : fonts_) {
-        font.installed = installedPredicate_(font.postscript_name);
+        // Check by family name first (GDI+/CoreText use this), then postscript name
+        font.installed = installedPredicate_(font.name)
+                      || (!font.postscript_name.empty()
+                          && installedPredicate_(font.postscript_name));
     }
 }
 

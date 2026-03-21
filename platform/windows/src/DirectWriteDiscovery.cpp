@@ -166,7 +166,7 @@ public:
         if (!factory_) return results;
 
         ComPtr<IDWriteFontCollection> collection;
-        factory_->GetSystemFontCollection(collection.GetAddressOf());
+        factory_->GetSystemFontCollection(collection.GetAddressOf(), TRUE);
         if (!collection) return results;
 
         std::wstring wfamily = utf8ToWide(query.family);

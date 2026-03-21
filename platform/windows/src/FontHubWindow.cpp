@@ -237,6 +237,9 @@ void FontHubWindow::recalcCardLayout(int clientW) {
         // Button rect: bottom-right of card, 64x22
         ci.buttonRect = { x + kFhCardW - 72, y + kFhCardH - 26,
                           x + kFhCardW - 6,  y + kFhCardH - 4 };
+        // Uninstall "×" button: top-right corner of card, 20x20
+        ci.uninstallRect = { x + kFhCardW - 24, y + 4,
+                             x + kFhCardW - 4,  y + 24 };
         ci.isActive = false;
         if (ci.meta && !activeFontName_.empty()) {
             // Match by name or postscript_name, case-insensitive
@@ -253,6 +256,7 @@ void FontHubWindow::recalcCardLayout(int clientW) {
                        || activeFontName_.find(ci.meta->name) != std::string::npos;
         }
         ci.isInstalling = ((int)i == installingCard_);
+        ci.isFailed = ((int)i == failedCard_);
         visibleCards_.push_back(ci);
     }
 }
@@ -365,6 +369,17 @@ LRESULT FontHubWindow::handleMessage(HWND hwnd, UINT msg,
         if (wParam == kFhSearchTimerId) {
             KillTimer(hwnd, kFhSearchTimerId);
             onSearchChanged();
+        } else if (wParam == kFhSearchTimerId + 1) {
+            KillTimer(hwnd, kFhSearchTimerId + 1);
+            failedCard_ = -1;
+            recalcCardLayout(kFhWinWidth);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        } else if (wParam == kFhSearchTimerId + 2) {
+            KillTimer(hwnd, kFhSearchTimerId + 2);
+            fontIndex_.refreshInstallStatus();
+            rebuildFilteredList();
+            recalcCardLayout(kFhWinWidth);
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
 
@@ -417,9 +432,25 @@ LRESULT FontHubWindow::handleMessage(HWND hwnd, UINT msg,
             return 0;
         }
 
-        // Card button click
+        // Card click
         int ci = hitTestCard(mx, my);
         if (ci >= 0 && ci < (int)visibleCards_.size()) {
+            // Uninstall button click
+            if (hitTestUninstallButton(ci, mx, my)) {
+                auto& card = visibleCards_[ci];
+                if (card.meta) {
+                    std::string name = card.meta->name;
+                    OutputDebugStringA(("Uninstall clicked: " + name + "\n").c_str());
+                    std::thread([name]() {
+                        bool ok = uninstallFont(name);
+                        OutputDebugStringA(ok ? "Uninstall OK\n" : "Uninstall FAILED\n");
+                    }).detach();
+                    // Refresh after a short delay to let the thread finish
+                    SetTimer(hwnd, kFhSearchTimerId + 2, 500, nullptr);
+                }
+                return 0;
+            }
+            // Action button click
             if (hitTestCardButton(ci, mx, my)) {
                 auto& card = visibleCards_[ci];
                 if (card.meta) {
@@ -464,13 +495,45 @@ LRESULT FontHubWindow::handleMessage(HWND hwnd, UINT msg,
 
     case WM_APP + 1: {
         // Font install completed (wParam=1 success, 0 fail)
+        std::string installedFontName;
+        if (installingCard_ >= 0 && installingCard_ < (int)visibleCards_.size()) {
+            if (visibleCards_[installingCard_].meta)
+                installedFontName = visibleCards_[installingCard_].meta->name;
+        }
+        if (wParam == 0) {
+            // Install failed — show "Failed" state
+            failedCard_ = installingCard_;
+            installingCard_ = -1;
+            recalcCardLayout(kFhWinWidth);
+            InvalidateRect(hwnd, nullptr, FALSE);
+            // Clear failed state after 3 seconds
+            SetTimer(hwnd, kFhSearchTimerId + 1, 3000, nullptr);
+            return 0;
+        }
         installingCard_ = -1;
-        if (wParam == 1) {
-            // Refresh install status and repaint
+        {
+            // Mark installed first (GDI+ may not detect immediately)
+            if (!installedFontName.empty())
+                fontIndex_.markInstalled(installedFontName);
+            // Then refresh others from GDI+
             fontIndex_.refreshInstallStatus();
+            // Ensure our font stays marked (refreshInstallStatus may have reset it)
+            if (!installedFontName.empty())
+                fontIndex_.markInstalled(installedFontName);
             rebuildFilteredList();
             recalcCardLayout(kFhWinWidth);
+
+            // Font installed — user can now click "Apply" manually
         }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_APP + 2: {
+        // Font uninstall completed — refresh status
+        fontIndex_.refreshInstallStatus();
+        rebuildFilteredList();
+        recalcCardLayout(kFhWinWidth);
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }

@@ -51,8 +51,10 @@ struct FontCardInfo {
     const FontMetadata* meta = nullptr;
     RECT cardRect    = {};
     RECT buttonRect  = {};
+    RECT uninstallRect = {}; // small "×" button for installed fonts
     bool isActive    = false; // currently applied font
     bool isInstalling = false; // download in progress
+    bool isFailed    = false; // install failed
 };
 
 // ---------- FontHubWindow ----------
@@ -101,6 +103,7 @@ private:
     // Hit testing (FontHubCards.cpp)
     int  hitTestCard(int mx, int my) const;
     bool hitTestCardButton(int idx, int mx, int my) const;
+    bool hitTestUninstallButton(int idx, int mx, int my) const;
     bool hitTestCloseButton(int mx, int my) const;
     int  hitTestFilterButton(int mx, int my) const;
 
@@ -140,6 +143,7 @@ private:
 
     // Install state
     int installingCard_ = -1;  // index of card currently installing (-1 = none)
+    int failedCard_     = -1;  // index of card that failed install (-1 = none)
 
     // Search edit
     HWND searchEdit_  = nullptr;

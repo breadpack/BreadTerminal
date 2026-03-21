@@ -36,7 +36,7 @@ public:
 
     void markInstalled(const std::string& name);
 
-    /// Inject a platform predicate that checks if a font (by postscript name)
+    /// Inject a platform predicate that checks if a font (by family name)
     /// is available on the system.
     void setInstalledPredicate(std::function<bool(const std::string&)> pred);
 

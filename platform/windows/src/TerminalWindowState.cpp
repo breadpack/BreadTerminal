@@ -589,6 +589,14 @@ void TerminalWindowState::positionIME(int x, int y, int height) {
 
 void TerminalWindowState::onFontChanged(float cellW, float cellH) {
     if (cache) cache->clear();
+    // Recreate atlas to free old font glyphs
+    if (atlas) {
+        atlas = std::make_unique<termcore::GlyphAtlas>();
+        if (renderer) {
+            renderer->setFontStack(fontCollection.get(), cache.get(),
+                                   atlas.get(), rasterizer.get());
+        }
+    }
     needsRender = true;
 }
 

@@ -55,7 +55,7 @@
     "category": "monospace",
     "has_ligatures": false,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/adobe-fonts/source-code-pro/releases/download/2.042R-u/1.062R-i/OTF-source-code-pro-2.042R-u_1.062R-i.zip",
+    "download_url": "https://github.com/adobe-fonts/source-code-pro/releases/download/2.042R-u%2F1.062R-i%2F1.026R-vf/OTF-source-code-pro-2.042R-u_1.062R-i.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/SourceCodePro.zip",
     "license": "OFL-1.1"
   },
@@ -75,7 +75,7 @@
     "category": "monospace",
     "has_ligatures": true,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/rubjo/victor-mono/releases/download/v1.5.6/VictorMonoAll.zip",
+    "download_url": "https://rubjo.github.io/victor-mono/VictorMonoAll.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/VictorMono.zip",
     "license": "OFL-1.1"
   },
@@ -95,7 +95,7 @@
     "category": "monospace",
     "has_ligatures": false,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/vercel/geist-font/releases/download/1.4.01/Geist.Mono.zip",
+    "download_url": "https://github.com/vercel/geist-font/releases/download/1.8.0/geist-font-1.8.0.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/GeistMono.zip",
     "license": "OFL-1.1"
   },
@@ -105,7 +105,7 @@
     "category": "monospace",
     "has_ligatures": false,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/IBM/plex/releases/download/v6.4.2/OpenType.zip",
+    "download_url": "https://github.com/IBM/plex/releases/download/%40ibm%2Fplex-mono%401.1.0/ibm-plex-mono.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/IBMPlexMono.zip",
     "license": "OFL-1.1"
   },
@@ -115,7 +115,7 @@
     "category": "monospace",
     "has_ligatures": false,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/googlefonts/Inconsolata/releases/download/v3.000/Inconsolata-Variable.zip",
+    "download_url": "https://github.com/googlefonts/Inconsolata/releases/download/v3.000/fonts_ttf.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/Inconsolata.zip",
     "license": "OFL-1.1"
   },
@@ -145,7 +145,7 @@
     "category": "monospace",
     "has_ligatures": true,
     "has_nerd_font_variant": true,
-    "download_url": "https://github.com/subframe7536/maple-font/releases/download/v7.0/MapleMono.zip",
+    "download_url": "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-TTF.zip",
     "nerd_font_download_url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/MapleMono.zip",
     "license": "OFL-1.1"
   },

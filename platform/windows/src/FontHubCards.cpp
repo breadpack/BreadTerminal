@@ -69,8 +69,18 @@ void FontHubWindow::paintSingleCard(Gdiplus::Graphics& g,
     Gdiplus::GraphicsPath cardPath;
     drawRoundedRect(cardPath, cx, cy, cw, ch, r);
 
-    Gdiplus::SolidBrush cardBr(toGdipColorCR(chrome_.cardBg));
+    // Installed cards get normal card bg; uninstalled get dimmed bg
+    COLORREF cardColor = (card.meta->installed)
+        ? chrome_.cardBg
+        : darkenCR(chrome_.cardBg, 0.82f);
+    Gdiplus::SolidBrush cardBr(toGdipColorCR(cardColor));
     g.FillPath(&cardBr, &cardPath);
+
+    // Installed indicator: green left border
+    if (card.meta->installed) {
+        Gdiplus::Pen greenPen(toGdipColorCR(chrome_.activeGreen), 3.f);
+        g.DrawLine(&greenPen, cx + 1.5f, cy + r, cx + 1.5f, cy + ch - r);
+    }
 
     // -- Top preview area (80px) --
     paintFontPreview(g, card, cx, cy, cw);
@@ -99,6 +109,28 @@ void FontHubWindow::paintSingleCard(Gdiplus::Graphics& g,
 
     // Action button
     paintCardButton(g, card);
+
+    // Uninstall "×" button for installed (non-active) fonts
+    if (card.meta->installed && !card.isActive && !card.isInstalling) {
+        float ux = (float)card.uninstallRect.left;
+        float uy = (float)card.uninstallRect.top;
+        float uw = (float)(card.uninstallRect.right - card.uninstallRect.left);
+        float uh = (float)(card.uninstallRect.bottom - card.uninstallRect.top);
+
+        // Semi-transparent circle background
+        Gdiplus::SolidBrush circleBr(Gdiplus::Color(160, 60, 60, 60));
+        g.FillEllipse(&circleBr, ux, uy, uw, uh);
+
+        // "×" text
+        Gdiplus::FontFamily ff(L"Segoe UI");
+        Gdiplus::Font xFont(&ff, 9.f, Gdiplus::FontStyleBold);
+        Gdiplus::SolidBrush xBr(Gdiplus::Color(200, 220, 220, 220));
+        Gdiplus::StringFormat sf;
+        sf.SetAlignment(Gdiplus::StringAlignmentCenter);
+        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF xRect(ux, uy, uw, uh);
+        g.DrawString(L"\x00D7", -1, &xFont, xRect, &sf, &xBr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +252,9 @@ void FontHubWindow::paintBadges(Gdiplus::Graphics& g,
         curX += badgeW + badgeGap;
     };
 
+    if (meta.installed) {
+        drawBadge(L"\x2713 Installed", chrome_.activeGreen);
+    }
     if (meta.has_ligatures) {
         drawBadge(L"Ligatures", chrome_.accent);
     }
@@ -247,17 +282,21 @@ void FontHubWindow::paintCardButton(Gdiplus::Graphics& g,
     Gdiplus::Color fillColor;
     Gdiplus::Color textColor;
 
-    if (card.isInstalling) {
+    if (card.isFailed) {
+        fillColor = Gdiplus::Color(255, 180, 60, 60);
+        textColor = Gdiplus::Color(255, 255, 255, 255);
+        label = L"Failed";
+    } else if (card.isInstalling) {
         fillColor = toGdipColorCR(chrome_.dimText);
         textColor = Gdiplus::Color(255, 255, 255, 255);
         label = L"Installing...";
     } else if (card.isActive) {
         fillColor = toGdipColorCR(chrome_.activeGreen);
         textColor = Gdiplus::Color(255, 255, 255, 255);
-        label = L"\x2713 Active";
+        label = L"\x2713 Applied";
     } else if (card.meta && card.meta->installed) {
         fillColor = toGdipColorCR(chrome_.accent);
-        textColor = toGdipColorCR(chrome_.titleBar);
+        textColor = Gdiplus::Color(255, 255, 255, 255);
         label = L"Apply";
     } else {
         fillColor = toGdipColorCR(chrome_.btnInactive);
@@ -294,6 +333,14 @@ int FontHubWindow::hitTestCard(int mx, int my) const {
 bool FontHubWindow::hitTestCardButton(int idx, int mx, int my) const {
     if (idx < 0 || idx >= (int)visibleCards_.size()) return false;
     const RECT& r = visibleCards_[idx].buttonRect;
+    return mx >= r.left && mx < r.right && my >= r.top && my < r.bottom;
+}
+
+bool FontHubWindow::hitTestUninstallButton(int idx, int mx, int my) const {
+    if (idx < 0 || idx >= (int)visibleCards_.size()) return false;
+    const auto& card = visibleCards_[idx];
+    if (!card.meta || !card.meta->installed || card.isActive) return false;
+    const RECT& r = card.uninstallRect;
     return mx >= r.left && mx < r.right && my >= r.top && my < r.bottom;
 }
 

@@ -15,6 +15,11 @@ bool installFontFromUrl(
     const std::string& fontName,
     std::function<void(const std::string& status)> progressCb = nullptr);
 
+/// Uninstall a font by removing its files from the per-user font directory,
+/// unregistering from the current session, and cleaning up registry entries.
+/// Returns true if at least one font file was removed.
+bool uninstallFont(const std::string& fontName);
+
 } // namespace termcore
 
 #endif

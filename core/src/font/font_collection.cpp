@@ -14,11 +14,7 @@ FontCollection::FontCollection(IFontRasterizer& rasterizer,
 }
 
 bool FontCollection::setPrimaryFont(const std::string& family, float size) {
-    size_ = size;
-    chain_.clear();
-    codepoint_cache_.clear();
-
-    // Find the regular variant
+    // Find the regular variant before clearing state
     FontQuery query;
     query.family = family;
     query.style = FontStyle::Regular;
@@ -37,6 +33,11 @@ bool FontCollection::setPrimaryFont(const std::string& family, float size) {
     if (primary.rasterizer_face_id == kInvalidFontFace) {
         return false;
     }
+
+    // Font loaded successfully — now safe to clear old state
+    size_ = size;
+    chain_.clear();
+    codepoint_cache_.clear();
     primary.shaper_face_id = shaper_.loadFont(desc.file_path, desc.face_index, size);
     primary.scale_factor = 1.0f;
     primary.loaded = true;
