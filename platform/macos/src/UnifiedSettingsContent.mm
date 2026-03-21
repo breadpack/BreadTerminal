@@ -5,6 +5,7 @@
 
 #include "termcore/settings_model.h"
 #include "termcore/config.h"
+#include "termcore/config_value_adapter.h"
 
 #include <string>
 
@@ -15,109 +16,15 @@ static const CGFloat kLabelFontSize   = 14.0;
 static const CGFloat kDescFontSize    = 12.0;
 static const CGFloat kTitleFontSize   = 20.0;
 
-/// Helper: get a string value from config by key.
-static NSString* configStringValue(const termcore::Config& cfg, const std::string& key) {
-    if (key == "font_family") return [NSString stringWithUTF8String:cfg.font_family.c_str()];
-    if (key == "shell") return [NSString stringWithUTF8String:cfg.shell.c_str()];
-    if (key == "cursor_style") return [NSString stringWithUTF8String:cfg.cursor_style.c_str()];
-    if (key == "theme") return [NSString stringWithUTF8String:cfg.theme.c_str()];
-    if (key == "clipboard_paste_protection") return [NSString stringWithUTF8String:cfg.clipboard_paste_protection.c_str()];
-    if (key == "quick_terminal_hotkey") return [NSString stringWithUTF8String:cfg.quick_terminal_hotkey.c_str()];
-    return @"";
+/// Helper: get a string value from config as NSString.
+static NSString* configNSStringValue(const termcore::Config& cfg, const std::string& key) {
+    std::string val = termcore::getConfigString(cfg, key);
+    return [NSString stringWithUTF8String:val.c_str()];
 }
 
-/// Helper: get a float value from config by key.
-static float configFloatValue(const termcore::Config& cfg, const std::string& key) {
-    if (key == "font_size") return cfg.font_size;
-    if (key == "background_opacity") return cfg.background_opacity;
-    if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
-    if (key == "minimum_contrast") return cfg.minimum_contrast;
-    if (key == "notify_after_seconds") return cfg.notify_after_seconds;
-    return 0.0f;
-}
-
-/// Helper: get an int value from config by key.
-static int configIntValue(const termcore::Config& cfg, const std::string& key) {
-    if (key == "scrollback_limit") return cfg.scrollback_limit;
-    if (key == "window_width") return cfg.window_width;
-    if (key == "window_height") return cfg.window_height;
-    if (key == "window_padding") return cfg.window_padding;
-    if (key == "background_blur") return cfg.background_blur;
-    if (key == "sidebar_width") return cfg.sidebar_width;
-    return 0;
-}
-
-/// Helper: get a bool value from config by key.
-static bool configBoolValue(const termcore::Config& cfg, const std::string& key) {
-    if (key == "cursor_blink") return cfg.cursor_blink;
-    if (key == "sidebar_visible") return cfg.sidebar_visible;
-    if (key == "clipboard_paste_bracketed_safe") return cfg.clipboard_paste_bracketed_safe;
-    if (key == "allow_clipboard_write") return cfg.allow_clipboard_write;
-    if (key == "notify_on_command_finish") return cfg.notify_on_command_finish;
-    return false;
-}
-
-/// Helper: get a uint32 color value from config by key.
-static uint32_t configColorValue(const termcore::Config& cfg, const std::string& key) {
-    if (key == "background") return cfg.background;
-    if (key == "foreground") return cfg.foreground;
-    if (key == "cursor_color") return cfg.cursor_color;
-    if (key == "selection_background") return cfg.selection_background;
-    if (key == "selection_foreground") return cfg.selection_foreground;
-    // palette colors: "palette_0" through "palette_15"
-    if (key.rfind("palette_", 0) == 0) {
-        int idx = std::stoi(key.substr(8));
-        if (idx >= 0 && idx < 16) return cfg.palette[idx];
-    }
-    return 0;
-}
-
-/// Helper: set a config value by key.
-static void setConfigValue(termcore::Config& cfg, const std::string& key, NSString* strValue) {
-    std::string val([strValue UTF8String]);
-    if (key == "font_family") { cfg.font_family = val; return; }
-    if (key == "shell") { cfg.shell = val; return; }
-    if (key == "cursor_style") { cfg.cursor_style = val; return; }
-    if (key == "theme") { cfg.theme = val; return; }
-    if (key == "clipboard_paste_protection") { cfg.clipboard_paste_protection = val; return; }
-    if (key == "quick_terminal_hotkey") { cfg.quick_terminal_hotkey = val; return; }
-}
-
-static void setConfigFloatValue(termcore::Config& cfg, const std::string& key, float val) {
-    if (key == "font_size") { cfg.font_size = val; return; }
-    if (key == "background_opacity") { cfg.background_opacity = val; return; }
-    if (key == "cursor_blink_interval") { cfg.cursor_blink_interval = val; return; }
-    if (key == "minimum_contrast") { cfg.minimum_contrast = val; return; }
-    if (key == "notify_after_seconds") { cfg.notify_after_seconds = val; return; }
-}
-
-static void setConfigIntValue(termcore::Config& cfg, const std::string& key, int val) {
-    if (key == "scrollback_limit") { cfg.scrollback_limit = val; return; }
-    if (key == "window_width") { cfg.window_width = val; return; }
-    if (key == "window_height") { cfg.window_height = val; return; }
-    if (key == "window_padding") { cfg.window_padding = val; return; }
-    if (key == "background_blur") { cfg.background_blur = val; return; }
-    if (key == "sidebar_width") { cfg.sidebar_width = val; return; }
-}
-
-static void setConfigBoolValue(termcore::Config& cfg, const std::string& key, bool val) {
-    if (key == "cursor_blink") { cfg.cursor_blink = val; return; }
-    if (key == "sidebar_visible") { cfg.sidebar_visible = val; return; }
-    if (key == "clipboard_paste_bracketed_safe") { cfg.clipboard_paste_bracketed_safe = val; return; }
-    if (key == "allow_clipboard_write") { cfg.allow_clipboard_write = val; return; }
-    if (key == "notify_on_command_finish") { cfg.notify_on_command_finish = val; return; }
-}
-
-static void setConfigColorValue(termcore::Config& cfg, const std::string& key, uint32_t val) {
-    if (key == "background") { cfg.background = val; return; }
-    if (key == "foreground") { cfg.foreground = val; return; }
-    if (key == "cursor_color") { cfg.cursor_color = val; return; }
-    if (key == "selection_background") { cfg.selection_background = val; return; }
-    if (key == "selection_foreground") { cfg.selection_foreground = val; return; }
-    if (key.rfind("palette_", 0) == 0) {
-        int idx = std::stoi(key.substr(8));
-        if (idx >= 0 && idx < 16) cfg.palette[idx] = val;
-    }
+/// Helper: set a config string value from NSString.
+static void setConfigNSStringValue(termcore::Config& cfg, const std::string& key, NSString* strValue) {
+    termcore::setConfigString(cfg, key, std::string([strValue UTF8String]));
 }
 
 /// Convert uint32 RGB to NSColor.
@@ -289,7 +196,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     switch (item.type) {
         case termcore::SettingType::Toggle: {
             NSSwitch* toggle = [[NSSwitch alloc] initWithFrame:NSMakeRect(x, y, 40, 22)];
-            toggle.state = configBoolValue(ctrl.config, key) ? NSControlStateValueOn : NSControlStateValueOff;
+            toggle.state = termcore::getConfigBool(ctrl.config, key) ? NSControlStateValueOn : NSControlStateValueOff;
             toggle.target = self;
             toggle.action = @selector(toggleChanged:);
             toggle.tag = [self tagForKey:key];
@@ -298,7 +205,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
 
         case termcore::SettingType::Text: {
             NSTextField* textField = [[NSTextField alloc] initWithFrame:NSMakeRect(x, y, MIN(width, 300), 24)];
-            textField.stringValue = configStringValue(ctrl.config, key);
+            textField.stringValue = configNSStringValue(ctrl.config, key);
             textField.placeholderString = [NSString stringWithUTF8String:key.c_str()];
             textField.bezelStyle = NSTextFieldRoundedBezel;
             textField.target = self;
@@ -310,8 +217,8 @@ static uint32_t rgbFromNSColor(NSColor* color) {
         case termcore::SettingType::Number: {
             NSView* numView = [[NSView alloc] initWithFrame:NSMakeRect(x, y, 160, 24)];
 
-            float currentVal = configFloatValue(ctrl.config, key);
-            if (currentVal == 0) currentVal = (float)configIntValue(ctrl.config, key);
+            float currentVal = termcore::getConfigFloat(ctrl.config, key);
+            if (currentVal == 0) currentVal = (float)termcore::getConfigInt(ctrl.config, key);
 
             NSTextField* numField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 80, 24)];
             numField.stringValue = [NSString stringWithFormat:@"%g", currentVal];
@@ -337,7 +244,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
         case termcore::SettingType::Slider: {
             NSView* sliderView = [[NSView alloc] initWithFrame:NSMakeRect(x, y, MIN(width, 300), 24)];
 
-            float currentVal = configFloatValue(ctrl.config, key);
+            float currentVal = termcore::getConfigFloat(ctrl.config, key);
 
             NSSlider* slider = [[NSSlider alloc] initWithFrame:NSMakeRect(0, 0, 220, 24)];
             slider.minValue = item.meta.min;
@@ -360,7 +267,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
 
         case termcore::SettingType::Dropdown: {
             NSPopUpButton* popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, y, 200, 24) pullsDown:NO];
-            NSString* currentValue = configStringValue(ctrl.config, key);
+            NSString* currentValue = configNSStringValue(ctrl.config, key);
 
             for (const auto& opt : item.meta.options) {
                 NSString* nsOpt = [NSString stringWithUTF8String:opt.c_str()];
@@ -374,7 +281,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
         }
 
         case termcore::SettingType::ColorPicker: {
-            uint32_t rgb = configColorValue(ctrl.config, key);
+            uint32_t rgb = termcore::getConfigColor(ctrl.config, key);
             NSColor* color = nsColorFromRGB(rgb);
 
             NSColorWell* colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(x, y, 44, 28)];
@@ -422,7 +329,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     if (!ctrl) return;
 
     bool val = (sender.state == NSControlStateValueOn);
-    setConfigBoolValue(ctrl.config, key, val);
+    termcore::setConfigBool(ctrl.config, key, val);
     [ctrl configDidChange];
 }
 
@@ -433,7 +340,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     UnifiedSettingsWindowController* ctrl = _controller;
     if (!ctrl) return;
 
-    setConfigValue(ctrl.config, key, sender.stringValue);
+    setConfigNSStringValue(ctrl.config, key, sender.stringValue);
     [ctrl configDidChange];
 }
 
@@ -452,10 +359,10 @@ static uint32_t rgbFromNSColor(NSColor* color) {
         if (it.key == key) { item = &it; break; }
     }
 
-    if (item && configIntValue(ctrl.config, key) != 0) {
-        setConfigIntValue(ctrl.config, key, (int)val);
+    if (item && termcore::getConfigInt(ctrl.config, key) != 0) {
+        termcore::setConfigInt(ctrl.config, key, (int)val);
     } else {
-        setConfigFloatValue(ctrl.config, key, val);
+        termcore::setConfigFloat(ctrl.config, key, val);
     }
     [ctrl configDidChange];
 }
@@ -480,12 +387,12 @@ static uint32_t rgbFromNSColor(NSColor* color) {
         }
     }
 
-    if (configIntValue(ctrl.config, key) != 0 || key == "scrollback_limit" ||
+    if (termcore::getConfigInt(ctrl.config, key) != 0 || key == "scrollback_limit" ||
         key == "window_width" || key == "window_height" || key == "window_padding" ||
         key == "background_blur" || key == "sidebar_width") {
-        setConfigIntValue(ctrl.config, key, (int)val);
+        termcore::setConfigInt(ctrl.config, key, (int)val);
     } else {
-        setConfigFloatValue(ctrl.config, key, val);
+        termcore::setConfigFloat(ctrl.config, key, val);
     }
     [ctrl configDidChange];
 }
@@ -498,7 +405,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     if (!ctrl) return;
 
     float val = (float)sender.doubleValue;
-    setConfigFloatValue(ctrl.config, key, val);
+    termcore::setConfigFloat(ctrl.config, key, val);
 
     // Update value label
     NSView* parent = sender.superview;
@@ -522,7 +429,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     UnifiedSettingsWindowController* ctrl = _controller;
     if (!ctrl) return;
 
-    setConfigValue(ctrl.config, key, sender.titleOfSelectedItem);
+    setConfigNSStringValue(ctrl.config, key, sender.titleOfSelectedItem);
     [ctrl configDidChange];
 }
 
@@ -534,7 +441,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     if (!ctrl) return;
 
     uint32_t rgb = rgbFromNSColor(sender.color);
-    setConfigColorValue(ctrl.config, key, rgb);
+    termcore::setConfigColor(ctrl.config, key, rgb);
     [ctrl configDidChange];
 }
 

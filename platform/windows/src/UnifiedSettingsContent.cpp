@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "UnifiedSettingsWindow.h"
+#include "termcore/config_value_adapter.h"
 
 #include <commdlg.h>
 
@@ -11,52 +12,6 @@
 #pragma comment(lib, "comdlg32.lib")
 
 namespace termcore {
-
-// ---------------------------------------------------------------------------
-// Config value helpers (read config values by key for rendering)
-// ---------------------------------------------------------------------------
-
-static std::string getStringValue(const Config& cfg, const std::string& key) {
-    if (key == "shell") return cfg.shell;
-    if (key == "cursor_style") return cfg.cursor_style;
-    if (key == "clipboard_paste_protection") return cfg.clipboard_paste_protection;
-    if (key == "font_family") return cfg.font_family;
-    if (key == "theme") return cfg.theme;
-    return {};
-}
-
-static float getFloatValue(const Config& cfg, const std::string& key) {
-    if (key == "font_size") return cfg.font_size;
-    if (key == "background_opacity") return cfg.background_opacity;
-    if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
-    if (key == "minimum_contrast") return cfg.minimum_contrast;
-    return 0.0f;
-}
-
-static int getIntValue(const Config& cfg, const std::string& key) {
-    if (key == "window_width") return cfg.window_width;
-    if (key == "window_height") return cfg.window_height;
-    if (key == "window_padding") return cfg.window_padding;
-    if (key == "scrollback_limit") return cfg.scrollback_limit;
-    if (key == "background_blur") return cfg.background_blur;
-    return 0;
-}
-
-static bool getBoolValue(const Config& cfg, const std::string& key) {
-    if (key == "cursor_blink") return cfg.cursor_blink;
-    if (key == "clipboard_paste_bracketed_safe") return cfg.clipboard_paste_bracketed_safe;
-    if (key == "allow_clipboard_write") return cfg.allow_clipboard_write;
-    return false;
-}
-
-static uint32_t getColorValue(const Config& cfg, const std::string& key) {
-    if (key == "background") return cfg.background;
-    if (key == "foreground") return cfg.foreground;
-    if (key == "cursor_color") return cfg.cursor_color;
-    if (key == "selection_background") return cfg.selection_background;
-    if (key == "selection_foreground") return cfg.selection_foreground;
-    return 0;
-}
 
 // ---------------------------------------------------------------------------
 // paintContent
@@ -155,7 +110,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
         switch (item.type) {
         case SettingType::Toggle: {
             // Toggle switch: 44x22, rounded track + circle knob
-            bool val = getBoolValue(config_, item.key);
+            bool val = getConfigBool(config_, item.key);
             float tw = 44.f, th = 22.f;
             float ty = ctrlY + 2.f;
 
@@ -177,7 +132,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
 
         case SettingType::Text: {
             // Text field: 300x28, rounded rect
-            std::string val = getStringValue(config_, item.key);
+            std::string val = getConfigString(config_, item.key);
             float fw = 300.f, fh = 28.f;
             float fy = ctrlY;
 
@@ -193,7 +148,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
 
         case SettingType::Number: {
             // Number field: 120x28 + stepper buttons (28x28 each)
-            int val = getIntValue(config_, item.key);
+            int val = getConfigInt(config_, item.key);
             float fw = 120.f, fh = 28.f, btnSz = 28.f;
             float fy = ctrlY;
 
@@ -225,7 +180,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
 
         case SettingType::Slider: {
             // Slider: 300px wide track (4px h) + filled portion + circle handle + value label
-            float val = getFloatValue(config_, item.key);
+            float val = getConfigFloat(config_, item.key);
             float sW = 300.f, sH = 4.f;
             float sy = ctrlY + 12.f;
             float minV = item.meta.min;
@@ -263,11 +218,11 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
         case SettingType::Dropdown: {
             // Pill buttons: horizontal row of 72x26 rounded pills
             const auto& options = item.meta.options;
-            std::string current = getStringValue(config_, item.key);
+            std::string current = getConfigString(config_, item.key);
 
             // For background_blur, map int to string option
             if (item.key == "background_blur") {
-                int iv = getIntValue(config_, item.key);
+                int iv = getConfigInt(config_, item.key);
                 if (iv >= 0 && iv < (int)options.size()) {
                     current = options[iv];
                 }
@@ -304,7 +259,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
 
         case SettingType::ColorPicker: {
             // Color swatch: 28x28 rounded rect filled with color + hex label
-            uint32_t val = getColorValue(config_, item.key);
+            uint32_t val = getConfigColor(config_, item.key);
             float swSz = 28.f;
 
             Gdiplus::SolidBrush swatchBr(toGdipColor(val));
@@ -335,39 +290,6 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
 }
 
 // ---------------------------------------------------------------------------
-// Config value setters
-// ---------------------------------------------------------------------------
-
-static void setBoolValue(Config& cfg, const std::string& key, bool val) {
-    if (key == "cursor_blink") cfg.cursor_blink = val;
-    else if (key == "clipboard_paste_bracketed_safe") cfg.clipboard_paste_bracketed_safe = val;
-    else if (key == "allow_clipboard_write") cfg.allow_clipboard_write = val;
-}
-
-static void setIntValue(Config& cfg, const std::string& key, int val) {
-    if (key == "window_width") cfg.window_width = val;
-    else if (key == "window_height") cfg.window_height = val;
-    else if (key == "window_padding") cfg.window_padding = val;
-    else if (key == "scrollback_limit") cfg.scrollback_limit = val;
-    else if (key == "background_blur") cfg.background_blur = val;
-}
-
-static void setFloatValue(Config& cfg, const std::string& key, float val) {
-    if (key == "font_size") cfg.font_size = val;
-    else if (key == "background_opacity") cfg.background_opacity = val;
-    else if (key == "cursor_blink_interval") cfg.cursor_blink_interval = val;
-    else if (key == "minimum_contrast") cfg.minimum_contrast = val;
-}
-
-static void setStringValue(Config& cfg, const std::string& key, const std::string& val) {
-    if (key == "shell") cfg.shell = val;
-    else if (key == "cursor_style") cfg.cursor_style = val;
-    else if (key == "clipboard_paste_protection") cfg.clipboard_paste_protection = val;
-    else if (key == "font_family") cfg.font_family = val;
-    else if (key == "theme") cfg.theme = val;
-}
-
-// ---------------------------------------------------------------------------
 // onSettingsItemClick — handle clicks on setting controls
 // ---------------------------------------------------------------------------
 
@@ -392,8 +314,8 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             float ty = ctrlY + 2.f;
             if ((float)mx >= ctrlX && (float)mx < ctrlX + tw &&
                 (float)my >= ty && (float)my < ty + th) {
-                bool val = getBoolValue(config_, item.key);
-                setBoolValue(config_, item.key, !val);
+                bool val = getConfigBool(config_, item.key);
+                setConfigBool(config_, item.key, !val);
                 if (model_) model_->refreshModified(config_);
                 notifySave();
                 if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -407,7 +329,7 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             float fy = ctrlY;
             if ((float)mx >= ctrlX && (float)mx < ctrlX + fw &&
                 (float)my >= fy && (float)my < fy + fh) {
-                std::string val = getStringValue(config_, item.key);
+                std::string val = getConfigString(config_, item.key);
                 beginInlineEdit(item.key, SettingType::Text,
                                 ctrlX, fy, fw, fh, toWide(val));
                 return;
@@ -422,15 +344,15 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             if ((float)mx >= ctrlX && (float)mx < ctrlX + btnSz &&
                 (float)my >= fy && (float)my < fy + btnSz) {
                 if (item.key == "font_size") {
-                    float val = getFloatValue(config_, item.key);
+                    float val = getConfigFloat(config_, item.key);
                     float newVal = (std::max)(item.meta.min, val - item.meta.step);
-                    setFloatValue(config_, item.key, newVal);
+                    setConfigFloat(config_, item.key, newVal);
                 } else {
-                    int val = getIntValue(config_, item.key);
+                    int val = getConfigInt(config_, item.key);
                     int newVal = val - (int)item.meta.step;
                     if (item.meta.min != item.meta.max)
                         newVal = (std::max)((int)item.meta.min, newVal);
-                    setIntValue(config_, item.key, newVal);
+                    setConfigInt(config_, item.key, newVal);
                 }
                 if (model_) model_->refreshModified(config_);
                 notifySave();
@@ -442,15 +364,15 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             if ((float)mx >= plusX && (float)mx < plusX + btnSz &&
                 (float)my >= fy && (float)my < fy + btnSz) {
                 if (item.key == "font_size") {
-                    float val = getFloatValue(config_, item.key);
+                    float val = getConfigFloat(config_, item.key);
                     float newVal = (std::min)(item.meta.max, val + item.meta.step);
-                    setFloatValue(config_, item.key, newVal);
+                    setConfigFloat(config_, item.key, newVal);
                 } else {
-                    int val = getIntValue(config_, item.key);
+                    int val = getConfigInt(config_, item.key);
                     int newVal = val + (int)item.meta.step;
                     if (item.meta.min != item.meta.max)
                         newVal = (std::min)((int)item.meta.max, newVal);
-                    setIntValue(config_, item.key, newVal);
+                    setConfigInt(config_, item.key, newVal);
                 }
                 if (model_) model_->refreshModified(config_);
                 notifySave();
@@ -463,9 +385,9 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
                 (float)my >= fy && (float)my < fy + 28.f) {
                 wchar_t buf[32];
                 if (item.key == "font_size") {
-                    _snwprintf_s(buf, _countof(buf), L"%.1f", getFloatValue(config_, item.key));
+                    _snwprintf_s(buf, _countof(buf), L"%.1f", getConfigFloat(config_, item.key));
                 } else {
-                    _snwprintf_s(buf, _countof(buf), L"%d", getIntValue(config_, item.key));
+                    _snwprintf_s(buf, _countof(buf), L"%d", getConfigInt(config_, item.key));
                 }
                 beginInlineEdit(item.key, SettingType::Number,
                                 fieldX, fy, fw, 28.f, buf);
@@ -488,7 +410,7 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
                     newVal = std::round(newVal / item.meta.step) * item.meta.step;
                 }
                 newVal = (std::max)(item.meta.min, (std::min)(item.meta.max, newVal));
-                setFloatValue(config_, item.key, newVal);
+                setConfigFloat(config_, item.key, newVal);
                 if (model_) model_->refreshModified(config_);
                 notifySave();
                 if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -505,9 +427,9 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
                 if ((float)mx >= px && (float)mx < px + pillW &&
                     (float)my >= ctrlY && (float)my < ctrlY + pillH) {
                     if (item.key == "background_blur") {
-                        setIntValue(config_, item.key, i);
+                        setConfigInt(config_, item.key, i);
                     } else {
-                        setStringValue(config_, item.key, options[i]);
+                        setConfigString(config_, item.key, options[i]);
                     }
                     if (model_) model_->refreshModified(config_);
                     notifySave();
@@ -524,7 +446,7 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             if ((float)mx >= ctrlX && (float)mx < ctrlX + swSz &&
                 (float)my >= ctrlY && (float)my < ctrlY + swSz) {
                 // Open native color picker dialog
-                uint32_t currentColor = getColorValue(config_, item.key);
+                uint32_t currentColor = getConfigColor(config_, item.key);
                 COLORREF customColors[16] = {};
                 CHOOSECOLOR cc = {};
                 cc.lStructSize = sizeof(cc);
@@ -539,12 +461,7 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
                     uint32_t newColor = ((uint32_t)GetRValue(cc.rgbResult) << 16)
                                       | ((uint32_t)GetGValue(cc.rgbResult) << 8)
                                       |  (uint32_t)GetBValue(cc.rgbResult);
-                    // Set color value
-                    if (item.key == "background") config_.background = newColor;
-                    else if (item.key == "foreground") config_.foreground = newColor;
-                    else if (item.key == "cursor_color") config_.cursor_color = newColor;
-                    else if (item.key == "selection_background") config_.selection_background = newColor;
-                    else if (item.key == "selection_foreground") config_.selection_foreground = newColor;
+                    setConfigColor(config_, item.key, newColor);
 
                     chrome_ = deriveChrome(config_.background, config_.foreground, config_.palette);
                     if (model_) model_->refreshModified(config_);
@@ -626,18 +543,18 @@ void UnifiedSettingsWindow::commitInlineEdit() {
     }
 
     if (inlineEditType_ == SettingType::Text) {
-        setStringValue(config_, inlineEditKey_, text);
+        setConfigString(config_, inlineEditKey_, text);
     } else if (inlineEditType_ == SettingType::Number) {
         // Try float first (for font_size), then int
         if (inlineEditKey_ == "font_size") {
             try {
                 float val = std::stof(text);
-                setFloatValue(config_, inlineEditKey_, val);
+                setConfigFloat(config_, inlineEditKey_, val);
             } catch (...) {}
         } else {
             try {
                 int val = std::stoi(text);
-                setIntValue(config_, inlineEditKey_, val);
+                setConfigInt(config_, inlineEditKey_, val);
             } catch (...) {}
         }
     }

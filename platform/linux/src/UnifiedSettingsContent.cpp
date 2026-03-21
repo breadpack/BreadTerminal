@@ -1,111 +1,13 @@
 #if defined(__linux__)
 
 #include "UnifiedSettingsWindow.h"
+#include "termcore/config_value_adapter.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 
 namespace termcore {
-
-// ---------------------------------------------------------------------------
-// Config value getters
-// ---------------------------------------------------------------------------
-
-std::string UnifiedSettingsWindow::getStringValue(const Config& cfg,
-                                                    const std::string& key) {
-    if (key == "shell") return cfg.shell;
-    if (key == "cursor_style") return cfg.cursor_style;
-    if (key == "clipboard_paste_protection") return cfg.clipboard_paste_protection;
-    if (key == "font_family") return cfg.font_family;
-    if (key == "theme") return cfg.theme;
-    return {};
-}
-
-float UnifiedSettingsWindow::getFloatValue(const Config& cfg,
-                                             const std::string& key) {
-    if (key == "font_size") return cfg.font_size;
-    if (key == "background_opacity") return cfg.background_opacity;
-    if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
-    if (key == "minimum_contrast") return cfg.minimum_contrast;
-    return 0.0f;
-}
-
-int UnifiedSettingsWindow::getIntValue(const Config& cfg,
-                                         const std::string& key) {
-    if (key == "window_width") return cfg.window_width;
-    if (key == "window_height") return cfg.window_height;
-    if (key == "window_padding") return cfg.window_padding;
-    if (key == "scrollback_limit") return cfg.scrollback_limit;
-    if (key == "background_blur") return cfg.background_blur;
-    return 0;
-}
-
-bool UnifiedSettingsWindow::getBoolValue(const Config& cfg,
-                                           const std::string& key) {
-    if (key == "cursor_blink") return cfg.cursor_blink;
-    if (key == "clipboard_paste_bracketed_safe") return cfg.clipboard_paste_bracketed_safe;
-    if (key == "allow_clipboard_write") return cfg.allow_clipboard_write;
-    if (key == "notify_on_command_finish") return cfg.notify_on_command_finish;
-    return false;
-}
-
-uint32_t UnifiedSettingsWindow::getColorValue(const Config& cfg,
-                                                const std::string& key) {
-    if (key == "background") return cfg.background;
-    if (key == "foreground") return cfg.foreground;
-    if (key == "cursor_color") return cfg.cursor_color;
-    if (key == "selection_background") return cfg.selection_background;
-    if (key == "selection_foreground") return cfg.selection_foreground;
-    return 0;
-}
-
-// ---------------------------------------------------------------------------
-// Config value setters
-// ---------------------------------------------------------------------------
-
-void UnifiedSettingsWindow::setStringValue(Config& cfg, const std::string& key,
-                                             const std::string& val) {
-    if (key == "shell") cfg.shell = val;
-    else if (key == "cursor_style") cfg.cursor_style = val;
-    else if (key == "clipboard_paste_protection") cfg.clipboard_paste_protection = val;
-    else if (key == "font_family") cfg.font_family = val;
-    else if (key == "theme") cfg.theme = val;
-}
-
-void UnifiedSettingsWindow::setFloatValue(Config& cfg, const std::string& key,
-                                            float val) {
-    if (key == "font_size") cfg.font_size = val;
-    else if (key == "background_opacity") cfg.background_opacity = val;
-    else if (key == "cursor_blink_interval") cfg.cursor_blink_interval = val;
-    else if (key == "minimum_contrast") cfg.minimum_contrast = val;
-}
-
-void UnifiedSettingsWindow::setIntValue(Config& cfg, const std::string& key,
-                                          int val) {
-    if (key == "window_width") cfg.window_width = val;
-    else if (key == "window_height") cfg.window_height = val;
-    else if (key == "window_padding") cfg.window_padding = val;
-    else if (key == "scrollback_limit") cfg.scrollback_limit = val;
-    else if (key == "background_blur") cfg.background_blur = val;
-}
-
-void UnifiedSettingsWindow::setBoolValue(Config& cfg, const std::string& key,
-                                           bool val) {
-    if (key == "cursor_blink") cfg.cursor_blink = val;
-    else if (key == "clipboard_paste_bracketed_safe") cfg.clipboard_paste_bracketed_safe = val;
-    else if (key == "allow_clipboard_write") cfg.allow_clipboard_write = val;
-    else if (key == "notify_on_command_finish") cfg.notify_on_command_finish = val;
-}
-
-void UnifiedSettingsWindow::setColorValue(Config& cfg, const std::string& key,
-                                            uint32_t val) {
-    if (key == "background") cfg.background = val;
-    else if (key == "foreground") cfg.foreground = val;
-    else if (key == "cursor_color") cfg.cursor_color = val;
-    else if (key == "selection_background") cfg.selection_background = val;
-    else if (key == "selection_foreground") cfg.selection_foreground = val;
-}
 
 // ---------------------------------------------------------------------------
 // buildContentArea
@@ -247,7 +149,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
 
         switch (item.type) {
         case SettingType::Toggle: {
-            bool val = getBoolValue(config_, item.key);
+            bool val = getConfigBool(config_, item.key);
             GtkWidget* sw = gtk_switch_new();
             gtk_switch_set_active(GTK_SWITCH(sw), val);
             gtk_widget_set_valign(sw, GTK_ALIGN_CENTER);
@@ -261,7 +163,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                     auto* self = static_cast<UnifiedSettingsWindow*>(
                         g_object_get_data(G_OBJECT(sw), "settings-window"));
                     if (self) {
-                        setBoolValue(self->config_, *keyPtr, state);
+                        setConfigBool(self->config_, *keyPtr, state);
                         self->notifySave();
                     }
                     return FALSE;
@@ -277,7 +179,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
         }
 
         case SettingType::Text: {
-            std::string val = getStringValue(config_, item.key);
+            std::string val = getConfigString(config_, item.key);
             GtkWidget* entry = gtk_entry_new();
             gtk_editable_set_text(GTK_EDITABLE(entry), val.c_str());
             gtk_widget_set_size_request(entry, 250, -1);
@@ -291,7 +193,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                         g_object_get_data(G_OBJECT(editable), "settings-window"));
                     if (self) {
                         const char* text = gtk_editable_get_text(editable);
-                        setStringValue(self->config_, *keyPtr, text ? text : "");
+                        setConfigString(self->config_, *keyPtr, text ? text : "");
                         self->notifySave();
                     }
                 }), keyPtr);
@@ -312,9 +214,9 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
             double step = item.meta.step;
 
             if (item.key == "font_size") {
-                val = getFloatValue(config_, item.key);
+                val = getConfigFloat(config_, item.key);
             } else {
-                val = getIntValue(config_, item.key);
+                val = getConfigInt(config_, item.key);
             }
 
             if (maxV <= minV) { minV = 0; maxV = 100000; }
@@ -337,9 +239,9 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                     if (self) {
                         double v = gtk_spin_button_get_value(btn);
                         if (*keyPtr == "font_size") {
-                            setFloatValue(self->config_, *keyPtr, (float)v);
+                            setConfigFloat(self->config_, *keyPtr, (float)v);
                         } else {
-                            setIntValue(self->config_, *keyPtr, (int)v);
+                            setConfigInt(self->config_, *keyPtr, (int)v);
                         }
                         self->notifySave();
                     }
@@ -355,7 +257,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
         }
 
         case SettingType::Slider: {
-            float val = getFloatValue(config_, item.key);
+            float val = getConfigFloat(config_, item.key);
             double minV = item.meta.min;
             double maxV = item.meta.max;
             double step = item.meta.step;
@@ -389,7 +291,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                         g_object_get_data(G_OBJECT(range), "settings-window"));
                     if (self) {
                         double v = gtk_range_get_value(range);
-                        setFloatValue(self->config_, sd->key, (float)v);
+                        setConfigFloat(self->config_, sd->key, (float)v);
                         self->notifySave();
 
                         char buf[32];
@@ -416,12 +318,12 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
             std::string current;
 
             if (item.key == "background_blur") {
-                int iv = getIntValue(config_, item.key);
+                int iv = getConfigInt(config_, item.key);
                 if (iv >= 0 && iv < (int)options.size()) {
                     current = options[iv];
                 }
             } else {
-                current = getStringValue(config_, item.key);
+                current = getConfigString(config_, item.key);
             }
 
             GtkWidget* combo = gtk_combo_box_text_new();
@@ -449,9 +351,9 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                         int idx = gtk_combo_box_get_active(box);
                         if (idx >= 0 && idx < (int)dd->options.size()) {
                             if (dd->key == "background_blur") {
-                                setIntValue(self->config_, dd->key, idx);
+                                setConfigInt(self->config_, dd->key, idx);
                             } else {
-                                setStringValue(self->config_, dd->key,
+                                setConfigString(self->config_, dd->key,
                                                dd->options[idx]);
                             }
                             self->notifySave();
@@ -469,7 +371,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
         }
 
         case SettingType::ColorPicker: {
-            uint32_t val = getColorValue(config_, item.key);
+            uint32_t val = getConfigColor(config_, item.key);
             GdkRGBA rgba;
             rgba.red   = ((val >> 16) & 0xFF) / 255.0f;
             rgba.green = ((val >> 8) & 0xFF) / 255.0f;
@@ -493,7 +395,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                             ((uint32_t)(rgba.red * 255) << 16) |
                             ((uint32_t)(rgba.green * 255) << 8) |
                             (uint32_t)(rgba.blue * 255);
-                        setColorValue(self->config_, *keyPtr, color);
+                        setConfigColor(self->config_, *keyPtr, color);
                         self->notifySave();
                     }
                 }), keyPtr);

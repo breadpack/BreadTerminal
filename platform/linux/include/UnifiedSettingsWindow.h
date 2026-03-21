@@ -85,19 +85,6 @@ private:
     void showSettingsItems(const SettingsCategory* cat);
     void clearContent();
 
-    // Setting value helpers
-    static std::string getStringValue(const Config& cfg, const std::string& key);
-    static float getFloatValue(const Config& cfg, const std::string& key);
-    static int getIntValue(const Config& cfg, const std::string& key);
-    static bool getBoolValue(const Config& cfg, const std::string& key);
-    static uint32_t getColorValue(const Config& cfg, const std::string& key);
-
-    static void setStringValue(Config& cfg, const std::string& key, const std::string& val);
-    static void setFloatValue(Config& cfg, const std::string& key, float val);
-    static void setIntValue(Config& cfg, const std::string& key, int val);
-    static void setBoolValue(Config& cfg, const std::string& key, bool val);
-    static void setColorValue(Config& cfg, const std::string& key, uint32_t val);
-
     // --- Theme cards (UnifiedSettingsThemeCards.cpp) ---
     void showThemeCards();
     void rebuildThemeFilteredList();

@@ -76,6 +76,7 @@ set(TERMCORE_SOURCES
     src/tab_controller.cpp
     src/config_applier.cpp
     src/settings_model.cpp
+    src/config_value_adapter.cpp
 )
 
 if(UNIX)
