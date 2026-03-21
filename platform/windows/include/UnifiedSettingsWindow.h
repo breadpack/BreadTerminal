@@ -74,6 +74,9 @@ private:
     void paintFontCards(Gdiplus::Graphics& g, int x, int y, int w, int h);
     void paintKeybindingList(Gdiplus::Graphics& g, int x, int y, int w, int h);
 
+    // Settings item interaction
+    void onSettingsItemClick(int mx, int my);
+
     // Sidebar interaction
     int  hitTestSidebar(int mx, int my) const;
     void onSidebarClick(int mx, int my);

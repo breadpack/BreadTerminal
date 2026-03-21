@@ -49,6 +49,8 @@ set(TERMCORE_WIN_SOURCES
     src/UnifiedSettingsContent.cpp
     src/UnifiedSettingsThemeCards.cpp
     src/UnifiedSettingsFontCards.cpp
+    src/UnifiedSettingsKeybindings.cpp
+    src/UnifiedSettingsSearch.cpp
 )
 
 if(HAS_WEBVIEW2)

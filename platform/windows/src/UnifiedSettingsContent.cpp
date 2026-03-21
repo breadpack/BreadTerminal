@@ -2,9 +2,13 @@
 
 #include "UnifiedSettingsWindow.h"
 
+#include <commdlg.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+
+#pragma comment(lib, "comdlg32.lib")
 
 namespace termcore {
 
@@ -324,6 +328,224 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
             g.DrawString(hexBuf, -1, &valueFont, hexPt, &textBr);
             break;
         }
+        }
+
+        curY = rowTop + 52.f + (float)kUsItemSpacing;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Config value setters
+// ---------------------------------------------------------------------------
+
+static void setBoolValue(Config& cfg, const std::string& key, bool val) {
+    if (key == "cursor_blink") cfg.cursor_blink = val;
+    else if (key == "clipboard_paste_bracketed_safe") cfg.clipboard_paste_bracketed_safe = val;
+    else if (key == "allow_clipboard_write") cfg.allow_clipboard_write = val;
+}
+
+static void setIntValue(Config& cfg, const std::string& key, int val) {
+    if (key == "window_width") cfg.window_width = val;
+    else if (key == "window_height") cfg.window_height = val;
+    else if (key == "window_padding") cfg.window_padding = val;
+    else if (key == "scrollback_limit") cfg.scrollback_limit = val;
+    else if (key == "background_blur") cfg.background_blur = val;
+}
+
+static void setFloatValue(Config& cfg, const std::string& key, float val) {
+    if (key == "font_size") cfg.font_size = val;
+    else if (key == "background_opacity") cfg.background_opacity = val;
+    else if (key == "cursor_blink_interval") cfg.cursor_blink_interval = val;
+    else if (key == "minimum_contrast") cfg.minimum_contrast = val;
+}
+
+static void setStringValue(Config& cfg, const std::string& key, const std::string& val) {
+    if (key == "shell") cfg.shell = val;
+    else if (key == "cursor_style") cfg.cursor_style = val;
+    else if (key == "clipboard_paste_protection") cfg.clipboard_paste_protection = val;
+    else if (key == "font_family") cfg.font_family = val;
+    else if (key == "theme") cfg.theme = val;
+}
+
+// ---------------------------------------------------------------------------
+// onSettingsItemClick — handle clicks on setting controls
+// ---------------------------------------------------------------------------
+
+void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
+    const SettingsCategory* cat = model_ ? model_->category(selectedCategoryId_) : nullptr;
+    if (!cat) return;
+
+    int contentLeft = sidebarWidth_ + kUsContentPad;
+    int contentTop = kUsTopBarH + kUsContentPad;
+    float controlX = (float)contentLeft + 320.f;
+
+    float curY = (float)(contentTop + 40) - scrollY_;
+
+    for (const auto& item : cat->items) {
+        float rowTop = curY;
+        float ctrlX = controlX;
+        float ctrlY = rowTop;
+
+        switch (item.type) {
+        case SettingType::Toggle: {
+            float tw = 44.f, th = 22.f;
+            float ty = ctrlY + 2.f;
+            if ((float)mx >= ctrlX && (float)mx < ctrlX + tw &&
+                (float)my >= ty && (float)my < ty + th) {
+                bool val = getBoolValue(config_, item.key);
+                setBoolValue(config_, item.key, !val);
+                if (model_) model_->refreshModified(config_);
+                notifySave();
+                if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            break;
+        }
+
+        case SettingType::Number: {
+            float btnSz = 28.f, fw = 120.f;
+            float fy = ctrlY;
+            // Minus button
+            if ((float)mx >= ctrlX && (float)mx < ctrlX + btnSz &&
+                (float)my >= fy && (float)my < fy + btnSz) {
+                int val = getIntValue(config_, item.key);
+                int newVal = val - (int)item.meta.step;
+                if (item.meta.min != item.meta.max)
+                    newVal = (std::max)((int)item.meta.min, newVal);
+                setIntValue(config_, item.key, newVal);
+                if (model_) model_->refreshModified(config_);
+                notifySave();
+                if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            // Plus button
+            float plusX = ctrlX + btnSz + 2.f + fw + 2.f;
+            if ((float)mx >= plusX && (float)mx < plusX + btnSz &&
+                (float)my >= fy && (float)my < fy + btnSz) {
+                int val = getIntValue(config_, item.key);
+                int newVal = val + (int)item.meta.step;
+                if (item.meta.min != item.meta.max)
+                    newVal = (std::min)((int)item.meta.max, newVal);
+                setIntValue(config_, item.key, newVal);
+                if (model_) model_->refreshModified(config_);
+                notifySave();
+                if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            // Handle float-typed Number controls (e.g., font_size)
+            if (item.key == "font_size") {
+                // Minus
+                if ((float)mx >= ctrlX && (float)mx < ctrlX + btnSz &&
+                    (float)my >= fy && (float)my < fy + btnSz) {
+                    float val = getFloatValue(config_, item.key);
+                    float newVal = val - item.meta.step;
+                    newVal = (std::max)(item.meta.min, newVal);
+                    setFloatValue(config_, item.key, newVal);
+                    if (model_) model_->refreshModified(config_);
+                    notifySave();
+                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+                // Plus
+                if ((float)mx >= plusX && (float)mx < plusX + btnSz &&
+                    (float)my >= fy && (float)my < fy + btnSz) {
+                    float val = getFloatValue(config_, item.key);
+                    float newVal = val + item.meta.step;
+                    newVal = (std::min)(item.meta.max, newVal);
+                    setFloatValue(config_, item.key, newVal);
+                    if (model_) model_->refreshModified(config_);
+                    notifySave();
+                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+            }
+            break;
+        }
+
+        case SettingType::Slider: {
+            float sW = 300.f;
+            float sy = ctrlY + 5.f;
+            float sH = 22.f;
+            if ((float)mx >= ctrlX && (float)mx < ctrlX + sW &&
+                (float)my >= sy && (float)my < sy + sH) {
+                float ratio = ((float)mx - ctrlX) / sW;
+                ratio = (std::max)(0.f, (std::min)(1.f, ratio));
+                float newVal = item.meta.min + ratio * (item.meta.max - item.meta.min);
+                // Snap to step
+                if (item.meta.step > 0.f) {
+                    newVal = std::round(newVal / item.meta.step) * item.meta.step;
+                }
+                newVal = (std::max)(item.meta.min, (std::min)(item.meta.max, newVal));
+                setFloatValue(config_, item.key, newVal);
+                if (model_) model_->refreshModified(config_);
+                notifySave();
+                if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            break;
+        }
+
+        case SettingType::Dropdown: {
+            const auto& options = item.meta.options;
+            float pillW = 72.f, pillH = 26.f, pillGap = 6.f;
+            float px = ctrlX;
+            for (int i = 0; i < (int)options.size(); ++i) {
+                if ((float)mx >= px && (float)mx < px + pillW &&
+                    (float)my >= ctrlY && (float)my < ctrlY + pillH) {
+                    if (item.key == "background_blur") {
+                        setIntValue(config_, item.key, i);
+                    } else {
+                        setStringValue(config_, item.key, options[i]);
+                    }
+                    if (model_) model_->refreshModified(config_);
+                    notifySave();
+                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;
+                }
+                px += pillW + pillGap;
+            }
+            break;
+        }
+
+        case SettingType::ColorPicker: {
+            float swSz = 28.f;
+            if ((float)mx >= ctrlX && (float)mx < ctrlX + swSz &&
+                (float)my >= ctrlY && (float)my < ctrlY + swSz) {
+                // Open native color picker dialog
+                uint32_t currentColor = getColorValue(config_, item.key);
+                COLORREF customColors[16] = {};
+                CHOOSECOLOR cc = {};
+                cc.lStructSize = sizeof(cc);
+                cc.hwndOwner = hwnd_;
+                cc.rgbResult = RGB((currentColor >> 16) & 0xFF,
+                                   (currentColor >> 8) & 0xFF,
+                                   currentColor & 0xFF);
+                cc.lpCustColors = customColors;
+                cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+
+                if (ChooseColor(&cc)) {
+                    uint32_t newColor = ((uint32_t)GetRValue(cc.rgbResult) << 16)
+                                      | ((uint32_t)GetGValue(cc.rgbResult) << 8)
+                                      |  (uint32_t)GetBValue(cc.rgbResult);
+                    // Set color value
+                    if (item.key == "background") config_.background = newColor;
+                    else if (item.key == "foreground") config_.foreground = newColor;
+                    else if (item.key == "cursor_color") config_.cursor_color = newColor;
+                    else if (item.key == "selection_background") config_.selection_background = newColor;
+                    else if (item.key == "selection_foreground") config_.selection_foreground = newColor;
+
+                    chrome_ = deriveChrome(config_.background, config_.foreground, config_.palette);
+                    if (model_) model_->refreshModified(config_);
+                    notifySave();
+                    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+                }
+                return;
+            }
+            break;
+        }
+
+        default:
+            break;
         }
 
         curY = rowTop + 52.f + (float)kUsItemSpacing;

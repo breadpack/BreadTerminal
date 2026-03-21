@@ -4,8 +4,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <sstream>
+#include <set>
+
+#include <shlobj.h>
+#include <shellapi.h>
+
+#pragma comment(lib, "shell32.lib")
 
 namespace termcore {
 
@@ -40,12 +47,14 @@ void UnifiedSettingsWindow::setConfig(const Config& config) {
 
     model_ = std::make_unique<SettingsModel>(config_, defaultConfig_);
 
-    // Build visibleCategoryIds_ from all subcategories
+    // Build allCategoryIds_ and visibleCategoryIds_ from all subcategories
+    allCategoryIds_.clear();
     visibleCategoryIds_.clear();
     auto topCats = model_->topLevelCategories();
     for (auto* top : topCats) {
         auto subs = model_->subcategories(top->id);
         for (auto* sub : subs) {
+            allCategoryIds_.push_back(sub->id);
             visibleCategoryIds_.push_back(sub->id);
         }
     }
@@ -304,16 +313,27 @@ void UnifiedSettingsWindow::endSidebarResize() {
 int UnifiedSettingsWindow::hitTestSidebar(int mx, int my) const {
     if (mx < 0 || mx >= sidebarWidth_) return -1;
     if (my < kUsTopBarH) return -1;
+    if (!model_) return -1;
+
+    // Build visible set for filtering (matches paintSidebar logic)
+    std::set<std::string> visibleSet(visibleCategoryIds_.begin(),
+                                     visibleCategoryIds_.end());
 
     int y = kUsTopBarH + 8;
     int idx = 0;
-    if (!model_) return -1;
 
     auto topCats = model_->topLevelCategories();
     for (auto* top : topCats) {
-        y += kUsCatRowH; // category label row
         auto subs = model_->subcategories(top->id);
+        bool hasVisible = false;
         for (auto* sub : subs) {
+            if (visibleSet.count(sub->id)) { hasVisible = true; break; }
+        }
+        if (!hasVisible) continue;
+
+        y += kUsCatRowH; // category label row
+        for (auto* sub : subs) {
+            if (!visibleSet.count(sub->id)) continue;
             if (my >= y && my < y + kUsSubCatRowH) {
                 return idx;
             }
@@ -357,7 +377,37 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
                                                WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CREATE:
+        createSearchEdit();
         return 0;
+
+    case WM_SIZE: {
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        repositionSearchEdit(rc.right);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+
+    case WM_COMMAND:
+        if (LOWORD(wParam) == 1001 && HIWORD(wParam) == EN_CHANGE) {
+            onSearchTextChanged();
+            return 0;
+        }
+        break;
+
+    case WM_CTLCOLOREDIT: {
+        HDC hdc = (HDC)wParam;
+        HWND ctrl = (HWND)lParam;
+        if (ctrl == searchEdit_) {
+            SetTextColor(hdc, chrome_.textColor);
+            SetBkColor(hdc, chrome_.fieldBg);
+            static HBRUSH fieldBrush = nullptr;
+            if (fieldBrush) DeleteObject(fieldBrush);
+            fieldBrush = CreateSolidBrush(chrome_.fieldBg);
+            return (LRESULT)fieldBrush;
+        }
+        break;
+    }
 
     case WM_PAINT:
         paintWindow(hwnd);
@@ -384,6 +434,53 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
     case WM_LBUTTONDOWN: {
         int mx = GET_X_LPARAM(lParam);
         int my = GET_Y_LPARAM(lParam);
+
+        // Top bar clicks
+        if (my < kUsTopBarH) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+
+            // "Open Lua" button (right side)
+            float btnW = 80.f, btnH = 26.f;
+            float btnX = rc.right - btnW - 12.f;
+            float btnY = (kUsTopBarH - btnH) / 2.f;
+            if ((float)mx >= btnX && (float)mx < btnX + btnW &&
+                (float)my >= btnY && (float)my < btnY + btnH) {
+                wchar_t appData[MAX_PATH];
+                if (SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appData) == S_OK) {
+                    std::wstring configPath = std::wstring(appData) + L"\\BreadTerminal\\config.lua";
+                    DWORD attr = GetFileAttributesW(configPath.c_str());
+                    if (attr == INVALID_FILE_ATTRIBUTES) {
+                        std::wstring dir = std::wstring(appData) + L"\\BreadTerminal";
+                        CreateDirectoryW(dir.c_str(), nullptr);
+                        HANDLE hFile = CreateFileW(configPath.c_str(), GENERIC_WRITE, 0,
+                                                    nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+                        if (hFile != INVALID_HANDLE_VALUE) {
+                            const char* defaultContent = "-- BreadTerminal config\nreturn {}\n";
+                            DWORD written;
+                            WriteFile(hFile, defaultContent, (DWORD)strlen(defaultContent), &written, nullptr);
+                            CloseHandle(hFile);
+                        }
+                    }
+                    ShellExecuteW(hwnd, L"open", configPath.c_str(), nullptr, nullptr, SW_SHOW);
+                }
+                return 0;
+            }
+        }
+
+        // Check clear search (x) button click in top bar
+        if (my < kUsTopBarH && !searchText_.empty()) {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            float searchX = (rc.right - kUsSearchW) / 2.f;
+            float clearX = searchX + kUsSearchW - 24.f;
+            float clearY = (kUsTopBarH - kUsSearchH) / 2.f;
+            if (mx >= (int)clearX && mx <= (int)(clearX + 20) &&
+                my >= (int)clearY && my <= (int)(clearY + kUsSearchH)) {
+                clearSearch();
+                return 0;
+            }
+        }
 
         // Check sidebar resize border (+-3px of sidebar edge)
         if (my >= kUsTopBarH && std::abs(mx - sidebarWidth_) <= 3) {
@@ -450,6 +547,14 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
             if (ci >= 0 && hitTestThemeCardButton(ci, mx, my)) {
                 onThemeCardApply(ci);
                 return 0;
+            }
+        }
+
+        // Content area clicks — settings items (toggle, number, slider, dropdown, color)
+        if (mx >= sidebarWidth_ && my >= kUsTopBarH) {
+            const SettingsCategory* cat = model_ ? model_->category(selectedCategoryId_) : nullptr;
+            if (cat && cat->sectionType == SectionType::Settings) {
+                onSettingsItemClick(mx, my);
             }
         }
         return 0;
@@ -586,18 +691,22 @@ void UnifiedSettingsWindow::paintTopBar(Gdiplus::Graphics& g, int w) {
     Gdiplus::SolidBrush barBr(toGdipColorCR(chrome_.titleBar));
     g.FillRectangle(&barBr, 0, 0, w, kUsTopBarH);
 
-    // Search field: centered in top bar
+    // Search field background: centered in top bar
     float searchX = (w - kUsSearchW) / 2.f;
     float searchY = (kUsTopBarH - kUsSearchH) / 2.f;
     Gdiplus::SolidBrush fieldBr(toGdipColorCR(chrome_.fieldBg));
     drawRoundedRect(g, &fieldBr, searchX, searchY,
                     (float)kUsSearchW, (float)kUsSearchH, 6.f);
 
-    // Search placeholder text
+    // Clear (x) button when search text is non-empty
     Gdiplus::Font font(L"Segoe UI", 10.f);
-    Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
-    Gdiplus::PointF textPt(searchX + 10.f, searchY + 4.f);
-    g.DrawString(L"Search settings...", -1, &font, textPt, &dimBr);
+    if (!searchText_.empty()) {
+        float clearX = searchX + kUsSearchW - 24.f;
+        float clearY = searchY + 4.f;
+        Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
+        Gdiplus::PointF clearPt(clearX, clearY);
+        g.DrawString(L"\u00D7", -1, &font, clearPt, &dimBr);
+    }
 
     // "Open Lua" button: right-aligned
     float btnW = 80.f, btnH = 26.f;

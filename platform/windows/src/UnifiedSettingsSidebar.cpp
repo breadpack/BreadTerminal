@@ -3,6 +3,7 @@
 #include "UnifiedSettingsWindow.h"
 
 #include <algorithm>
+#include <set>
 
 namespace termcore {
 
@@ -40,10 +41,22 @@ void UnifiedSettingsWindow::paintSidebar(Gdiplus::Graphics& g, int w, int h) {
     Gdiplus::Rect clipRect(0, sbTop, sbW, sbH);
     g.SetClip(clipRect);
 
+    // Build set of visible IDs for fast lookup
+    std::set<std::string> visibleSet(visibleCategoryIds_.begin(),
+                                     visibleCategoryIds_.end());
+
     int y = sbTop + 8;
 
     auto topCats = model_->topLevelCategories();
     for (auto* top : topCats) {
+        // Check if this top-level group has any visible subcategories
+        auto subs = model_->subcategories(top->id);
+        bool hasVisible = false;
+        for (auto* sub : subs) {
+            if (visibleSet.count(sub->id)) { hasVisible = true; break; }
+        }
+        if (!hasVisible) continue;
+
         // Draw category label (bold, dim)
         Gdiplus::PointF catPt(12.f, (float)y + 4.f);
         std::wstring catLabel = toWide(top->label);
@@ -51,8 +64,9 @@ void UnifiedSettingsWindow::paintSidebar(Gdiplus::Graphics& g, int w, int h) {
         y += kUsCatRowH;
 
         // Draw subcategories
-        auto subs = model_->subcategories(top->id);
         for (auto* sub : subs) {
+            if (!visibleSet.count(sub->id)) continue;
+
             bool selected = (sub->id == selectedCategoryId_);
 
             if (selected) {
