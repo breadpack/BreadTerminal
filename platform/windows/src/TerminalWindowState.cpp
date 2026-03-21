@@ -624,45 +624,20 @@ void TerminalWindowState::showNotification(const std::string& title,
 }
 
 void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
-    if (!settingsWin) {
-        settingsWin = std::make_unique<termcore::SettingsWindow>();
+    if (!unifiedSettings) {
+        unifiedSettings = std::make_unique<termcore::UnifiedSettingsWindow>();
     }
-    settingsWin->setConfig(config);
-    settingsWin->setSaveCallback([this](const termcore::Config& updated) {
+    unifiedSettings->setConfig(config);
+    unifiedSettings->setSaveCallback([this](const termcore::Config& updated) {
         if (controller) {
             controller->onConfigChanged(updated);
+            // Refresh the unified settings window's own chrome colors
+            if (unifiedSettings) {
+                unifiedSettings->setConfig(controller->config());
+            }
         }
     });
-    settingsWin->show(hwnd);
-}
-
-void TerminalWindowState::openThemeHub(const termcore::Config& config) {
-    if (!themeHub) {
-        themeHub = std::make_unique<termcore::ThemeHubWindow>();
-    }
-    themeHub->setConfig(config);
-    themeHub->setApplyCallback([this](const std::string& name,
-                                       const termcore::ThemeMetadata* /*meta*/) {
-        if (controller) {
-            controller->onThemeChanged(name);
-            // Update the ThemeHub popup itself with new theme colors
-            themeHub->setConfig(controller->config());
-        }
-    });
-    themeHub->show(hwnd);
-}
-
-void TerminalWindowState::openFontHub(const termcore::Config& config) {
-    if (!fontHub) {
-        fontHub = std::make_unique<termcore::FontHubWindow>();
-    }
-    fontHub->setConfig(config);
-    fontHub->setApplyCallback([this](const std::string& name) {
-        if (controller) {
-            controller->onFontChanged(name);
-        }
-    });
-    fontHub->show(hwnd);
+    unifiedSettings->show(hwnd);
 }
 
 float TerminalWindowState::dpiScale() {

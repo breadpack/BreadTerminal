@@ -55,10 +55,8 @@ public:
     void showNotification(const std::string& title,
                           const std::string& body) override;
 
-    // --- Settings/Hub windows ---
+    // --- Settings window ---
     void openSettingsWindow(const termcore::Config& config) override;
-    void openThemeHub(const termcore::Config& config) override;
-    void openFontHub(const termcore::Config& config) override;
 
     // --- DPI ---
     float dpiScale() override;

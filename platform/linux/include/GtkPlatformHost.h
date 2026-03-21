@@ -44,8 +44,6 @@ public:
                           const std::string& body) override;
 
     void openSettingsWindow(const termcore::Config& config) override;
-    void openThemeHub(const termcore::Config& config) override;
-    void openFontHub(const termcore::Config& config) override;
 
     float dpiScale() override;
 

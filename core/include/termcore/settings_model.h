@@ -35,7 +35,7 @@ struct SettingsCategory {
     std::vector<SettingItem> items;
 };
 
-struct SearchMatch {
+struct SettingsSearchMatch {
     std::string categoryId;
     std::string itemKey;
     size_t matchStart = 0;
@@ -59,7 +59,7 @@ public:
     const std::vector<SettingsCategory>& allCategories() const;
 
     /// Case-insensitive search across key, label, description
-    std::vector<SearchMatch> search(const std::string& query) const;
+    std::vector<SettingsSearchMatch> search(const std::string& query) const;
 
     /// Re-check which items differ from defaults
     void refreshModified(const Config& current);

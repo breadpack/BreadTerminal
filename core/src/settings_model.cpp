@@ -248,8 +248,8 @@ const std::vector<SettingsCategory>& SettingsModel::allCategories() const {
     return categories_;
 }
 
-std::vector<SearchMatch> SettingsModel::search(const std::string& query) const {
-    std::vector<SearchMatch> results;
+std::vector<SettingsSearchMatch> SettingsModel::search(const std::string& query) const {
+    std::vector<SettingsSearchMatch> results;
     if (query.empty()) return results;
 
     for (const auto& cat : categories_) {

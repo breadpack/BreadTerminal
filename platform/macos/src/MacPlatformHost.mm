@@ -163,18 +163,6 @@ void MacPlatformHost::openSettingsWindow(const termcore::Config& config) {
         postNotificationName:@"BreadTerminalOpenSettings" object:nil];
 }
 
-void MacPlatformHost::openThemeHub(const termcore::Config& config) {
-    (void)config;
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:@"BreadTerminalOpenThemeHub" object:nil];
-}
-
-void MacPlatformHost::openFontHub(const termcore::Config& config) {
-    (void)config;
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:@"BreadTerminalOpenFontHub" object:nil];
-}
-
 // --- DPI ---
 
 float MacPlatformHost::dpiScale() {

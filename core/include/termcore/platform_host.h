@@ -64,10 +64,8 @@ public:
     virtual void showNotification(const std::string& title,
                                   const std::string& body) = 0;
 
-    // Settings/Hub windows
+    // Settings window (unified: replaces separate theme/font hub windows)
     virtual void openSettingsWindow(const Config& config) = 0;
-    virtual void openThemeHub(const Config& config) = 0;
-    virtual void openFontHub(const Config& config) = 0;
 
     // DPI
     virtual float dpiScale() = 0;

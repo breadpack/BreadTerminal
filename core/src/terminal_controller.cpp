@@ -519,11 +519,11 @@ void TerminalController::handleAction(Action action) {
             break;
 
         case Action::OpenThemeHub:
-            if (host_) host_->openThemeHub(config_);
+            if (host_) host_->openSettingsWindow(config_);
             break;
 
         case Action::OpenFontHub:
-            if (host_) host_->openFontHub(config_);
+            if (host_) host_->openSettingsWindow(config_);
             break;
 
         // Copy mode

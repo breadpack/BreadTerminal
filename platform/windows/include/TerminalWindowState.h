@@ -16,9 +16,7 @@
 #include "termcore/config.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
-#include "ThemeHubWindow.h"
-#include "FontHubWindow.h"
-#include "SettingsWindow.h"
+#include "UnifiedSettingsWindow.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -64,9 +62,7 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     std::unique_ptr<termcore::AgentTracker> agentTracker;
 
     // UI windows
-    std::unique_ptr<termcore::ThemeHubWindow> themeHub;
-    std::unique_ptr<termcore::FontHubWindow> fontHub;
-    std::unique_ptr<termcore::SettingsWindow> settingsWin;
+    std::unique_ptr<termcore::UnifiedSettingsWindow> unifiedSettings;
 
     // DPI
     float dpiScale_ = 1.0f;
@@ -150,8 +146,6 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void showNotification(const std::string& title,
                           const std::string& body) override;
     void openSettingsWindow(const termcore::Config& config) override;
-    void openThemeHub(const termcore::Config& config) override;
-    void openFontHub(const termcore::Config& config) override;
     float dpiScale() override;
     std::unique_ptr<termcore::Pty> createPty(const std::string& shell,
                                               int rows, int cols) override;

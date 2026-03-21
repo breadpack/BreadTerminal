@@ -217,16 +217,6 @@ void GtkPlatformHost::openSettingsWindow(const termcore::Config& config) {
     g_debug("BreadTerminal: openSettingsWindow (not yet implemented)");
 }
 
-void GtkPlatformHost::openThemeHub(const termcore::Config& config) {
-    (void)config;
-    g_debug("BreadTerminal: openThemeHub (not yet implemented)");
-}
-
-void GtkPlatformHost::openFontHub(const termcore::Config& config) {
-    (void)config;
-    g_debug("BreadTerminal: openFontHub (not yet implemented)");
-}
-
 // --- DPI ---
 
 float GtkPlatformHost::dpiScale() {
