@@ -33,17 +33,7 @@ set(TERMCORE_WIN_SOURCES
     src/D3DImageRenderer.cpp
     src/D3DBackgroundImage.cpp
     src/D3DCustomShader.cpp
-    src/ThemeHubWindow.cpp
-    src/ThemeHubPaint.cpp
-    src/ThemeHubCards.cpp
-    src/FontHubWindow.cpp
-    src/FontHubPaint.cpp
-    src/FontHubCards.cpp
     src/FontInstaller.cpp
-    src/SettingsWindow.cpp
-    src/SettingsPaint.cpp
-    src/SettingsTabPanels.cpp
-    src/SettingsControls.cpp
     src/UnifiedSettingsWindow.cpp
     src/UnifiedSettingsSidebar.cpp
     src/UnifiedSettingsContent.cpp
