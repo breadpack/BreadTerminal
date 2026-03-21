@@ -3,6 +3,11 @@
 
 #include <termcore/lua_engine.h>
 
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+}
+
 #include <unordered_map>
 
 namespace termcore {
@@ -36,6 +41,19 @@ struct LuaEngine::Impl {
     Impl() {
         lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table,
                            sol::lib::math);
+
+        // Remove dangerous functions that allow arbitrary code execution
+        lua["load"] = sol::nil;
+        lua["loadstring"] = sol::nil;
+        lua["dofile"] = sol::nil;
+        lua["loadfile"] = sol::nil;
+        lua["rawget"] = sol::nil;
+        lua["rawset"] = sol::nil;
+
+        // Set execution limit to prevent infinite loops
+        lua_sethook(lua.lua_state(), [](lua_State* L, lua_Debug*) {
+            luaL_error(L, "execution limit exceeded");
+        }, LUA_MASKCOUNT, 1000000);
 
         terminal_table = lua.create_named_table("terminal");
         terminal_table["version"] = "0.1.0";

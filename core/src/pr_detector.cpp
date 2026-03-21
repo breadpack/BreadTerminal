@@ -94,6 +94,29 @@ int extractJsonInt(const std::string& json, const std::string& key) {
     }
 }
 
+/// Shell-escape a string to prevent command injection.
+static std::string shellEscape(const std::string& s) {
+#if defined(_WIN32)
+    // On Windows, wrap in double quotes and escape internal double quotes
+    std::string result = "\"";
+    for (char c : s) {
+        if (c == '"') result += "\"\"";
+        else result += c;
+    }
+    result += "\"";
+    return result;
+#else
+    // On Unix, wrap in single quotes; escape embedded single quotes
+    std::string result = "'";
+    for (char c : s) {
+        if (c == '\'') result += "'\\''";
+        else result += c;
+    }
+    result += "'";
+    return result;
+#endif
+}
+
 } // anonymous namespace
 
 PRInfo PRDetector::detectPR(const std::string& working_dir) {
@@ -126,11 +149,12 @@ PRInfo PRDetector::queryGitHubPR(const std::string& working_dir) {
 
     // Build command: gh pr view --json number,state,title,url
     // Run in the specified working directory
+    std::string escaped = shellEscape(working_dir);
     std::string cmd;
 #if defined(_WIN32)
-    cmd = "cd /d \"" + working_dir + "\" && gh pr view --json number,state,title,url 2>nul";
+    cmd = "cd /d " + escaped + " && gh pr view --json number,state,title,url 2>nul";
 #else
-    cmd = "cd \"" + working_dir + "\" && gh pr view --json number,state,title,url 2>/dev/null";
+    cmd = "cd " + escaped + " && gh pr view --json number,state,title,url 2>/dev/null";
 #endif
 
     std::string output = runCommand(cmd);

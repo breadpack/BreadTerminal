@@ -3,7 +3,12 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <string>
 #include <thread>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 namespace termcore {
 
@@ -145,7 +150,21 @@ std::string resolveSocketPath() {
     if (env && env[0] != '\0') {
         return env;
     }
-    return "/tmp/breadterminal.sock";
+
+#if defined(_WIN32)
+    const char* tmp = std::getenv("TEMP");
+    if (tmp && tmp[0] != '\0') {
+        return std::string(tmp) + "\\breadterminal.sock";
+    }
+    return "breadterminal.sock";
+#else
+    const char* xdg = std::getenv("XDG_RUNTIME_DIR");
+    if (xdg && xdg[0] != '\0') {
+        return std::string(xdg) + "/breadterminal.sock";
+    }
+    // Fallback: per-user path to avoid world-writable /tmp
+    return "/tmp/breadterminal-" + std::to_string(getuid()) + ".sock";
+#endif
 }
 
 }  // namespace termcore
