@@ -1,6 +1,8 @@
 #ifndef TERMCORE_KITTY_GRAPHICS_H
 #define TERMCORE_KITTY_GRAPHICS_H
+#include <chrono>
 #include <cstdint>
+#include <list>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,6 +30,12 @@ struct KittyPlacement {
 /// Manages Kitty graphics images and placements
 class KittyGraphicsManager {
 public:
+    static constexpr size_t kMaxTotalImageMemory = 100 * 1024 * 1024;  // 100 MB
+    static constexpr size_t kMaxSingleImageSize = 50 * 1024 * 1024;    // 50 MB
+    static constexpr size_t kMaxImageCount = 256;
+    static constexpr size_t kMaxPendingPayload = 50 * 1024 * 1024;     // 50 MB
+    static constexpr auto kPendingTimeout = std::chrono::seconds(30);
+
     KittyGraphicsManager() = default;
 
     /// Process a Kitty graphics command (parsed from APC sequence)
@@ -44,6 +52,9 @@ public:
     /// Get image count
     size_t imageCount() const { return images_.size(); }
 
+    /// Get total image memory usage in bytes
+    size_t totalImageMemory() const { return total_image_memory_; }
+
     /// Clear all images and placements
     void clear();
 
@@ -54,6 +65,7 @@ private:
     struct PendingTransmit {
         KittyImage image;
         std::string accumulated_payload;
+        std::chrono::steady_clock::time_point start_time;
     };
 
     std::unordered_map<std::string, std::string> parseControl(const std::string& control);
@@ -63,10 +75,22 @@ private:
     void handleDisplay(const std::unordered_map<std::string, std::string>& params);
     void handleDelete(const std::unordered_map<std::string, std::string>& params);
 
+    /// Remove an image from storage, updating memory tracking and LRU
+    void removeImage(uint32_t id);
+
+    /// Evict oldest images until total memory is under limit
+    void evictIfNeeded();
+
+    /// Touch an image in the LRU order (move to most-recent)
+    void touchLru(uint32_t id);
+
     std::unordered_map<uint32_t, KittyImage> images_;
     std::vector<KittyPlacement> placements_;
     PendingTransmit pending_;
     uint32_t next_id_ = 1;
+
+    size_t total_image_memory_ = 0;
+    std::list<uint32_t> lru_order_; // front = oldest, back = newest
 };
 
 } // namespace termcore

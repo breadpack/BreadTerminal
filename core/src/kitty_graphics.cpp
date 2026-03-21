@@ -118,6 +118,7 @@ void KittyGraphicsManager::handleTransmit(
     // If this is the first chunk of a new transfer, initialize pending
     if (pending_.accumulated_payload.empty()) {
         pending_.image = KittyImage{};
+        pending_.start_time = std::chrono::steady_clock::now();
 
         auto id_it = params.find("i");
         if (id_it != params.end()) {
@@ -141,10 +142,34 @@ void KittyGraphicsManager::handleTransmit(
         if (f_it != params.end()) {
             pending_.image.format = safeStoi(f_it->second, 32);
         }
+
+        // Validate dimensions early (width * height * 4 bytes per pixel)
+        if (pending_.image.width > 0 && pending_.image.height > 0) {
+            size_t estimated = static_cast<size_t>(pending_.image.width)
+                             * static_cast<size_t>(pending_.image.height) * 4;
+            if (estimated > kMaxSingleImageSize) {
+                pending_.accumulated_payload.clear();
+                pending_.image = KittyImage{};
+                return;
+            }
+        }
     }
 
-    // Accumulate payload
+    // Pending transfer timeout check
+    auto elapsed = std::chrono::steady_clock::now() - pending_.start_time;
+    if (elapsed > kPendingTimeout) {
+        pending_.accumulated_payload.clear();
+        pending_.image = KittyImage{};
+        return;
+    }
+
+    // Accumulate payload and check pending size limit
     pending_.accumulated_payload += payload;
+    if (pending_.accumulated_payload.size() > kMaxPendingPayload) {
+        pending_.accumulated_payload.clear();
+        pending_.image = KittyImage{};
+        return;
+    }
 
     if (more_chunks) {
         // More data coming, don't finalize yet
@@ -155,8 +180,30 @@ void KittyGraphicsManager::handleTransmit(
     pending_.image.data = base64Decode(pending_.accumulated_payload);
     pending_.image.complete = true;
 
+    // Check decoded data size against single image limit
+    if (pending_.image.data.size() > kMaxSingleImageSize) {
+        pending_.accumulated_payload.clear();
+        pending_.image = KittyImage{};
+        return;
+    }
+
     uint32_t image_id = pending_.image.id;
+
+    // If replacing an existing image, subtract its old memory
+    auto existing = images_.find(image_id);
+    if (existing != images_.end()) {
+        total_image_memory_ -= existing->second.data.size();
+        // Remove from LRU (will be re-added)
+        lru_order_.remove(image_id);
+    }
+
+    size_t new_size = pending_.image.data.size();
     images_[image_id] = std::move(pending_.image);
+    total_image_memory_ += new_size;
+    lru_order_.push_back(image_id);
+
+    // Evict old images if over limits
+    evictIfNeeded();
 
     // Reset pending state
     pending_.accumulated_payload.clear();
@@ -241,6 +288,11 @@ void KittyGraphicsManager::handleDisplay(
         placement.rows = safeStoi(r_it->second);
     }
 
+    // Touch LRU on display access
+    if (placement.image_id != 0) {
+        touchLru(placement.image_id);
+    }
+
     placements_.push_back(placement);
 }
 
@@ -280,14 +332,63 @@ const KittyImage* KittyGraphicsManager::getImage(uint32_t id) const {
 void KittyGraphicsManager::clear() {
     images_.clear();
     placements_.clear();
+    lru_order_.clear();
+    total_image_memory_ = 0;
 }
 
 void KittyGraphicsManager::deleteByImageId(uint32_t id) {
-    images_.erase(id);
+    removeImage(id);
     placements_.erase(
         std::remove_if(placements_.begin(), placements_.end(),
                         [id](const KittyPlacement& p) { return p.image_id == id; }),
         placements_.end());
+}
+
+void KittyGraphicsManager::removeImage(uint32_t id) {
+    auto it = images_.find(id);
+    if (it != images_.end()) {
+        total_image_memory_ -= it->second.data.size();
+        images_.erase(it);
+        lru_order_.remove(id);
+    }
+}
+
+void KittyGraphicsManager::evictIfNeeded() {
+    // Evict by count limit
+    while (images_.size() > kMaxImageCount && !lru_order_.empty()) {
+        uint32_t oldest = lru_order_.front();
+        lru_order_.pop_front();
+        auto it = images_.find(oldest);
+        if (it != images_.end()) {
+            total_image_memory_ -= it->second.data.size();
+            images_.erase(it);
+        }
+        // Also remove associated placements
+        placements_.erase(
+            std::remove_if(placements_.begin(), placements_.end(),
+                            [oldest](const KittyPlacement& p) { return p.image_id == oldest; }),
+            placements_.end());
+    }
+
+    // Evict by memory limit
+    while (total_image_memory_ > kMaxTotalImageMemory && !lru_order_.empty()) {
+        uint32_t oldest = lru_order_.front();
+        lru_order_.pop_front();
+        auto it = images_.find(oldest);
+        if (it != images_.end()) {
+            total_image_memory_ -= it->second.data.size();
+            images_.erase(it);
+        }
+        placements_.erase(
+            std::remove_if(placements_.begin(), placements_.end(),
+                            [oldest](const KittyPlacement& p) { return p.image_id == oldest; }),
+            placements_.end());
+    }
+}
+
+void KittyGraphicsManager::touchLru(uint32_t id) {
+    lru_order_.remove(id);
+    lru_order_.push_back(id);
 }
 
 } // namespace termcore
