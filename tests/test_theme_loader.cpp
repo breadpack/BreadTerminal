@@ -114,11 +114,11 @@ public:
         auto tmpl = fs::temp_directory_path() / "bt_theme_test_XXXXXX";
         path_ = tmpl.string();
         // Create a unique temporary directory
-        path_ = fs::temp_directory_path() / ("bt_theme_test_" +
+        path_ = (fs::temp_directory_path() / ("bt_theme_test_" +
             std::to_string(std::hash<std::string>{}(
                 std::to_string(reinterpret_cast<uintptr_t>(this)) +
                 std::to_string(std::chrono::steady_clock::now()
-                    .time_since_epoch().count()))));
+                    .time_since_epoch().count()))))).string();
         fs::create_directories(path_);
     }
     ~TempDir() {

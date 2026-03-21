@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -20,9 +21,16 @@ public:
         // mkdtemp modifies the template in-place
         std::vector<char> buf(tmpl.begin(), tmpl.end());
         buf.push_back('\0');
+#if defined(_WIN32)
+        // Windows: generate unique name manually
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        path_ = (fs::temp_directory_path() / ("bt_session_test_" + std::to_string(now))).string();
+        fs::create_directories(path_);
+#else
         char* result = mkdtemp(buf.data());
         EXPECT_NE(result, nullptr);
         path_ = std::string(buf.data());
+#endif
     }
 
     ~TempDir() {

@@ -1,7 +1,10 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include <commctrl.h>
 #include <thread>
+
+#pragma comment(lib, "comctl32.lib")
 
 namespace termcore {
     void positionImeWindow(HWND hwnd, int x, int y, int height);
