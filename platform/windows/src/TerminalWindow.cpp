@@ -83,6 +83,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                     if (elapsed > std::chrono::seconds(1)) {
                         state->showResizeOverlay = false;
                         state->needsRender = true;
+                        if (state->renderer) state->renderer->markContentDirty();
                     }
                 }
                 if (state->needsRender) {
@@ -162,6 +163,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                     if (state->controller->needsRender()) {
                         state->needsRender = true;
                         state->controller->clearNeedsRender();
+                        if (state->renderer) state->renderer->markContentDirty();
                     }
                 }
             }
@@ -190,7 +192,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             PAINTSTRUCT ps;
             BeginPaint(hWnd, &ps);
             EndPaint(hWnd, &ps);
-            if (state) state->needsRender = true;
+            if (state) {
+                state->needsRender = true;
+                if (state->renderer) state->renderer->markContentDirty();
+            }
             return 0;
         }
 
@@ -232,6 +237,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 if (state->controller->needsRender()) {
                     state->needsRender = true;
                     state->controller->clearNeedsRender();
+                    if (state->renderer) state->renderer->markContentDirty();
                 }
             }
             return 0;

@@ -35,6 +35,12 @@ struct D3DTextRenderer::Impl {
 
     // Cursor blink state
     bool cursorBlinkVisible = true;
+    bool lastBlinkState = true;
+    bool contentDirty = true;  // forces full rebuild on first frame
+
+    // Index in cellInstances where cursor instances begin
+    // (everything from this index onward is cursor + overlays)
+    size_t cellCountBeforeCursor = 0;
 
     // Status bar state
     D3DTextRenderer::StatusBarInfo statusBar;
@@ -107,6 +113,9 @@ struct D3DTextRenderer::Impl {
     bool isCellSelected(int row, int col) const;
     int searchHighlightType(int row, int col) const;
     void buildCellBuffer(const Screen& screen);
+    void appendCursorInstances(const Screen& screen, float cellW, float cellH,
+                               float gridOffsetY);
+    void patchCursorOnly(const Screen& screen);
 
     // Overlay passes (implemented in D3DCellBuilderOverlays.cpp)
     void buildOverlayPasses(const Screen& screen, float cellW, float cellH,

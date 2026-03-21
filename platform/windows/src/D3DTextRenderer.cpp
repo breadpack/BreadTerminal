@@ -269,7 +269,20 @@ void D3DTextRenderer::setFontStack(FontCollection* collection,
 void D3DTextRenderer::render(const Screen& screen) {
     if (!impl_->vertexShader || !impl_->context || !impl_->rtv) return;
 
-    impl_->buildCellBuffer(screen);
+    // Determine if only cursor blink changed (no content rebuild needed)
+    bool blinkChanged = (impl_->cursorBlinkVisible != impl_->lastBlinkState);
+
+    if (!impl_->contentDirty && blinkChanged
+        && impl_->cellCountBeforeCursor > 0
+        && !impl_->cellInstances.empty()) {
+        // Only cursor blink toggled -- patch cursor without full rebuild
+        impl_->patchCursorOnly(screen);
+    } else {
+        impl_->buildCellBuffer(screen);
+        impl_->contentDirty = false;
+    }
+    impl_->lastBlinkState = impl_->cursorBlinkVisible;
+
     if (impl_->cellInstances.empty()) return;
 
     if (impl_->glyphAtlas) {
@@ -362,34 +375,44 @@ void D3DTextRenderer::render(const Screen& screen) {
 void D3DTextRenderer::resize(float width, float height) {
     impl_->viewportWidth = width;
     impl_->viewportHeight = height;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setSelection(const Selection& sel) {
     impl_->selection = sel;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setCursorBlink(bool visible) {
     impl_->cursorBlinkVisible = visible;
 }
 
+void D3DTextRenderer::markContentDirty() {
+    impl_->contentDirty = true;
+}
+
 void D3DTextRenderer::setSearchHighlights(
         const std::vector<SearchHighlight>& highlights, int currentIndex) {
     impl_->searchHighlights = highlights;
     impl_->searchCurrentIndex = currentIndex;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setStatusBar(const StatusBarInfo& info) {
     impl_->statusBar = info;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setResizeOverlay(bool visible, int cols, int rows) {
     impl_->resizeOverlayVisible = visible;
     impl_->resizeOverlayCols = cols;
     impl_->resizeOverlayRows = rows;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setTabBar(const TabBarInfo& info) {
     impl_->tabBar = info;
+    impl_->contentDirty = true;
 }
 
 D3DTextRenderer::TabBarInfo D3DTextRenderer::getTabBar() const {
@@ -398,6 +421,7 @@ D3DTextRenderer::TabBarInfo D3DTextRenderer::getTabBar() const {
 
 void D3DTextRenderer::setPaneBorders(const PaneBorderInfo& info) {
     impl_->paneBorders = info;
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setPaneProgress(PaneId pane_id, const PaneProgressInfo& info) {
@@ -406,6 +430,7 @@ void D3DTextRenderer::setPaneProgress(PaneId pane_id, const PaneProgressInfo& in
     } else {
         impl_->paneProgress[pane_id] = info;
     }
+    impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setPaneStatusPills(PaneId pane_id,
@@ -415,6 +440,7 @@ void D3DTextRenderer::setPaneStatusPills(PaneId pane_id,
     } else {
         impl_->paneStatusPills[pane_id] = pills;
     }
+    impl_->contentDirty = true;
 }
 
 } // namespace termcore

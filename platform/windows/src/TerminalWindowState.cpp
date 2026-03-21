@@ -216,6 +216,7 @@ void TerminalWindowState::pollPty() {
     if (controller->needsRender()) {
         needsRender = true;
         controller->clearNeedsRender();
+        if (renderer) renderer->markContentDirty();
     }
 }
 
@@ -399,6 +400,7 @@ void TerminalWindowState::handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRe
 
 void TerminalWindowState::invalidate() {
     needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::getViewportSize(int& w, int& h) {
@@ -581,6 +583,7 @@ void TerminalWindowState::updateSearchResults(int current, int total) {
     (void)current;
     (void)total;
     needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::positionIME(int x, int y, int height) {
@@ -598,12 +601,14 @@ void TerminalWindowState::onFontChanged(float cellW, float cellH) {
         }
     }
     needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::onColorsChanged() {
     applyTitleBarTheme(hwnd);
     updateTabBar();
     needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::onGridSizeChanged(int rows, int cols) {
@@ -614,6 +619,7 @@ void TerminalWindowState::onGridSizeChanged(int rows, int cols) {
     resizeOverlayRows = rows;
     updateTabBar();
     needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::showNotification(const std::string& title,

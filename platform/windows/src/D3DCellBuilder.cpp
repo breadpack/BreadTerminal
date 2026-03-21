@@ -174,47 +174,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
-    // Pass 3: Cursor
-    if (screen.cursorVisible() && cursorBlinkVisible) {
-        int cRow = screen.cursorRow();
-        int cCol = screen.cursorCol();
-        if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {
-            uint32_t cursorColor =
-                colors.resolveFg(colors.cursor_color);
-
-            CursorShape shape = screen.cursorShape();
-
-            if (shape == CursorShape::Block) {
-                D3DCellInstance inst = {};
-                inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH + gridOffsetY;
-                colorFromRGBA(cursorColor, inst.bg_color);
-                inst.bg_color[3] = 0.5f;
-                inst.flags = 4;  // is_bg_pass
-                cellInstances.push_back(inst);
-            } else if (shape == CursorShape::Bar) {
-                D3DCellInstance inst = {};
-                inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH + gridOffsetY;
-                inst.atlas_size[0] = 2.0f;
-                inst.atlas_size[1] = cellH;
-                colorFromRGBA(cursorColor, inst.bg_color);
-                inst.flags = 8;  // is_cursor
-                cellInstances.push_back(inst);
-            } else if (shape == CursorShape::Underline) {
-                D3DCellInstance inst = {};
-                inst.position[0] = cCol * cellW;
-                inst.position[1] = cRow * cellH + gridOffsetY + cellH - 2.0f;
-                inst.atlas_size[0] = cellW;
-                inst.atlas_size[1] = 2.0f;
-                colorFromRGBA(cursorColor, inst.bg_color);
-                inst.flags = 8;  // is_cursor
-                cellInstances.push_back(inst);
-            }
-        }
-    }
-
-    // Pass 4: Underlines
+    // Pass 3: Underlines
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
@@ -283,8 +243,82 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
+    // Record insertion point before cursor instances
+    cellCountBeforeCursor = cellInstances.size();
+
+    // Pass 4: Cursor
+    appendCursorInstances(screen, cellW, cellH, gridOffsetY);
+
     // Passes 5-9: Overlay elements (status bar, scrollbar, resize overlay,
     // tab bar with notification indicators, pane borders with glow).
+    buildOverlayPasses(screen, cellW, cellH, ascent, fontSize);
+}
+
+void D3DTextRenderer::Impl::appendCursorInstances(
+        const Screen& screen, float cellW, float cellH, float gridOffsetY) {
+    int rows = screen.rows();
+    int cols = screen.cols();
+
+    if (screen.cursorVisible() && cursorBlinkVisible) {
+        int cRow = screen.cursorRow();
+        int cCol = screen.cursorCol();
+        if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {
+            const DynamicColors& colors = screen.dynamicColors();
+            uint32_t cursorColor =
+                colors.resolveFg(colors.cursor_color);
+
+            CursorShape shape = screen.cursorShape();
+
+            if (shape == CursorShape::Block) {
+                D3DCellInstance inst = {};
+                inst.position[0] = cCol * cellW;
+                inst.position[1] = cRow * cellH + gridOffsetY;
+                colorFromRGBA(cursorColor, inst.bg_color);
+                inst.bg_color[3] = 0.5f;
+                inst.flags = 4;  // is_bg_pass
+                cellInstances.push_back(inst);
+            } else if (shape == CursorShape::Bar) {
+                D3DCellInstance inst = {};
+                inst.position[0] = cCol * cellW;
+                inst.position[1] = cRow * cellH + gridOffsetY;
+                inst.atlas_size[0] = 2.0f;
+                inst.atlas_size[1] = cellH;
+                colorFromRGBA(cursorColor, inst.bg_color);
+                inst.flags = 8;  // is_cursor
+                cellInstances.push_back(inst);
+            } else if (shape == CursorShape::Underline) {
+                D3DCellInstance inst = {};
+                inst.position[0] = cCol * cellW;
+                inst.position[1] = cRow * cellH + gridOffsetY + cellH - 2.0f;
+                inst.atlas_size[0] = cellW;
+                inst.atlas_size[1] = 2.0f;
+                colorFromRGBA(cursorColor, inst.bg_color);
+                inst.flags = 8;  // is_cursor
+                cellInstances.push_back(inst);
+            }
+        }
+    }
+}
+
+void D3DTextRenderer::Impl::patchCursorOnly(const Screen& screen) {
+    if (!fontCollection) return;
+
+    FontMetrics metrics = fontCollection->primaryMetrics();
+    float cellW = metrics.cell_width;
+    float cellH = metrics.cell_height;
+
+    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float gridOffsetY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
+
+    // Remove old cursor instances (everything from cursor onward, before overlays)
+    cellInstances.resize(cellCountBeforeCursor);
+
+    // Append fresh cursor instances
+    appendCursorInstances(screen, cellW, cellH, gridOffsetY);
+
+    // Re-append overlay passes
+    float ascent = metrics.ascent;
+    float fontSize = fontCollection->fontSize();
     buildOverlayPasses(screen, cellW, cellH, ascent, fontSize);
 }
 

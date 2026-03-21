@@ -92,6 +92,10 @@ public:
     /// Set cursor blink visibility (called by blink timer).
     void setCursorBlink(bool visible);
 
+    /// Mark content as dirty so next render does a full rebuild.
+    /// Call this when screen content changes (e.g., after PTY output).
+    void markContentDirty();
+
     /// Search highlight for a range of cells on a row.
     struct SearchHighlight {
         int row;
