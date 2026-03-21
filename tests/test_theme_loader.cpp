@@ -205,9 +205,9 @@ TEST(ThemeLoader, LoadThemeFile) {
     }
 
     auto theme = termcore::loadThemeFile(filePath);
-    ASSERT_TRUE(theme.has_value());
-    EXPECT_EQ(theme->name, "MyTheme");
-    verifyDraculaColors(*theme);
+    ASSERT_TRUE(theme.ok());
+    EXPECT_EQ(theme.value().name, "MyTheme");
+    verifyDraculaColors(theme.value());
 }
 
 TEST(ThemeLoader, LoadThemeFileJson) {
@@ -219,9 +219,9 @@ TEST(ThemeLoader, LoadThemeFileJson) {
     }
 
     auto theme = termcore::loadThemeFile(filePath);
-    ASSERT_TRUE(theme.has_value());
-    EXPECT_EQ(theme->name, "Dracula");
-    verifyDraculaColors(*theme);
+    ASSERT_TRUE(theme.ok());
+    EXPECT_EQ(theme.value().name, "Dracula");
+    verifyDraculaColors(theme.value());
 }
 
 TEST(ThemeLoader, ScanDirectoryFindsThemes) {

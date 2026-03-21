@@ -79,25 +79,25 @@ bool LuaEngine::isValid() const {
     return impl_ != nullptr;
 }
 
-bool LuaEngine::loadPlugin(const std::string& path) {
+Result<void> LuaEngine::loadPlugin(const std::string& path) {
     auto result = impl_->lua.safe_script_file(path, sol::script_pass_on_error);
     if (!result.valid()) {
         sol::error err = result;
         last_error_ = err.what();
-        return false;
+        return Error(last_error_);
     }
     loaded_plugins_.push_back(path);
-    return true;
+    return {};
 }
 
-bool LuaEngine::loadString(const std::string& code) {
+Result<void> LuaEngine::loadString(const std::string& code) {
     auto result = impl_->lua.safe_script(code, sol::script_pass_on_error);
     if (!result.valid()) {
         sol::error err = result;
         last_error_ = err.what();
-        return false;
+        return Error(last_error_);
     }
-    return true;
+    return {};
 }
 
 void LuaEngine::fireEvent(LuaEvent event, const std::string& data) {

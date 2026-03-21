@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "termcore/result.h"
+
 namespace termcore {
 
 enum class LuaEvent {
@@ -25,8 +27,8 @@ public:
     LuaEngine(const LuaEngine&) = delete;
     LuaEngine& operator=(const LuaEngine&) = delete;
 
-    bool loadPlugin(const std::string& path);
-    bool loadString(const std::string& code);
+    Result<void> loadPlugin(const std::string& path);
+    Result<void> loadString(const std::string& code);
     void fireEvent(LuaEvent event, const std::string& data = "");
     void registerFunction(const std::string& name,
                           std::function<std::string(const std::string&)> fn);

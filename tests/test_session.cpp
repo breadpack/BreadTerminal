@@ -104,18 +104,18 @@ TEST(SessionTest, EmptySessionSaveLoad) {
     data.version = 1;
     data.window = {100, 200, 1024, 768};
 
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
     ASSERT_TRUE(mgr.hasSavedSession(tmp.path()));
 
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    EXPECT_EQ(loaded->version, 1);
-    EXPECT_EQ(loaded->window.x, 100);
-    EXPECT_EQ(loaded->window.y, 200);
-    EXPECT_EQ(loaded->window.width, 1024);
-    EXPECT_EQ(loaded->window.height, 768);
-    EXPECT_TRUE(loaded->workspaces.empty());
-    EXPECT_TRUE(loaded->panes.empty());
+    ASSERT_TRUE(loaded.ok());
+    EXPECT_EQ(loaded.value().version, 1);
+    EXPECT_EQ(loaded.value().window.x, 100);
+    EXPECT_EQ(loaded.value().window.y, 200);
+    EXPECT_EQ(loaded.value().window.width, 1024);
+    EXPECT_EQ(loaded.value().window.height, 768);
+    EXPECT_TRUE(loaded.value().workspaces.empty());
+    EXPECT_TRUE(loaded.value().panes.empty());
 }
 
 // Test: scrollback compress/decompress round-trip
@@ -143,13 +143,13 @@ TEST(SessionTest, ScrollbackRoundTrip) {
     };
 
     auto data = mgr.capture(mux, provider);
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
 
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    ASSERT_EQ(loaded->panes.size(), 1u);
+    ASSERT_TRUE(loaded.ok());
+    ASSERT_EQ(loaded.value().panes.size(), 1u);
 
-    auto& pane = loaded->panes[0];
+    auto& pane = loaded.value().panes[0];
     EXPECT_EQ(pane.working_dir, "/home/user");
     EXPECT_EQ(pane.title, "bash");
     EXPECT_EQ(pane.rows, 24);
@@ -185,14 +185,14 @@ TEST(SessionTest, SplitTreeSerialization) {
     provider.panes[2] = {"/home", "pane2", 24, 40, {}, false, ""};
 
     auto data = mgr.capture(mux, provider);
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
 
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    ASSERT_EQ(loaded->workspaces.size(), 1u);
-    ASSERT_EQ(loaded->workspaces[0].tabs.size(), 1u);
+    ASSERT_TRUE(loaded.ok());
+    ASSERT_EQ(loaded.value().workspaces.size(), 1u);
+    ASSERT_EQ(loaded.value().workspaces[0].tabs.size(), 1u);
 
-    auto& root = loaded->workspaces[0].tabs[0].root;
+    auto& root = loaded.value().workspaces[0].tabs[0].root;
     ASSERT_NE(root, nullptr);
     EXPECT_FALSE(root->is_leaf);
     EXPECT_EQ(root->direction, 1);  // Vertical
@@ -206,7 +206,7 @@ TEST(SessionTest, SplitTreeSerialization) {
 
     // Both leaf serials should reference panes
     EXPECT_NE(root->first->leaf_serial, root->second->leaf_serial);
-    EXPECT_EQ(loaded->panes.size(), 2u);
+    EXPECT_EQ(loaded.value().panes.size(), 2u);
 }
 
 // Test: window geometry
@@ -218,13 +218,13 @@ TEST(SessionTest, WindowGeometry) {
     data.version = 1;
     data.window = {42, 99, 1920, 1080};
 
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    EXPECT_EQ(loaded->window.x, 42);
-    EXPECT_EQ(loaded->window.y, 99);
-    EXPECT_EQ(loaded->window.width, 1920);
-    EXPECT_EQ(loaded->window.height, 1080);
+    ASSERT_TRUE(loaded.ok());
+    EXPECT_EQ(loaded.value().window.x, 42);
+    EXPECT_EQ(loaded.value().window.y, 99);
+    EXPECT_EQ(loaded.value().window.width, 1920);
+    EXPECT_EQ(loaded.value().window.height, 1080);
 }
 
 // Test: invalid JSON returns nullopt
@@ -239,7 +239,7 @@ TEST(SessionTest, InvalidJsonReturnsNullopt) {
     ofs.close();
 
     auto loaded = mgr.load(tmp.path());
-    EXPECT_FALSE(loaded.has_value());
+    EXPECT_FALSE(loaded.ok());
 }
 
 // Test: unknown version returns nullopt
@@ -257,7 +257,7 @@ TEST(SessionTest, UnknownVersionReturnsNullopt) {
     ofs.close();
 
     auto loaded = mgr.load(tmp.path());
-    EXPECT_FALSE(loaded.has_value());
+    EXPECT_FALSE(loaded.ok());
 }
 
 // Test: file permissions are 0600
@@ -267,7 +267,7 @@ TEST(SessionTest, FilePermissions) {
 
     termcore::SessionData data;
     data.version = 1;
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
 
     std::string filepath = termcore::SessionManager::sessionFilePath(tmp.path());
     auto status = fs::status(filepath);
@@ -290,7 +290,7 @@ TEST(SessionTest, NoSavedSession) {
 
     EXPECT_FALSE(mgr.hasSavedSession(tmp.path()));
     auto loaded = mgr.load(tmp.path());
-    EXPECT_FALSE(loaded.has_value());
+    EXPECT_FALSE(loaded.ok());
 }
 
 // Test: webview pane data
@@ -314,14 +314,14 @@ TEST(SessionTest, WebViewPaneData) {
     };
 
     auto data = mgr.capture(mux, provider);
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
 
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    ASSERT_EQ(loaded->panes.size(), 1u);
-    EXPECT_TRUE(loaded->panes[0].is_webview);
-    EXPECT_EQ(loaded->panes[0].webview_url, "https://www.google.com");
-    EXPECT_EQ(loaded->panes[0].title, "Google");
+    ASSERT_TRUE(loaded.ok());
+    ASSERT_EQ(loaded.value().panes.size(), 1u);
+    EXPECT_TRUE(loaded.value().panes[0].is_webview);
+    EXPECT_EQ(loaded.value().panes[0].webview_url, "https://www.google.com");
+    EXPECT_EQ(loaded.value().panes[0].title, "Google");
 }
 
 // Test: multiple workspaces and tabs
@@ -349,13 +349,13 @@ TEST(SessionTest, MultipleWorkspacesAndTabs) {
     provider.panes[3] = {"/tmp/3", "t3", 24, 80, {}, false, ""};
 
     auto data = mgr.capture(mux, provider);
-    ASSERT_TRUE(mgr.save(data, tmp.path()));
+    ASSERT_TRUE(mgr.save(data, tmp.path()).ok());
 
     auto loaded = mgr.load(tmp.path());
-    ASSERT_TRUE(loaded.has_value());
-    EXPECT_EQ(loaded->workspaces.size(), 2u);
-    EXPECT_EQ(loaded->workspaces[0].tabs.size(), 2u);
-    EXPECT_EQ(loaded->workspaces[1].tabs.size(), 1u);
-    EXPECT_EQ(loaded->active_workspace_index, 1u);  // ws2 is active
-    EXPECT_EQ(loaded->panes.size(), 3u);
+    ASSERT_TRUE(loaded.ok());
+    EXPECT_EQ(loaded.value().workspaces.size(), 2u);
+    EXPECT_EQ(loaded.value().workspaces[0].tabs.size(), 2u);
+    EXPECT_EQ(loaded.value().workspaces[1].tabs.size(), 1u);
+    EXPECT_EQ(loaded.value().active_workspace_index, 1u);  // ws2 is active
+    EXPECT_EQ(loaded.value().panes.size(), 3u);
 }

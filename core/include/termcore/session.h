@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "termcore/result.h"
+
 namespace termcore {
 
 /// Window geometry for session save/restore.
@@ -91,10 +93,10 @@ public:
                         const WindowGeometry& window = {});
 
     /// Save session to disk (atomic write).
-    bool save(const SessionData& data, const std::string& dir = "");
+    Result<void> save(const SessionData& data, const std::string& dir = "");
 
     /// Load session from disk.
-    std::optional<SessionData> load(const std::string& dir = "");
+    Result<SessionData> load(const std::string& dir = "");
 
     /// Check if a saved session exists.
     bool hasSavedSession(const std::string& dir = "");

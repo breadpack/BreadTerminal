@@ -265,10 +265,10 @@ std::optional<Theme> parseThemeString(const std::string& content,
     return parseKitty(content, name);
 }
 
-std::optional<Theme> loadThemeFile(const std::string& path,
-                                    ThemeFormat format) {
+Result<Theme> loadThemeFile(const std::string& path,
+                            ThemeFormat format) {
     std::ifstream file(path);
-    if (!file.is_open()) return std::nullopt;
+    if (!file.is_open()) return Error("theme not found: " + path);
 
     std::string content((std::istreambuf_iterator<char>(file)),
                          std::istreambuf_iterator<char>());
@@ -280,10 +280,11 @@ std::optional<Theme> loadThemeFile(const std::string& path,
     }
 
     auto theme = parseThemeString(content, name, format);
-    if (theme && theme->name.empty()) {
+    if (!theme) return Error("invalid format: " + path);
+    if (theme->name.empty()) {
         theme->name = name;
     }
-    return theme;
+    return std::move(*theme);
 }
 
 std::vector<Theme> scanThemeDirectory(const std::string& dir) {
@@ -296,8 +297,8 @@ std::vector<Theme> scanThemeDirectory(const std::string& dir) {
         if (!entry.is_regular_file(ec)) continue;
 
         auto theme = loadThemeFile(entry.path().string());
-        if (theme) {
-            themes.push_back(std::move(*theme));
+        if (theme.ok()) {
+            themes.push_back(std::move(theme.value()));
         }
     }
 

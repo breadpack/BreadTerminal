@@ -411,8 +411,8 @@ bool GhosttyConfigImporter::importTheme(const std::string& theme_name,
         // Ghostty theme files use the same key-value format with color defs.
         // Use the existing theme loader with Ghostty format detection.
         auto theme = loadThemeFile(theme_path, ThemeFormat::Ghostty);
-        if (theme) {
-            applyTheme(config, *theme);
+        if (theme.ok()) {
+            applyTheme(config, theme.value());
             return true;
         }
 

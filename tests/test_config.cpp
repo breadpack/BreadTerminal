@@ -39,7 +39,7 @@ TEST(ConfigTest, DefaultConfigValues) {
 
 TEST(ConfigTest, LoadLuaStringFont) {
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ font_family = \"JetBrains Mono\", font_size = 16.5 })"));
+        "terminal.config({ font_family = \"JetBrains Mono\", font_size = 16.5 })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.font_family, "JetBrains Mono");
     EXPECT_FLOAT_EQ(config.font_size, 16.5f);
@@ -48,7 +48,7 @@ TEST(ConfigTest, LoadLuaStringFont) {
 TEST(ConfigTest, LoadLuaStringColors) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ background = 0xff00ff, foreground = 0x123456 })"));
+        "terminal.config({ background = 0xff00ff, foreground = 0x123456 })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.background, 0xff00ffu);
     EXPECT_EQ(config.foreground, 0x123456u);
@@ -61,7 +61,7 @@ TEST(ConfigTest, LoadLuaStringPalette) {
         "0xaaaaaa, 0xbbbbbb, 0xcccccc, 0xdddddd, "
         "0xeeeeee, 0xffffff, 0x111111, 0x222222, "
         "0x333333, 0x444444, 0x555555, 0x666666, "
-        "0x777777, 0x888888, 0x999999, 0xabcdef } })"));
+        "0x777777, 0x888888, 0x999999, 0xabcdef } })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.palette[0], 0xaaaaaau);
     EXPECT_EQ(config.palette[15], 0xabcdefu);
@@ -70,7 +70,7 @@ TEST(ConfigTest, LoadLuaStringPalette) {
 TEST(ConfigTest, LoadLuaStringKeybinding) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.keymap(\"cmd+t\", \"new_tab\")"));
+        "terminal.keymap(\"cmd+t\", \"new_tab\")").ok());
     const Config& config = luaConfig();
     ASSERT_EQ(config.keybindings.size(), 1u);
     EXPECT_EQ(config.keybindings[0].trigger, "cmd+t");
@@ -82,7 +82,7 @@ TEST(ConfigTest, LoadLuaStringMultipleKeybindings) {
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.keymap(\"cmd+t\", \"new_tab\")\n"
         "terminal.keymap(\"cmd+w\", \"close_tab\")\n"
-        "terminal.keymap(\"cmd+d\", \"split_right\")"));
+        "terminal.keymap(\"cmd+d\", \"split_right\")").ok());
     const Config& config = luaConfig();
     ASSERT_EQ(config.keybindings.size(), 3u);
     EXPECT_EQ(config.keybindings[2].trigger, "cmd+d");
@@ -92,7 +92,7 @@ TEST(ConfigTest, LoadLuaStringMultipleKeybindings) {
 TEST(ConfigTest, LoadLuaStringCursorConfig) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ cursor_style = \"underline\", cursor_blink = false })"));
+        "terminal.config({ cursor_style = \"underline\", cursor_blink = false })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.cursor_style, "underline");
     EXPECT_FALSE(config.cursor_blink);
@@ -101,7 +101,7 @@ TEST(ConfigTest, LoadLuaStringCursorConfig) {
 TEST(ConfigTest, LoadLuaStringShell) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ shell = \"/bin/zsh\" })"));
+        "terminal.config({ shell = \"/bin/zsh\" })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.shell, "/bin/zsh");
 }
@@ -109,7 +109,7 @@ TEST(ConfigTest, LoadLuaStringShell) {
 TEST(ConfigTest, LoadLuaStringScrollbackLimit) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ scrollback_limit = 50000 })"));
+        "terminal.config({ scrollback_limit = 50000 })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.scrollback_limit, 50000);
 }
@@ -117,7 +117,7 @@ TEST(ConfigTest, LoadLuaStringScrollbackLimit) {
 TEST(ConfigTest, LoadLuaStringBackgroundOpacity) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ background_opacity = 0.5 })"));
+        "terminal.config({ background_opacity = 0.5 })").ok());
     const Config& config = luaConfig();
     EXPECT_FLOAT_EQ(config.background_opacity, 0.5f);
 }
@@ -125,7 +125,7 @@ TEST(ConfigTest, LoadLuaStringBackgroundOpacity) {
 TEST(ConfigTest, LoadLuaStringBackgroundBlur) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ background_blur = 2 })"));
+        "terminal.config({ background_blur = 2 })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.background_blur, 2);
 }
@@ -136,7 +136,7 @@ TEST(ConfigTest, LoadLuaStringClipboardConfig) {
         "terminal.config({ "
         "clipboard_paste_protection = \"always\", "
         "clipboard_paste_bracketed_safe = false, "
-        "allow_clipboard_write = true })"));
+        "allow_clipboard_write = true })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.clipboard_paste_protection, "always");
     EXPECT_FALSE(config.clipboard_paste_bracketed_safe);
@@ -146,7 +146,7 @@ TEST(ConfigTest, LoadLuaStringClipboardConfig) {
 TEST(ConfigTest, LoadLuaStringSidebar) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ sidebar_visible = false, sidebar_width = 300 })"));
+        "terminal.config({ sidebar_visible = false, sidebar_width = 300 })").ok());
     const Config& config = luaConfig();
     EXPECT_FALSE(config.sidebar_visible);
     EXPECT_EQ(config.sidebar_width, 300);
@@ -155,7 +155,7 @@ TEST(ConfigTest, LoadLuaStringSidebar) {
 TEST(ConfigTest, LoadLuaStringFontFeatures) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ font_features = { \"calt\", \"liga\", \"dlig\" } })"));
+        "terminal.config({ font_features = { \"calt\", \"liga\", \"dlig\" } })").ok());
     const Config& config = luaConfig();
     ASSERT_EQ(config.font_features.size(), 3u);
     EXPECT_EQ(config.font_features[0], "calt");
@@ -167,7 +167,7 @@ TEST(ConfigTest, LoadLuaStringMultipleConfigCalls) {
 
     ASSERT_TRUE(loadConfigLuaString(
         "terminal.config({ font_family = \"Monaco\" })\n"
-        "terminal.config({ font_size = 18 })\n"));
+        "terminal.config({ font_size = 18 })\n").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.font_family, "Monaco");
     EXPECT_FLOAT_EQ(config.font_size, 18.0f);
@@ -176,7 +176,7 @@ TEST(ConfigTest, LoadLuaStringMultipleConfigCalls) {
 TEST(ConfigTest, LoadLuaStringWindowSize) {
 
     ASSERT_TRUE(loadConfigLuaString(
-        "terminal.config({ window_width = 1024, window_height = 768 })"));
+        "terminal.config({ window_width = 1024, window_height = 768 })").ok());
     const Config& config = luaConfig();
     EXPECT_EQ(config.window_width, 1024);
     EXPECT_EQ(config.window_height, 768);
@@ -189,7 +189,7 @@ TEST(ConfigTest, SerializeLuaDefaultConfig) {
     Config original;
     std::string lua = serializeConfigLua(original);
 
-    ASSERT_TRUE(loadConfigLuaString(lua));
+    ASSERT_TRUE(loadConfigLuaString(lua).ok());
     const Config& parsed = luaConfig();
 
     EXPECT_EQ(parsed.font_family, original.font_family);
@@ -236,7 +236,7 @@ TEST(ConfigTest, SerializeLuaCustomConfig) {
     original.keybindings.push_back({"cmd+w", "close_tab"});
 
     std::string lua = serializeConfigLua(original);
-    ASSERT_TRUE(loadConfigLuaString(lua));
+    ASSERT_TRUE(loadConfigLuaString(lua).ok());
     const Config& parsed = luaConfig();
 
     EXPECT_EQ(parsed.font_family, "Fira Code");
@@ -278,7 +278,7 @@ TEST(ConfigTest, WriteAndLoadLuaConfigFile) {
     original.keybindings.push_back({"cmd+t", "new_tab"});
 
     ASSERT_TRUE(writeConfigLua(path, original));
-    ASSERT_TRUE(loadConfigLua(path));
+    ASSERT_TRUE(loadConfigLua(path).ok());
 
     const Config& parsed = luaConfig();
     EXPECT_EQ(parsed.font_family, "Monaco");

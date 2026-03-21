@@ -450,7 +450,7 @@ void tc_agent_sweep_stale(TermCore* core) {
 int tc_lua_load_plugin(TermCore* core, const char* plugin_path) {
 #if TERMCORE_HAS_LUA
     if (!core || !plugin_path) return -1;
-    return core->lua_engine.loadPlugin(plugin_path) ? 0 : -1;
+    return core->lua_engine.loadPlugin(plugin_path).ok() ? 0 : -1;
 #else
     (void)core; (void)plugin_path; return -1;
 #endif
@@ -459,7 +459,7 @@ int tc_lua_load_plugin(TermCore* core, const char* plugin_path) {
 int tc_lua_load_string(TermCore* core, const char* code) {
 #if TERMCORE_HAS_LUA
     if (!core || !code) return -1;
-    return core->lua_engine.loadString(code) ? 0 : -1;
+    return core->lua_engine.loadString(code).ok() ? 0 : -1;
 #else
     (void)core; (void)code; return -1;
 #endif

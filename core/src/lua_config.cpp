@@ -235,24 +235,24 @@ static std::unique_ptr<LuaConfigState> s_lua_state;
 
 } // anonymous namespace
 
-bool loadConfigLua(const std::string& path) {
+Result<void> loadConfigLua(const std::string& path) {
     s_lua_state = std::make_unique<LuaConfigState>();
     s_lua_state->init();
     if (!s_lua_state->loadFile(path)) {
-        return false;
+        return Error("failed to load config: " + s_lua_state->last_error);
     }
     s_config = s_lua_state->config;
-    return true;
+    return {};
 }
 
-bool loadConfigLuaString(const std::string& code) {
+Result<void> loadConfigLuaString(const std::string& code) {
     s_lua_state = std::make_unique<LuaConfigState>();
     s_lua_state->init();
     if (!s_lua_state->loadString(code)) {
-        return false;
+        return Error("failed to parse config: " + s_lua_state->last_error);
     }
     s_config = s_lua_state->config;
-    return true;
+    return {};
 }
 
 const Config& luaConfig() {
@@ -395,8 +395,8 @@ namespace termcore {
 
 static Config s_stub_config;
 
-bool loadConfigLua(const std::string&) { return false; }
-bool loadConfigLuaString(const std::string&) { return false; }
+Result<void> loadConfigLua(const std::string&) { return Error("Lua not available"); }
+Result<void> loadConfigLuaString(const std::string&) { return Error("Lua not available"); }
 const Config& luaConfig() { return s_stub_config; }
 LuaEngine* luaConfigEngine() { return nullptr; }
 std::string defaultLuaConfigPath() { return ""; }

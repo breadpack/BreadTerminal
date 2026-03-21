@@ -3,6 +3,7 @@
 
 #include "termcore/config.h"
 #include "termcore/lua_engine.h"
+#include "termcore/result.h"
 
 #include <string>
 
@@ -14,12 +15,12 @@ namespace termcore {
 ///   terminal.keymap("ctrl+t", "new_tab")
 ///   terminal.colorscheme("my_theme", { background = 0x1e1e2e, ... })
 ///
-/// Returns true if the file was loaded successfully.
+/// Returns Result<void> — ok() if the file was loaded successfully.
 /// The resulting Config is stored and can be retrieved via luaConfig().
-bool loadConfigLua(const std::string& path);
+Result<void> loadConfigLua(const std::string& path);
 
 /// Load configuration from a Lua string (for testing).
-bool loadConfigLuaString(const std::string& code);
+Result<void> loadConfigLuaString(const std::string& code);
 
 /// Get the config populated by the last successful Lua load.
 const Config& luaConfig();

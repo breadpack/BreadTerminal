@@ -111,22 +111,22 @@ static std::unique_ptr<SplitNodeData> parseSplitNode(const json& j) {
     return node;
 }
 
-std::optional<SessionData> SessionManager::load(const std::string& dir) {
+Result<SessionData> SessionManager::load(const std::string& dir) {
     std::string filepath = sessionFilePath(dir.empty() ? defaultSessionDir() : dir);
-    if (filepath.empty()) return std::nullopt;
+    if (filepath.empty()) return Error("session file path is empty");
 
     std::error_code ec;
-    if (!fs::exists(filepath, ec)) return std::nullopt;
+    if (!fs::exists(filepath, ec)) return Error("session file not found: " + filepath);
 
     try {
         std::ifstream ifs(filepath, std::ios::binary);
-        if (!ifs) return std::nullopt;
+        if (!ifs) return Error("failed to open session file: " + filepath);
 
         json j = json::parse(ifs);
 
         SessionData data;
         data.version = j.value("version", 0);
-        if (data.version != 1) return std::nullopt;
+        if (data.version != 1) return Error("unsupported session version: " + std::to_string(data.version));
 
         // Window
         if (j.contains("window")) {
@@ -184,10 +184,10 @@ std::optional<SessionData> SessionManager::load(const std::string& dir) {
 
         return data;
 
-    } catch (const json::exception&) {
-        return std::nullopt;
-    } catch (const std::exception&) {
-        return std::nullopt;
+    } catch (const json::exception& e) {
+        return Error(std::string("session JSON parse error: ") + e.what());
+    } catch (const std::exception& e) {
+        return Error(std::string("session load error: ") + e.what());
     }
 }
 

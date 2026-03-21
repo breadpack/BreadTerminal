@@ -2,6 +2,7 @@
 #define TERMCORE_THEME_LOADER_H
 
 #include "termcore/config.h"
+#include "termcore/result.h"
 
 #include <optional>
 #include <string>
@@ -12,8 +13,8 @@ namespace termcore {
 enum class ThemeFormat { Auto, Ghostty, Kitty, WindowsTerminal };
 
 /// Load a single theme file. Format=Auto detects from content/extension.
-std::optional<Theme> loadThemeFile(const std::string& path,
-                                   ThemeFormat format = ThemeFormat::Auto);
+Result<Theme> loadThemeFile(const std::string& path,
+                            ThemeFormat format = ThemeFormat::Auto);
 
 /// Parse theme from string content with explicit format.
 std::optional<Theme> parseThemeString(const std::string& content,

@@ -228,16 +228,16 @@ SessionData SessionManager::capture(const Mux& mux,
     return data;
 }
 
-bool SessionManager::save(const SessionData& data, const std::string& dir) {
+Result<void> SessionManager::save(const SessionData& data, const std::string& dir) {
     std::string d = dir.empty() ? defaultSessionDir() : dir;
-    if (d.empty()) return false;
+    if (d.empty()) return Error("session directory is empty");
 
     std::error_code ec;
     fs::create_directories(d, ec);
-    if (ec) return false;
+    if (ec) return Error("failed to create session directory: " + ec.message());
 
     std::string filepath = sessionFilePath(d);
-    if (filepath.empty()) return false;
+    if (filepath.empty()) return Error("failed to resolve session file path");
 
     // Build JSON
     json j;
@@ -311,7 +311,7 @@ bool SessionManager::save(const SessionData& data, const std::string& dir) {
         int fd = -1;
         _sopen_s(&fd, tmp_path.c_str(), _O_CREAT | _O_WRONLY | _O_TRUNC,
                   _SH_DENYWR, _S_IREAD | _S_IWRITE);
-        if (fd < 0) return false;
+        if (fd < 0) return Error("failed to open temp file for writing: " + tmp_path);
         size_t total = 0;
         while (total < json_str.size()) {
             int n = _write(fd, json_str.data() + total,
@@ -319,21 +319,21 @@ bool SessionManager::save(const SessionData& data, const std::string& dir) {
             if (n < 0) {
                 _close(fd);
                 fs::remove(tmp_path, ec);
-                return false;
+                return Error("failed to write session data");
             }
             total += static_cast<size_t>(n);
         }
         _close(fd);
 #else
         int fd = ::open(tmp_path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
-        if (fd < 0) return false;
+        if (fd < 0) return Error("failed to open temp file for writing: " + tmp_path);
         size_t total = 0;
         while (total < json_str.size()) {
             ssize_t n = ::write(fd, json_str.data() + total, json_str.size() - total);
             if (n < 0) {
                 ::close(fd);
                 ::unlink(tmp_path.c_str());
-                return false;
+                return Error("failed to write session data");
             }
             total += static_cast<size_t>(n);
         }
@@ -348,10 +348,10 @@ bool SessionManager::save(const SessionData& data, const std::string& dir) {
 #else
         ::unlink(tmp_path.c_str());
 #endif
-        return false;
+        return Error("failed to rename session file: " + ec.message());
     }
 
-    return true;
+    return {};
 }
 
 }  // namespace termcore

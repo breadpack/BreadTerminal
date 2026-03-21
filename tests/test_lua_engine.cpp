@@ -24,13 +24,13 @@ TEST(LuaEngine, CreateEngineIsValid) {
 // 2. loadString valid code -> true
 TEST(LuaEngine, LoadStringValid) {
     LuaEngine engine;
-    EXPECT_TRUE(engine.loadString("x = 1 + 2"));
+    EXPECT_TRUE(engine.loadString("x = 1 + 2").ok());
 }
 
 // 3. loadString syntax error -> false, lastError non-empty
 TEST(LuaEngine, LoadStringSyntaxError) {
     LuaEngine engine;
-    EXPECT_FALSE(engine.loadString("if then else end end"));
+    EXPECT_FALSE(engine.loadString("if then else end end").ok());
     EXPECT_FALSE(engine.lastError().empty());
 }
 
@@ -49,7 +49,7 @@ TEST(LuaEngine, FireEventCallsHandler) {
         terminal.on("bell", function(data)
             terminal.test_capture("bell:" .. data)
         end)
-    )"));
+    )").ok());
 
     engine.fireEvent(LuaEvent::OnBell, "test_data");
     EXPECT_EQ(captured, "bell:test_data");
@@ -73,7 +73,7 @@ TEST(LuaEngine, MultipleHandlersSameEvent) {
         terminal.on("bell", function(data)
             terminal.test_append("B")
         end)
-    )"));
+    )").ok());
 
     engine.fireEvent(LuaEvent::OnBell);
     EXPECT_EQ(result, "AB");
@@ -92,7 +92,7 @@ TEST(LuaEngine, RegisterFunctionCallable) {
 
     EXPECT_TRUE(engine.loadString(R"(
         result = terminal.my_func("hello")
-    )"));
+    )").ok());
 
     EXPECT_EQ(received, "hello");
 }
@@ -110,7 +110,7 @@ TEST(LuaEngine, TerminalVersionAccessible) {
 
     EXPECT_TRUE(engine.loadString(R"(
         terminal.test_capture(terminal.version)
-    )"));
+    )").ok());
 
     EXPECT_EQ(version, "0.1.0");
 }
@@ -122,7 +122,7 @@ TEST(LuaEngine, ErrorInHandlerNoCrash) {
         terminal.on("bell", function(data)
             error("intentional error")
         end)
-    )"));
+    )").ok());
 
     // Should not crash
     engine.fireEvent(LuaEvent::OnBell);
@@ -151,7 +151,7 @@ TEST(LuaEngine, LoadPluginTempFile) {
         )";
     }
 
-    EXPECT_TRUE(engine.loadPlugin(tmp_path));
+    EXPECT_TRUE(engine.loadPlugin(tmp_path).ok());
     EXPECT_EQ(engine.loadedPlugins().size(), 1u);
     EXPECT_EQ(engine.loadedPlugins()[0], tmp_path);
 
@@ -164,7 +164,7 @@ TEST(LuaEngine, LoadPluginTempFile) {
 // 10. loadPlugin nonexistent -> false
 TEST(LuaEngine, LoadPluginNonexistent) {
     LuaEngine engine;
-    EXPECT_FALSE(engine.loadPlugin("/nonexistent/path/plugin.lua"));
+    EXPECT_FALSE(engine.loadPlugin("/nonexistent/path/plugin.lua").ok());
     EXPECT_FALSE(engine.lastError().empty());
 }
 

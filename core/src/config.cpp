@@ -22,7 +22,7 @@ std::string defaultConfigPath() {
 Config loadConfig() {
     // Try config.lua from the standard Lua config path
     std::string luaPath = defaultLuaConfigPath();
-    if (!luaPath.empty() && loadConfigLua(luaPath)) {
+    if (!luaPath.empty() && loadConfigLua(luaPath).ok()) {
         return luaConfig();
     }
 
@@ -31,7 +31,7 @@ Config loadConfig() {
     if (!basePath.empty()) {
         namespace fs = std::filesystem;
         fs::path luaAlt = fs::path(basePath).parent_path() / "config.lua";
-        if (fs::exists(luaAlt) && loadConfigLua(luaAlt.string())) {
+        if (fs::exists(luaAlt) && loadConfigLua(luaAlt.string()).ok()) {
             return luaConfig();
         }
     }

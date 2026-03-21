@@ -151,7 +151,7 @@ bool MultiSessionManager::saveSession(
     // Actually, SessionManager::save always writes "last.json".  Instead,
     // save to a temp location and rename.
     std::string parentDir = fs::path(filepath).parent_path().string();
-    if (!sm.save(data, parentDir)) return false;
+    if (!sm.save(data, parentDir).ok()) return false;
 
     // sm.save wrote to <parentDir>/last.json — rename to desired name
     std::string lastJson = SessionManager::sessionFilePath(parentDir);
@@ -198,7 +198,7 @@ bool MultiSessionManager::restoreSession(const std::string& path,
     fs::remove(tempFile, ec);
     fs::remove(tempDir, ec);
 
-    if (!result.has_value()) return false;
+    if (!result.ok()) return false;
 
     outData = std::move(result.value());
     return true;
