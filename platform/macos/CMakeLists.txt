@@ -7,6 +7,8 @@ add_library(termcore_macos STATIC
     src/CoreTextDiscovery.mm
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
+    src/MetalCellBuilder.mm
+    src/MetalAtlasManager.mm
     src/WKWebViewBridge.mm
 )
 
@@ -38,6 +40,8 @@ set_source_files_properties(
     src/CoreTextDiscovery.mm
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
+    src/MetalCellBuilder.mm
+    src/MetalAtlasManager.mm
     src/WKWebViewBridge.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++"
 )
@@ -83,8 +87,10 @@ endif()
 add_executable(BreadTerminal MACOSX_BUNDLE
     src/main.mm
     src/AppDelegate.mm
+    src/AppDelegateWindows.mm
     src/MacPlatformHost.mm
     src/TerminalView.mm
+    src/TerminalViewEvents.mm
     src/TerminalViewInput.mm
     src/TerminalViewPaste.mm
     src/ConfigWatcherMac.mm
@@ -137,8 +143,10 @@ target_link_libraries(BreadTerminal PRIVATE
 set_source_files_properties(
     src/main.mm
     src/AppDelegate.mm
+    src/AppDelegateWindows.mm
     src/MacPlatformHost.mm
     src/TerminalView.mm
+    src/TerminalViewEvents.mm
     src/TerminalViewInput.mm
     src/TerminalViewPaste.mm
     src/ConfigWatcherMac.mm

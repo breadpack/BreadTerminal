@@ -18,6 +18,8 @@ class IFontRasterizer;
 class FontShaper;
 class IFontDiscovery;
 class TerminalController;
+class NotificationStore;
+class AgentTracker;
 struct PasteAnalysis;
 enum class Action : uint16_t;
 } // namespace termcore
@@ -35,11 +37,26 @@ enum class Action : uint16_t;
 /// Send typed text to the PTY (via controller).
 - (void)sendText:(NSString*)text;
 
+/// Resize the terminal grid to match current view size.
+- (void)updateGridSize;
+
+/// Apply a named theme (resolves from built-in and user themes).
+/// Updates screen dynamic colors and triggers re-render.
+- (void)applyThemeByName:(const std::string&)themeName;
+
+@property (nonatomic, readonly) int termRows;
+@property (nonatomic, readonly) int termCols;
+
+@end
+
+/// Events category: rendering, focus, config reload, font callbacks, accessors.
+@interface TerminalView (Events)
+
 /// Trigger a render update.
 - (void)setNeedsRender;
 
-/// Resize the terminal grid to match current view size.
-- (void)updateGridSize;
+/// Render a single frame (called by display timer).
+- (void)renderFrame;
 
 /// Apply incremental config changes based on dirty flags.
 - (void)applyConfigDelta:(const termcore::Config&)config
@@ -48,15 +65,17 @@ enum class Action : uint16_t;
 /// Show a transient config error banner at the top of the view.
 - (void)showConfigError:(NSString*)message;
 
-/// Apply a named theme (resolves from built-in and user themes).
-/// Updates screen dynamic colors and triggers re-render.
-- (void)applyThemeByName:(const std::string&)themeName;
+/// Callback when cell size changes (font size change from MacPlatformHost).
+- (void)onCellSizeChanged:(float)cellW height:(float)cellH;
 
 /// Access the TerminalController (for AppDelegate socket API wiring).
 - (termcore::TerminalController*)controller;
 
-@property (nonatomic, readonly) int termRows;
-@property (nonatomic, readonly) int termCols;
+/// Access the notification store (for socket API wiring).
+- (termcore::NotificationStore&)notifications;
+
+/// Access the agent tracker (for socket API wiring).
+- (termcore::AgentTracker&)agentTracker;
 
 @end
 

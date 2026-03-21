@@ -35,6 +35,7 @@ set(TERMCORE_WIN_SOURCES
     src/D3DCustomShader.cpp
     src/FontInstaller.cpp
     src/UnifiedSettingsWindow.cpp
+    src/UnifiedSettingsLayout.cpp
     src/UnifiedSettingsSidebar.cpp
     src/UnifiedSettingsContent.cpp
     src/UnifiedSettingsThemeCards.cpp
@@ -67,6 +68,7 @@ add_executable(BreadTerminal WIN32
     src/main.cpp
     src/TerminalWindow.cpp
     src/TerminalWindowState.cpp
+    src/TerminalWindowStateEvents.cpp
     src/TerminalWindowInput.cpp
 )
 target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus)
