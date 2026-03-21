@@ -74,7 +74,7 @@ private:
     std::string getRowText(const Screen& screen, int row) const;
 
     /// Find all occurrences of query in a line
-    void findInLine(const std::string& line, int row,
+    void findInLine(std::string& line, int row,
                     const std::string& query, bool case_sensitive);
 };
 

@@ -28,20 +28,24 @@ int TerminalSearch::search(const Screen& screen, const std::string& query,
                        [](unsigned char c) { return std::tolower(c); });
     }
 
+    // Reusable buffer to avoid per-row allocations
+    std::string line_buffer;
+    line_buffer.reserve(256);
+
     // Search scrollback lines (negative row indices)
     if (options.search_scrollback) {
         int sb_size = static_cast<int>(screen.scrollbackSize());
         for (int i = sb_size; i >= 1; --i) {
             int row = -i;  // -sb_size .. -1
-            std::string text = getRowText(screen, row);
-            findInLine(text, row, search_query, options.case_sensitive);
+            line_buffer = getRowText(screen, row);
+            findInLine(line_buffer, row, search_query, options.case_sensitive);
         }
     }
 
     // Search visible screen rows
     for (int r = 0; r < screen.rows(); ++r) {
-        std::string text = getRowText(screen, r);
-        findInLine(text, r, search_query, options.case_sensitive);
+        line_buffer = getRowText(screen, r);
+        findInLine(line_buffer, r, search_query, options.case_sensitive);
     }
 
     if (!matches_.empty()) {
@@ -141,24 +145,24 @@ std::string TerminalSearch::getRowText(const Screen& screen, int row) const {
     return screen.getScrollbackLineText(line);
 }
 
-void TerminalSearch::findInLine(const std::string& line, int row,
+void TerminalSearch::findInLine(std::string& line, int row,
                                 const std::string& query,
                                 bool case_sensitive) {
     if (line.empty() || query.empty()) {
         return;
     }
 
-    std::string search_line = line;
+    // Transform in-place to avoid extra allocation
     if (!case_sensitive) {
-        std::transform(search_line.begin(), search_line.end(),
-                       search_line.begin(),
+        std::transform(line.begin(), line.end(),
+                       line.begin(),
                        [](unsigned char c) { return std::tolower(c); });
     }
 
     size_t pos = 0;
     int query_len = static_cast<int>(query.size());
 
-    while ((pos = search_line.find(query, pos)) != std::string::npos) {
+    while ((pos = line.find(query, pos)) != std::string::npos) {
         SearchMatch match;
         match.row = row;
         match.start_col = static_cast<int>(pos);

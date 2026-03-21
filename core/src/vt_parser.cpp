@@ -3,7 +3,13 @@
 namespace termcore {
 
 VtParser::VtParser(VtParserHandler& handler)
-    : handler_(handler) {}
+    : handler_(handler) {
+    params_.reserve(16);
+    current_subs_.reserve(4);
+    osc_string_.reserve(512);
+    dcs_data_.reserve(256);
+    intermediates_.reserve(4);
+}
 
 void VtParser::feed(const char* data, size_t len) {
     for (size_t i = 0; i < len; ++i) {
@@ -77,6 +83,10 @@ void VtParser::collectParam(uint8_t byte) {
         if (!param_started_) {
             current_param_ = 0;
             param_started_ = true;
+        }
+        if (current_param_ > 6553) {
+            current_param_ = 65535;
+            return;
         }
         current_param_ = current_param_ * 10 + (byte - '0');
         if (current_param_ > 65535) current_param_ = 65535;
