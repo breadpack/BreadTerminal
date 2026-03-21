@@ -200,6 +200,11 @@ void UnifiedSettingsWindow::drawRoundedRectPath(Gdiplus::GraphicsPath& path,
     path.CloseFigure();
 }
 
+bool UnifiedSettingsWindow::isFontInstalled(const std::wstring& fontName) const {
+    Gdiplus::FontFamily family(fontName.c_str());
+    return family.IsAvailable();
+}
+
 void UnifiedSettingsWindow::notifySave() {
     if (saveCallback_) saveCallback_(config_);
 }
@@ -622,19 +627,6 @@ void UnifiedSettingsWindow::paintBottomBar(Gdiplus::Graphics& g, int w, int h) {
     Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
     Gdiplus::PointF textPt(8.f, (float)barY + 4.f);
     g.DrawString(L"BreadTerminal", -1, &font, textPt, &dimBr);
-}
-
-// ---------------------------------------------------------------------------
-// Content section STUBS (paintContent and paintSettingsItems are in
-// UnifiedSettingsContent.cpp)
-// ---------------------------------------------------------------------------
-
-void UnifiedSettingsWindow::paintKeybindingList(Gdiplus::Graphics& g,
-                                                 int x, int y, int w, int h) {
-    Gdiplus::Font font(L"Segoe UI", 10.f);
-    Gdiplus::SolidBrush dimBr(toGdipColorCR(chrome_.dimText));
-    Gdiplus::PointF pt((float)x, (float)y - scrollY_);
-    g.DrawString(L"[Keybinding list will appear here]", -1, &font, pt, &dimBr);
 }
 
 } // namespace termcore

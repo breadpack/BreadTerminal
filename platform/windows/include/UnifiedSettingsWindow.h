@@ -114,6 +114,13 @@ private:
     void onFontCardUninstall(int idx);
     bool isFontInstalled(const std::wstring& fontName) const;
 
+    // Search (UnifiedSettingsSearch.cpp)
+    void createSearchEdit();
+    void repositionSearchEdit(int windowWidth);
+    void onSearchTextChanged();
+    void clearSearch();
+    void rebuildVisibleCategories();
+
     // Helpers
     std::wstring toWide(const std::string& s) const;
     Gdiplus::Color toGdipColor(uint32_t rgb, BYTE a = 255) const;
@@ -189,6 +196,8 @@ private:
     // Search
     HWND searchEdit_         = nullptr;
     std::wstring searchText_;
+    std::vector<SettingsSearchMatch> searchMatches_;
+    std::vector<std::string> allCategoryIds_;
 
     static const wchar_t* kClassName;
     static bool sClassRegistered;
