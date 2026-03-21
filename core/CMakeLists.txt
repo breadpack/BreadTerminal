@@ -69,6 +69,7 @@ set(TERMCORE_SOURCES
     src/screen_capture.cpp
     src/mcp_server_spec.cpp
     src/terminal_controller.cpp
+    src/input_handler.cpp
     src/font_manager.cpp
     src/selection_manager.cpp
     src/search_controller.cpp

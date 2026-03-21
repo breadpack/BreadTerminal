@@ -1,6 +1,6 @@
 #include "termcore/terminal_controller.h"
+#include "termcore/input_handler.h"
 #include "termcore/lua_config.h"
-#include "termcore/mouse.h"
 #include "termcore/theme_loader.h"
 
 namespace termcore {
@@ -24,6 +24,8 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
         }
         keybindings_->loadFromConfig(bindings);
     }
+
+    initInputHandler();
 }
 
 // --- Lifecycle ---
@@ -80,162 +82,18 @@ void TerminalController::tick() {
     // Platform calls this per frame; currently a placeholder for future use.
 }
 
-// --- Event entry points ---
+// --- Event entry points (delegated to InputHandler) ---
 
 void TerminalController::onKeyEvent(const KeyEvent& e) {
-    // 1. If search active and Escape pressed, close search
-    if (searchCtrl_.isActive() && e.keycode == 0xF70A) { // Escape
-        searchCtrl_.close();
-        if (host_) host_->hideSearchBar();
-        needsRender_ = true;
-        return;
-    }
-
-    // 2. If copy mode active, delegate to vi copy mode
-    if (copyMode_ && copyMode_->isActive()) {
-        char key = 0;
-        if (!e.text.empty()) key = e.text[0];
-        else if (e.keycode < 128) key = static_cast<char>(e.keycode);
-        bool ctrl = (e.modifiers & ModCtrl) != 0;
-        bool shift = (e.modifiers & ModShift) != 0;
-        ViAction result = copyMode_->processKey(key, ctrl, shift);
-        if (result == ViAction::Exit) {
-            copyMode_->exitCopyMode();
-        } else if (result == ViAction::Yank) {
-            std::string text = copyMode_->yankSelection();
-            if (!text.empty() && host_) {
-                host_->setClipboardText(text);
-            }
-            copyMode_->exitCopyMode();
-        }
-        needsRender_ = true;
-        return;
-    }
-
-    // 3. Keybinding lookup
-    if (keybindings_) {
-        KeyCombo combo{e.keycode, e.modifiers};
-        Action action = keybindings_->lookup(combo);
-
-        // Ctrl→Super fallback (cross-platform keybinding compat)
-        if (action == Action::None && (e.modifiers & ModCtrl)) {
-            uint8_t superMods = (e.modifiers & ~ModCtrl) | ModSuper;
-            KeyCombo superCombo{e.keycode, superMods};
-            action = keybindings_->lookup(superCombo);
-        }
-
-        if (action != Action::None) {
-            handleAction(action);
-            return;
-        }
-    }
-
-    // 4. Send VT key sequence for special keys
-    sendVtKey(e.keycode);
+    inputHandler_->onKeyEvent(e);
 }
 
 void TerminalController::onCharInput(const std::string& utf8) {
-    if (searchCtrl_.isActive()) return;
-    if (copyMode_ && copyMode_->isActive()) return;
-
-    Screen* scr = activeScreen();
-    if (scr && !scr->isViewportAtBottom()) {
-        scr->scrollViewportToBottom();
-        needsRender_ = true;
-    }
-
-    sendPtyData(utf8.c_str(), utf8.size());
+    inputHandler_->onCharInput(utf8);
 }
 
 void TerminalController::onMouseEvent(const InputMouseEvent& e) {
-    Screen* scr = activeScreen();
-
-    // Check mouse protocol
-    if (scr && scr->mouseMode() != MouseMode::None) {
-        int gridCol = static_cast<int>(e.x / cellWidth());
-        int gridRow = static_cast<int>(e.y / cellHeight());
-
-        termcore::MouseEvent me;
-        me.col = gridCol;
-        me.row = gridRow;
-        me.shift = (e.modifiers & ModShift) != 0;
-        me.alt = (e.modifiers & ModAlt) != 0;
-        me.ctrl = (e.modifiers & ModCtrl) != 0;
-
-        switch (e.type) {
-            case InputMouseEvent::Press:
-                me.type = MouseEventType::Press;
-                me.button = static_cast<MouseButton>(e.button);
-                break;
-            case InputMouseEvent::Release:
-                me.type = MouseEventType::Release;
-                me.button = MouseButton::Release;
-                break;
-            case InputMouseEvent::Move:
-                me.type = MouseEventType::Move;
-                me.button = static_cast<MouseButton>(e.button);
-                break;
-            case InputMouseEvent::ScrollUp:
-                me.type = MouseEventType::ScrollUp;
-                me.button = MouseButton::ScrollUp;
-                break;
-            case InputMouseEvent::ScrollDown:
-                me.type = MouseEventType::ScrollDown;
-                me.button = MouseButton::ScrollDown;
-                break;
-            default:
-                return;
-        }
-
-        std::string seq = encodeMouseEvent(me, scr->mouseMode(), scr->mouseEncoding());
-        if (!seq.empty()) {
-            sendPtyData(seq.data(), seq.size());
-            return;
-        }
-    }
-
-    // Selection handling
-    float cw = cellWidth();
-    float ch = cellHeight();
-    int offsetX = 0, offsetY = 0;
-
-    // Tab bar offset
-    if (tabCtrl_ && tabCtrl_->tabCount() > 1) {
-        offsetY = static_cast<int>(ch);
-    }
-
-    switch (e.type) {
-        case InputMouseEvent::Press:
-            selMgr_.onMouseDown(e.x, e.y, cw, ch, offsetX, offsetY);
-            needsRender_ = true;
-            break;
-        case InputMouseEvent::Move:
-            selMgr_.onMouseMove(e.x, e.y, cw, ch, offsetX, offsetY);
-            if (selMgr_.isDragging()) needsRender_ = true;
-            break;
-        case InputMouseEvent::Release:
-            selMgr_.onMouseUp(e.x, e.y, cw, ch, offsetX, offsetY);
-            needsRender_ = true;
-            break;
-        case InputMouseEvent::DoubleClick:
-            if (scr) {
-                selMgr_.onDoubleClick(e.x, e.y, cw, ch, offsetX, offsetY, *scr);
-                needsRender_ = true;
-            }
-            break;
-        case InputMouseEvent::ScrollUp:
-            if (scr) {
-                scr->scrollViewportUp(e.scrollLines > 0 ? e.scrollLines : 3);
-                needsRender_ = true;
-            }
-            break;
-        case InputMouseEvent::ScrollDown:
-            if (scr) {
-                scr->scrollViewportDown(e.scrollLines > 0 ? e.scrollLines : 3);
-                needsRender_ = true;
-            }
-            break;
-    }
+    inputHandler_->onMouseEvent(e);
 }
 
 void TerminalController::onResize(int pixelW, int pixelH) {
@@ -608,43 +466,6 @@ void TerminalController::sendPtyData(const char* data, size_t len) {
     }
 }
 
-void TerminalController::sendVtKey(uint32_t keycode) {
-    Screen* scr = activeScreen();
-    bool appCursor = scr && scr->appCursorKeys();
-    const char* pfx = appCursor ? "\x1bO" : "\x1b[";
-
-    switch (keycode) {
-        case 0xF700: { char s[3]={pfx[0],pfx[1],'A'}; sendPtyData(s,3); } return;
-        case 0xF701: { char s[3]={pfx[0],pfx[1],'B'}; sendPtyData(s,3); } return;
-        case 0xF702: { char s[3]={pfx[0],pfx[1],'C'}; sendPtyData(s,3); } return;
-        case 0xF703: { char s[3]={pfx[0],pfx[1],'D'}; sendPtyData(s,3); } return;
-        case 0xF704: sendPtyData("\x1b[H", 3); return;   // Home
-        case 0xF705: sendPtyData("\x1b[F", 3); return;   // End
-        case 0xF706: sendPtyData("\x1b[5~", 4); return;  // PageUp
-        case 0xF707: sendPtyData("\x1b[6~", 4); return;  // PageDown
-        case 0xF708: sendPtyData("\t", 1); return;        // Tab
-        case 0xF709: sendPtyData("\r", 1); return;        // Return
-        case 0xF70A: sendPtyData("\x1b", 1); return;      // Escape
-        case 0xF70B: sendPtyData("\x7f", 1); return;      // Backspace
-        case 0xF70D: sendPtyData("\x1b[3~", 4); return;   // Delete
-        // F-keys
-        case 0xF710: sendPtyData("\x1bOP", 3); return;
-        case 0xF711: sendPtyData("\x1bOQ", 3); return;
-        case 0xF712: sendPtyData("\x1bOR", 3); return;
-        case 0xF713: sendPtyData("\x1bOS", 3); return;
-        case 0xF714: sendPtyData("\x1b[15~", 5); return;
-        case 0xF715: sendPtyData("\x1b[17~", 5); return;
-        case 0xF716: sendPtyData("\x1b[18~", 5); return;
-        case 0xF717: sendPtyData("\x1b[19~", 5); return;
-        case 0xF718: sendPtyData("\x1b[20~", 5); return;
-        case 0xF719: sendPtyData("\x1b[21~", 5); return;
-        case 0xF71A: sendPtyData("\x1b[23~", 5); return;
-        case 0xF71B: sendPtyData("\x1b[24~", 5); return;
-        default:
-            break;
-    }
-}
-
 void TerminalController::pasteText(const std::string& text) {
     Screen* scr = activeScreen();
     bool bracketed = scr && scr->bracketedPaste();
@@ -689,6 +510,23 @@ void TerminalController::pasteText(const std::string& text) {
     } else {
         sendPtyData(text.c_str(), text.size());
     }
+}
+
+void TerminalController::initInputHandler() {
+    InputHandler::Deps deps;
+    deps.host = host_;
+    deps.keybindings = keybindings_.get();
+    deps.searchCtrl = &searchCtrl_;
+    deps.selMgr = &selMgr_;
+    deps.handleAction = [this](Action a) { handleAction(a); };
+    deps.sendPtyData = [this](const char* d, size_t n) { sendPtyData(d, n); };
+    deps.activeScreen = [this]() -> Screen* { return activeScreen(); };
+    deps.getCopyMode = [this]() -> ViCopyMode* { return copyMode_.get(); };
+    deps.tabCount = [this]() -> int { return tabCount(); };
+    deps.cellWidth = [this]() { return cellWidth(); };
+    deps.cellHeight = [this]() { return cellHeight(); };
+    deps.needsRender = [this]() -> bool& { return needsRender_; };
+    inputHandler_ = std::make_unique<InputHandler>(std::move(deps));
 }
 
 } // namespace termcore

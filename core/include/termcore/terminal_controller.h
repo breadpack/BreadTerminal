@@ -12,6 +12,7 @@
 #include "termcore/url_detector.h"
 #include "termcore/paste_guard.h"
 #include "termcore/vi_copy_mode.h"
+#include "termcore/input_handler.h"
 #include <memory>
 #include <string>
 
@@ -73,7 +74,6 @@ public:
 private:
     void handleAction(Action action);
     void sendPtyData(const char* data, size_t len);
-    void sendVtKey(uint32_t keycode);
     void pasteText(const std::string& text);
 
     IPlatformHost* host_;
@@ -90,9 +90,13 @@ private:
     UrlDetector urlDetector_;
     std::vector<DetectedUrl> detectedUrls_;
 
+    std::unique_ptr<InputHandler> inputHandler_;
+
     int termRows_ = 24;
     int termCols_ = 80;
     bool needsRender_ = false;
+
+    void initInputHandler();
 };
 
 } // namespace termcore
