@@ -213,8 +213,22 @@ void GtkPlatformHost::showNotification(const std::string& title,
 // --- Settings/Hub windows ---
 
 void GtkPlatformHost::openSettingsWindow(const termcore::Config& config) {
+#if defined(__linux__)
+    if (!settingsWindow_) {
+        settingsWindow_ = std::make_unique<termcore::UnifiedSettingsWindow>();
+    }
+
+    settingsWindow_->setConfig(config);
+    settingsWindow_->setSaveCallback([this](const termcore::Config& /*newConfig*/) {
+        // TODO: Wire up ConfigApplier to apply changes to the terminal
+        g_debug("BreadTerminal: settings saved");
+    });
+
+    GtkWindow* parent = resolveWindow();
+    settingsWindow_->show(parent);
+#else
     (void)config;
-    g_debug("BreadTerminal: openSettingsWindow (not yet implemented)");
+#endif
 }
 
 // --- DPI ---

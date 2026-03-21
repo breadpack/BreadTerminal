@@ -18,6 +18,11 @@ add_library(termcore_linux STATIC
     src/GtkPlatformHost.cpp
     src/TerminalWidget.cpp
     src/TerminalInput.cpp
+    src/UnifiedSettingsWindow.cpp
+    src/UnifiedSettingsSidebar.cpp
+    src/UnifiedSettingsContent.cpp
+    src/UnifiedSettingsThemeCards.cpp
+    src/UnifiedSettingsFontCards.cpp
 )
 
 target_include_directories(termcore_linux

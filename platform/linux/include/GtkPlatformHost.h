@@ -3,6 +3,7 @@
 
 #include "termcore/platform_host.h"
 #include "termcore/config.h"
+#include "UnifiedSettingsWindow.h"
 #include <gtk/gtk.h>
 #include <functional>
 #include <memory>
@@ -59,6 +60,9 @@ private:
 
     // Synchronous clipboard text (filled by async read, used by getClipboardText)
     std::string pendingClipboardText_;
+
+    // Unified settings window
+    std::unique_ptr<termcore::UnifiedSettingsWindow> settingsWindow_;
 };
 
 #endif // BREAD_GTK_PLATFORM_HOST_H
