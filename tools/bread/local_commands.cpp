@@ -31,6 +31,7 @@ int cmdCapabilities(const ParsedArgs& args) {
     caps.push_back("osc9_notifications");
     caps.push_back("kitty_graphics");
     caps.push_back("sixel_graphics");
+    caps.push_back("iterm2_inline_images");
     caps.push_back("bracketed_paste");
     caps.push_back("mouse_reporting");
     caps.push_back("truecolor");

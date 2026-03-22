@@ -50,6 +50,13 @@ public:
     /// Delete images/placements by criteria
     void deleteByImageId(uint32_t id);
 
+    /// Add a pre-built image (used by iTerm2 protocol integration).
+    /// Returns the assigned image ID.
+    uint32_t addImage(KittyImage image);
+
+    /// Add a placement directly (used by iTerm2 protocol integration).
+    void addPlacement(const KittyPlacement& placement);
+
 private:
     struct PendingTransmit {
         KittyImage image;

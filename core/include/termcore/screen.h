@@ -2,6 +2,7 @@
 #define TERMCORE_SCREEN_H
 
 #include "termcore/dynamic_colors.h"
+#include "termcore/kitty_graphics.h"
 #include "termcore/kitty_keyboard.h"
 #include "termcore/vt_parser.h"
 #include <chrono>
@@ -192,6 +193,16 @@ public:
     const DynamicColors& dynamicColors() const { return dynamic_colors_; }
     void initDynamicColors(const Config& cfg);
 
+    // --- Kitty graphics (also used for iTerm2 inline images) ---
+    KittyGraphicsManager& kittyGraphics() { return kitty_graphics_; }
+    const KittyGraphicsManager& kittyGraphics() const { return kitty_graphics_; }
+
+    // --- Cell size hints (for iTerm2 image dimension calculation) ---
+    void setCellSize(int width_px, int height_px) {
+        cell_width_px_ = width_px;
+        cell_height_px_ = height_px;
+    }
+
     // --- Dirty tracking ---
     /// Returns true if any row has been modified since the last clearDirty().
     bool isDirty() const { return screen_dirty_; }
@@ -295,6 +306,11 @@ private:
     // Dynamic colors
     DynamicColors dynamic_colors_;
 
+    // Image protocols (Kitty graphics + iTerm2 inline images)
+    KittyGraphicsManager kitty_graphics_;
+    int cell_width_px_ = 8;
+    int cell_height_px_ = 16;
+
     // Callbacks
     ResponseCallback response_callback_;
     ParserFeedCallback parser_feed_callback_;
@@ -381,6 +397,7 @@ private:
     void handleOscPaletteColor(const std::string& str);
     void handleOscDynamicColor(int osc_number, const std::string& str);
     void handleOscResetColor(int osc_number, const std::string& str);
+    void handleOscItermImage(const std::string& str);
 
     // Alt screen helpers
     void switchToAltScreen(bool save_cursor);

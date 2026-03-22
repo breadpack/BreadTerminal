@@ -1,4 +1,5 @@
 #include "termcore/screen.h"
+#include "termcore/iterm_image.h"
 #include <algorithm>
 #include <optional>
 #include <sstream>
@@ -521,6 +522,89 @@ std::pair<int,int> Screen::outputRegionAt(int row) const {
         return {output_start, output_end};
     }
     return {-1, -1};
+}
+
+// --- OSC 1337: iTerm2 inline image protocol ---
+void Screen::handleOscItermImage(const std::string& str) {
+    // Format: File=[params]:[base64_data]
+    // Only handle "File=" prefix
+    const std::string prefix = "File=";
+    if (str.size() < prefix.size() ||
+        str.compare(0, prefix.size(), prefix) != 0) {
+        return;
+    }
+
+    std::string after_file = str.substr(prefix.size());
+
+    ITermImageParams params;
+    std::string base64_payload;
+    if (!parseITermImageOsc(after_file, params, base64_payload)) {
+        return;
+    }
+
+    // Only display inline images (inline=1)
+    if (!params.inline_display) {
+        return;
+    }
+
+    // Decode base64 payload
+    auto raw_data = iTermBase64Decode(base64_payload);
+    if (raw_data.empty()) {
+        return;
+    }
+
+    // Decode image (PNG, JPEG, GIF, BMP) into RGBA pixels
+    int img_width = 0, img_height = 0;
+    std::vector<uint8_t> rgba_pixels;
+    if (!decodeImageData(raw_data, img_width, img_height, rgba_pixels)) {
+        return;
+    }
+
+    // Calculate display cell dimensions
+    int display_cols = 0, display_rows = 0;
+    calculateDisplayCells(params,
+                          cell_width_px_, cell_height_px_,
+                          cols_, rows_,
+                          img_width, img_height,
+                          display_cols, display_rows);
+
+    // Store the image using the Kitty graphics infrastructure.
+    // This reuses the existing image rendering pipeline.
+    KittyImage image;
+    image.id = 0; // Will be assigned by the manager
+    image.width = img_width;
+    image.height = img_height;
+    image.format = 32; // RGBA
+    image.data = std::move(rgba_pixels);
+    image.complete = true;
+
+    uint32_t image_id = kitty_graphics_.addImage(std::move(image));
+
+    // Create a placement at the current cursor position
+    KittyPlacement placement;
+    placement.image_id = image_id;
+    placement.placement_id = 0;
+    placement.x = cursor_.col;
+    placement.y = cursor_.row;
+    placement.cols = display_cols;
+    placement.rows = display_rows;
+
+    kitty_graphics_.addPlacement(placement);
+
+    // Move cursor past the image area (to the line after the image)
+    cursor_.row += display_rows;
+    if (cursor_.row >= rows_) {
+        // Scroll as needed
+        int overflow = cursor_.row - rows_ + 1;
+        for (int i = 0; i < overflow; ++i) {
+            scrollUp(scroll_top_, scroll_bottom_);
+        }
+        cursor_.row = rows_ - 1;
+    }
+    cursor_.col = 0;
+    wrap_pending_ = false;
+
+    markAllDirty();
 }
 
 } // namespace termcore
