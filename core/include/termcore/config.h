@@ -43,8 +43,12 @@ struct Config {
     // Minimum contrast ratio (WCAG 2.0): 1.0 = disabled, up to 21.0
     float minimum_contrast = 1.0f;
 
-    // Quick terminal / visor mode hotkey (e.g., "ctrl+`")
-    std::string quick_terminal_hotkey;
+    // Quick terminal / visor mode
+    std::string quick_terminal_hotkey;        // global hotkey (e.g., "ctrl+`", "F12")
+    float quick_terminal_height = 0.4f;       // dropdown height as fraction of screen (0.1-1.0)
+    int quick_terminal_animation_ms = 150;    // slide animation duration in milliseconds
+    std::string quick_terminal_position = "top";  // top, bottom, left, right
+    bool quick_terminal_auto_hide = true;     // hide on focus loss
 
     // Terminal
     int scrollback_limit = 10000;
