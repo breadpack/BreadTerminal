@@ -112,8 +112,10 @@ public:
     /// Tab information for the tab bar.
     struct TabInfo {
         std::string title;
+        std::string icon_name;         // OSC 1 icon name
+        std::string process_name;      // foreground process (for icon selection)
         bool active = false;
-        bool has_unread = false;      // show dot indicator
+        bool has_unread = false;       // show dot indicator
         bool needs_attention = false;  // highlight tab background
     };
 

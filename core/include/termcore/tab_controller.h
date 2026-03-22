@@ -57,7 +57,14 @@ public:
     }
 
     // Tab bar info for renderer
-    struct TabInfo { std::string title; bool active; };
+    struct TabInfo {
+        std::string title;
+        std::string icon_name;       // OSC 1 icon name (e.g. process indicator)
+        std::string process_name;    // foreground process name (from PTY)
+        bool active = false;
+        bool has_unread = false;     // unread output in background tab
+        bool needs_attention = false; // process requesting attention
+    };
     std::vector<TabInfo> tabBarInfo() const;
     int tabCount() const;
 

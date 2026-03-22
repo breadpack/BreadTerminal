@@ -6,6 +6,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
+#include <psapi.h>
 
 namespace termcore {
 
@@ -201,7 +203,86 @@ public:
         }
     }
 
+    std::string foregroundProcessName() const override {
+        if (process_ == INVALID_HANDLE_VALUE) return {};
+        DWORD shellPid = GetProcessId(process_);
+        if (shellPid == 0) return {};
+
+        // Find the deepest child process in the tree
+        DWORD targetPid = shellPid;
+        for (int depth = 0; depth < 10; ++depth) {
+            DWORD childPid = findChildProcess(targetPid);
+            if (childPid == 0) break;
+            targetPid = childPid;
+        }
+
+        // Get process name
+        HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, targetPid);
+        if (!proc) return {};
+        wchar_t path[MAX_PATH];
+        DWORD pathLen = MAX_PATH;
+        std::string name;
+        if (QueryFullProcessImageNameW(proc, 0, path, &pathLen)) {
+            // Extract basename
+            std::wstring ws(path, pathLen);
+            auto slash = ws.find_last_of(L"\\/");
+            std::wstring base = (slash != std::wstring::npos) ? ws.substr(slash + 1) : ws;
+            // Convert to UTF-8
+            int sz = WideCharToMultiByte(CP_UTF8, 0, base.c_str(), -1, NULL, 0, NULL, NULL);
+            if (sz > 0) {
+                name.resize(sz - 1);
+                WideCharToMultiByte(CP_UTF8, 0, base.c_str(), -1, name.data(), sz, NULL, NULL);
+            }
+        }
+        CloseHandle(proc);
+
+        // Strip .exe suffix for cleaner display
+        if (name.size() > 4) {
+            std::string suffix = name.substr(name.size() - 4);
+            if (suffix == ".exe" || suffix == ".EXE") {
+                name = name.substr(0, name.size() - 4);
+            }
+        }
+        return name;
+    }
+
+    std::string foregroundCwd() const override {
+        // Getting CWD of another process on Windows requires NtQueryInformationProcess
+        // which is complex. For now, return empty — OSC 7 is the preferred path.
+        return {};
+    }
+
 private:
+    static DWORD findChildProcess(DWORD parentPid) {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snap == INVALID_HANDLE_VALUE) return 0;
+
+        PROCESSENTRY32W pe = {};
+        pe.dwSize = sizeof(pe);
+        DWORD childPid = 0;
+        FILETIME latestCreation = {};
+
+        if (Process32FirstW(snap, &pe)) {
+            do {
+                if (pe.th32ParentProcessID == parentPid) {
+                    // Pick the most recently created child
+                    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+                    if (proc) {
+                        FILETIME creation, exit, kernel, user;
+                        if (GetProcessTimes(proc, &creation, &exit, &kernel, &user)) {
+                            if (CompareFileTime(&creation, &latestCreation) > 0) {
+                                latestCreation = creation;
+                                childPid = pe.th32ProcessID;
+                            }
+                        }
+                        CloseHandle(proc);
+                    }
+                }
+            } while (Process32NextW(snap, &pe));
+        }
+        CloseHandle(snap);
+        return childPid;
+    }
     void cleanup() {
         if (hpc_ != INVALID_HANDLE_VALUE) {
             ClosePseudoConsole(hpc_);

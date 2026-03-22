@@ -127,14 +127,14 @@ public:
     /// Load keybindings from config-style strings: "trigger=action"
     void loadFromConfig(const std::vector<std::pair<std::string, std::string>>& bindings);
 
+    /// Load a preset, replacing all current bindings
+    void loadPreset(KeymapPreset preset);
+
     /// Get all current bindings
     const std::vector<Keybinding>& allBindings() const { return bindings_; }
 
     /// Reset to defaults
     void resetDefaults();
-
-    /// Load a named preset (replaces current bindings)
-    void loadPreset(KeymapPreset preset);
 
     /// Number of bindings
     size_t count() const { return bindings_.size(); }

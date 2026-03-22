@@ -34,6 +34,7 @@ std::string SettingsModel::stringValue(const Config& cfg, const std::string& key
     if (key == "font_family") return cfg.font_family;
     if (key == "theme") return cfg.theme;
     if (key == "default_profile_id") return cfg.default_profile_id;
+    if (key == "keybinding_preset") return cfg.keybinding_preset;
     return {};
 }
 
@@ -77,7 +78,8 @@ uint32_t SettingsModel::colorValue(const Config& cfg, const std::string& key) {
 static bool isStringKey(const std::string& key) {
     return key == "shell" || key == "cursor_style" ||
            key == "clipboard_paste_protection" || key == "font_family" ||
-           key == "theme" || key == "default_profile_id";
+           key == "theme" || key == "default_profile_id" ||
+           key == "keybinding_preset";
 }
 
 static bool isFloatKey(const std::string& key) {
@@ -186,6 +188,11 @@ void SettingsModel::buildCategories() {
 
     // -- Keyboard --
     categories_.push_back({"keyboard", "Keyboard", "", SectionType::Settings, {}});
+
+    categories_.push_back({"keyboard.preset", "Preset", "keyboard", SectionType::Settings, {
+        {"keybinding_preset", "Keybinding Preset", "Load keybindings from another terminal. Your custom keymaps are applied on top.",
+         SettingType::Dropdown, {0, 0, 0, {"Default", "Ghostty", "Kitty", "tmux", "Warp", "Windows Terminal", "Alacritty", "iTerm2"}}, false},
+    }});
 
     categories_.push_back({"keyboard.bindings", "Keybindings", "keyboard", SectionType::KeybindingList, {}});
 

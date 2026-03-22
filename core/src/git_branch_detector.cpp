@@ -76,7 +76,13 @@ std::string GitBranchDetector::findGitDir(const std::string& cwd) const {
                         linked_dir.pop_back();
                     }
                     // Resolve relative path
-                    if (!linked_dir.empty() && linked_dir[0] != '/') {
+#if defined(_WIN32)
+                    bool is_absolute = (linked_dir.size() >= 2 && linked_dir[1] == ':')
+                                    || (!linked_dir.empty() && (linked_dir[0] == '/' || linked_dir[0] == '\\'));
+#else
+                    bool is_absolute = !linked_dir.empty() && linked_dir[0] == '/';
+#endif
+                    if (!is_absolute) {
                         linked_dir = dir + "/" + linked_dir;
                     }
                     if (fileExists(linked_dir + "/HEAD")) {
@@ -87,15 +93,33 @@ std::string GitBranchDetector::findGitDir(const std::string& cwd) const {
         }
 
         // Move to parent directory
+#if defined(_WIN32)
+        auto pos = dir.find_last_of("/\\");
+#else
         auto pos = dir.find_last_of('/');
-        if (pos == std::string::npos || pos == 0) {
-            // Check root
-            if (pos == 0 && dir.size() > 1) {
+#endif
+        if (pos == std::string::npos) {
+            break;
+        }
+#if defined(_WIN32)
+        // Windows drive root: "C:\" — stop after checking it
+        if (pos <= 2 && dir.size() >= 2 && dir[1] == ':') {
+            if (dir.size() > 3) {
+                dir = dir.substr(0, 3); // "C:\"
+                continue;
+            }
+            break;
+        }
+#else
+        // Unix root "/"
+        if (pos == 0) {
+            if (dir.size() > 1) {
                 dir = "/";
                 continue;
             }
             break;
         }
+#endif
         dir = dir.substr(0, pos);
     }
 

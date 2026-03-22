@@ -6,6 +6,26 @@
 
 namespace termcore {
 
+// Decode first UTF-8 codepoint from a string
+static char32_t firstCodepoint(const std::string& s) {
+    if (s.empty()) return 0;
+    auto b = static_cast<unsigned char>(s[0]);
+    if (b < 0x80) return b;
+    char32_t cp = 0;
+    int extra = 0;
+    if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; extra = 1; }
+    else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; extra = 2; }
+    else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; extra = 3; }
+    else return 0;
+    if (static_cast<int>(s.size()) < extra + 1) return 0;
+    for (int i = 1; i <= extra; ++i) {
+        auto c = static_cast<unsigned char>(s[i]);
+        if ((c & 0xC0) != 0x80) return 0;
+        cp = (cp << 6) | (c & 0x3F);
+    }
+    return cp;
+}
+
 void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                                                  float cellW, float cellH,
                                                  float ascent,
@@ -305,6 +325,37 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             float textX = tabX + tabPadX;
             float textMaxX = tabX + tabW - (showClose ? closeW + 4.0f : tabPadX);
             float textCenterY = tabY + (tabH - cellH) * 0.5f;
+
+            // Icon prefix: use OSC 1 icon_name if set by the process
+            char32_t icon = firstCodepoint(tab.icon_name);
+            if (icon != 0) {
+                uint32_t iconColor = tab.active
+                    ? tabBar.accent_color
+                    : blendColor(tabBar.accent_color, tabBar.bg_color, 0.4f);
+                CollectionFaceId iconFace = fontCollection->resolveFace(icon);
+                if (iconFace != kInvalidCollectionFace) {
+                    FontFaceId iconRastFace = fontCollection->rasterizerFaceId(iconFace);
+                    uint32_t iconGlyphIdx = rasterizer->getGlyphIndex(iconRastFace, icon);
+                    if (iconGlyphIdx != 0) {
+                        GlyphKey iconKey{iconRastFace, iconGlyphIdx, {0, 0}};
+                        auto iconInfo = glyphCache->getOrRasterize(
+                            iconKey, fontSize, *rasterizer, *glyphAtlas);
+                        if (iconInfo && iconInfo->region.width > 0) {
+                            D3DCellInstance iconInst = {};
+                            iconInst.position[0] = textX + iconInfo->region.bearing_x;
+                            iconInst.position[1] = textCenterY + ascent - iconInfo->region.bearing_y;
+                            iconInst.atlas_uv[0] = (float)iconInfo->region.x;
+                            iconInst.atlas_uv[1] = (float)iconInfo->region.y;
+                            iconInst.atlas_size[0] = (float)iconInfo->region.width;
+                            iconInst.atlas_size[1] = (float)iconInfo->region.height;
+                            colorFromRGBA(iconColor | 0xFF000000, iconInst.fg_color);
+                            iconInst.flags = 1;
+                            cellInstances.push_back(iconInst);
+                        }
+                    }
+                }
+                textX += cellW * 1.2f;  // space after icon
+            }
 
             for (size_t i = 0; i < title.size(); ++i) {
                 char32_t cp = static_cast<char32_t>(

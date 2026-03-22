@@ -77,6 +77,7 @@ struct Config {
     std::string theme;  // Theme name or "dark:name,light:name"
 
     // Keybindings
+    std::string keybinding_preset;  // Preset name: "Ghostty", "Kitty", "tmux", etc.
     std::vector<KeyBinding> keybindings;
 
     // Profiles (user-defined only — auto-detected are runtime)

@@ -265,6 +265,7 @@ TEST(KeymapPresetTest, AllPresetsProduceValidBindings) {
     }
 }
 
+
 // --- New profile action tests ---
 
 TEST(ActionParseTest, ProfileActions) {

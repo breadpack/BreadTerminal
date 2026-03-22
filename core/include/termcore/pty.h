@@ -45,6 +45,14 @@ public:
 
     /// Send signal to child process.
     virtual void signal(int sig) = 0;
+
+    /// Get the foreground (deepest child) process name.
+    /// Returns empty string if not available.
+    virtual std::string foregroundProcessName() const { return {}; }
+
+    /// Get the current working directory of the foreground process.
+    /// Returns empty string if not available.
+    virtual std::string foregroundCwd() const { return {}; }
 };
 
 /// Factory function

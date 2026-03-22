@@ -216,7 +216,7 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
         }
 
         case SettingType::Dropdown: {
-            // Pill buttons: horizontal row of 72x26 rounded pills
+            // Pill buttons: auto-width based on text, wrapping to next row if needed
             const auto& options = item.meta.options;
             std::string current = getConfigString(config_, item.key);
 
@@ -228,21 +228,35 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
                 }
             }
 
-            float pillW = 72.f, pillH = 26.f, pillGap = 6.f;
+            constexpr float pillH = 26.f, pillGap = 6.f, pillPadX = 16.f;
+            constexpr float pillMinW = 52.f, rowGap = 4.f;
+            float maxX = ctrlX + (float)w - 320.f; // available width for pills
             float px = ctrlX;
+            float py = ctrlY;
 
             for (const auto& opt : options) {
                 bool active = (opt == current);
+                std::wstring wopt = toWide(opt);
+
+                // Measure text width for auto-sizing
+                Gdiplus::RectF bounds;
+                g.MeasureString(wopt.c_str(), -1, &valueFont, Gdiplus::PointF(0, 0), &bounds);
+                float pillW = (std::max)(pillMinW, bounds.Width + pillPadX);
+
+                // Wrap to next row if needed
+                if (px + pillW > maxX && px > ctrlX) {
+                    px = ctrlX;
+                    py += pillH + rowGap;
+                }
 
                 if (active) {
-                    drawRoundedRect(g, &accentBr, px, ctrlY, pillW, pillH, pillH / 2.f);
+                    drawRoundedRect(g, &accentBr, px, py, pillW, pillH, pillH / 2.f);
                 } else {
-                    drawRoundedRect(g, &btnBr, px, ctrlY, pillW, pillH, pillH / 2.f);
+                    drawRoundedRect(g, &btnBr, px, py, pillW, pillH, pillH / 2.f);
                 }
 
                 // Pill label (centered)
-                std::wstring wopt = toWide(opt);
-                Gdiplus::RectF pillRect(px, ctrlY, pillW, pillH);
+                Gdiplus::RectF pillRect(px, py, pillW, pillH);
                 Gdiplus::StringFormat fmt;
                 fmt.SetAlignment(Gdiplus::StringAlignmentCenter);
                 fmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
@@ -421,11 +435,24 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
 
         case SettingType::Dropdown: {
             const auto& options = item.meta.options;
-            float pillW = 72.f, pillH = 26.f, pillGap = 6.f;
+            constexpr float pillH = 26.f, pillGap = 6.f, pillPadX = 16.f;
+            constexpr float pillMinW = 52.f, rowGap = 4.f;
+            RECT clientRc;
+            GetClientRect(hwnd_, &clientRc);
+            float maxX = ctrlX + (float)(clientRc.right - clientRc.left) - sidebarWidth_ - kUsContentPad * 2 - 320.f;
+            // Estimate pill widths using approximate character width (7px per char)
             float px = ctrlX;
+            float py = ctrlY;
             for (int i = 0; i < (int)options.size(); ++i) {
+                float textW = (float)options[i].size() * 7.f;
+                float pillW = (std::max)(pillMinW, textW + pillPadX);
+                // Wrap to next row if needed
+                if (px + pillW > maxX && px > ctrlX) {
+                    px = ctrlX;
+                    py += pillH + rowGap;
+                }
                 if ((float)mx >= px && (float)mx < px + pillW &&
-                    (float)my >= ctrlY && (float)my < ctrlY + pillH) {
+                    (float)my >= py && (float)my < py + pillH) {
                     if (item.key == "background_blur") {
                         setConfigInt(config_, item.key, i);
                     } else {

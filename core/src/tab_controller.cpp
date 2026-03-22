@@ -3,6 +3,97 @@
 
 namespace termcore {
 
+// Check if a title looks like a bare shell/process name
+static bool isShellName(const std::string& s) {
+    // Strip path to get basename
+    auto slash = s.find_last_of("/\\");
+    std::string base = (slash != std::string::npos) ? s.substr(slash + 1) : s;
+
+    // Common shell executables
+    static const char* shells[] = {
+        "cmd.exe", "cmd", "powershell.exe", "powershell",
+        "pwsh.exe", "pwsh", "bash", "bash.exe",
+        "zsh", "fish", "sh", "wsl.exe", "wsl",
+        "Command Prompt", "Windows PowerShell",
+    };
+    for (auto* sh : shells) {
+        if (base == sh) return true;
+    }
+    return false;
+}
+
+// Extract last path component from a path string
+static std::string lastPathComponent(const std::string& path) {
+    if (path.empty()) return {};
+    // Trim trailing slashes
+    size_t end = path.size();
+    while (end > 0 && (path[end - 1] == '/' || path[end - 1] == '\\')) --end;
+    if (end == 0) return "/";
+    auto slash = path.find_last_of("/\\", end - 1);
+    if (slash == std::string::npos) return path.substr(0, end);
+    return path.substr(slash + 1, end - slash - 1);
+}
+
+// Build a display title for a tab.
+// Priority: meaningful screen title > process name > working directory > shell name
+// Examples:
+//   title="vim main.cpp" → "vim main.cpp"
+//   title="cmd.exe", proc="git", cwd="" → "git"
+//   title="cmd.exe", proc="cmd", cwd="C:\Projects\Foo" → "Foo"
+//   title="MINGW64:/c/Users/.../Foo" → "MINGW64:Foo"
+//   title="", proc="python", cwd="" → "python"
+static std::string buildTabTitle(const std::string& title, const std::string& cwd,
+                                  const std::string& processName = {}) {
+    if (title.empty() && cwd.empty() && processName.empty()) return {};
+
+    // If the screen title is a shell name, look for better info
+    if (title.empty() || isShellName(title)) {
+        // If foreground process differs from shell, show it (e.g. "git", "python", "vim")
+        if (!processName.empty() && !isShellName(processName)) {
+            return processName;
+        }
+        // Otherwise show working directory
+        if (!cwd.empty()) {
+            std::string dir = lastPathComponent(cwd);
+            if (!dir.empty()) return dir;
+        }
+        // Fall back to process name even if it's a shell
+        if (!processName.empty()) return processName;
+        if (!title.empty()) return title;
+        return {};
+    }
+
+    // Handle "PREFIX:path" patterns (e.g. "MINGW64:/c/Users/.../Foo")
+    auto colon = title.find(':');
+    if (colon != std::string::npos && colon < 20) {
+        std::string after = title.substr(colon + 1);
+        size_t start = 0;
+        while (start < after.size() && after[start] == ' ') ++start;
+        after = after.substr(start);
+        bool looksLikePath = false;
+        if (!after.empty() && (after[0] == '/' || after[0] == '~'))
+            looksLikePath = true;
+        if (after.size() >= 2 && std::isalpha(after[0]) && after[1] == ':')
+            looksLikePath = true;
+        if (after.size() >= 3 && after[0] == '/' && std::isalpha(after[1]) && after[2] == '/')
+            looksLikePath = true;
+
+        if (looksLikePath) {
+            std::string prefix = title.substr(0, colon + 1);
+            std::string dir = lastPathComponent(after);
+            return dir.empty() ? title : prefix + dir;
+        }
+    }
+
+    // If title itself is a long path, shorten it
+    if (title.find_first_of("/\\") != std::string::npos) {
+        std::string dir = lastPathComponent(title);
+        if (!dir.empty()) return dir;
+    }
+
+    return title;
+}
+
 TabController::TabController(std::unique_ptr<Mux> mux, WorkspaceId wsId,
                              PtyFactory ptyFactory, const Config& config)
     : mux_(std::move(mux))
@@ -117,10 +208,40 @@ std::vector<TabController::TabInfo> TabController::tabBarInfo() const {
 
     for (size_t i = 0; i < ws->tabs.size(); ++i) {
         TabInfo ti;
-        ti.title = ws->tabs[i]->title.empty()
-            ? "Tab " + std::to_string(i + 1)
-            : ws->tabs[i]->title;
         ti.active = (i == ws->active_tab_index);
+
+        // Gather info from active pane's screen and PTY
+        std::string screenTitle;
+        std::string iconName;
+        std::string cwd;
+        std::string processName;
+        PaneId activePane = ws->tabs[i]->active_pane;
+        auto it = panes_.find(activePane);
+        if (it != panes_.end()) {
+            if (it->second->screen) {
+                screenTitle = it->second->screen->title();
+                iconName = it->second->screen->iconName();
+                cwd = it->second->screen->workingDirectory();
+            }
+            if (it->second->pty) {
+                processName = it->second->pty->foregroundProcessName();
+            }
+        }
+
+        // Build display title
+        std::string built = buildTabTitle(screenTitle, cwd, processName);
+        if (!built.empty()) {
+            ti.title = built;
+        } else if (!ws->tabs[i]->title.empty()) {
+            ti.title = ws->tabs[i]->title;
+        } else {
+            ti.title = "Tab " + std::to_string(i + 1);
+        }
+
+        // Pass through icon name and process name for renderer
+        ti.icon_name = iconName;
+        ti.process_name = processName;
+
         info.push_back(std::move(ti));
     }
     return info;

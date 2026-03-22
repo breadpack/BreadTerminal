@@ -222,7 +222,8 @@ void TerminalWindowState::renderFrame() {
     termcore::Screen* screen = controller->activeScreen();
     if (!screen) return;
 
-    // Update selection on renderer
+    // Update tab bar and selection on renderer
+    updateTabBar();
     updateRendererSelection();
 
     renderer->render(*screen);
@@ -282,7 +283,11 @@ void TerminalWindowState::updateTabBar() {
     for (size_t i = 0; i < tabs.size(); ++i) {
         D3DTextRenderer::TabInfo ti;
         ti.title = tabs[i].title;
+        ti.icon_name = tabs[i].icon_name;
+        ti.process_name = tabs[i].process_name;
         ti.active = tabs[i].active;
+        ti.has_unread = tabs[i].has_unread;
+        ti.needs_attention = tabs[i].needs_attention;
         tabInfo.tabs.push_back(ti);
     }
 

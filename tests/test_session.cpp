@@ -270,7 +270,8 @@ TEST(SessionTest, UnknownVersionReturnsNullopt) {
     EXPECT_FALSE(loaded.ok());
 }
 
-// Test: file permissions are 0600
+// Test: file permissions are 0600 (Unix only — Windows NTFS doesn't use POSIX permissions)
+#if !defined(_WIN32)
 TEST(SessionTest, FilePermissions) {
     TempDir tmp;
     termcore::SessionManager mgr;
@@ -292,6 +293,7 @@ TEST(SessionTest, FilePermissions) {
     EXPECT_EQ(perms & fs::perms::others_read, fs::perms::none);
     EXPECT_EQ(perms & fs::perms::others_write, fs::perms::none);
 }
+#endif
 
 // Test: no saved session
 TEST(SessionTest, NoSavedSession) {

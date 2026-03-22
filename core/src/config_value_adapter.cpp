@@ -16,6 +16,7 @@ std::string getConfigString(const Config& cfg, const std::string& key) {
     if (key == "theme") return cfg.theme;
     if (key == "quick_terminal_hotkey") return cfg.quick_terminal_hotkey;
     if (key == "default_profile_id") return cfg.default_profile_id;
+    if (key == "keybinding_preset") return cfg.keybinding_preset;
     return {};
 }
 
@@ -27,6 +28,7 @@ void setConfigString(Config& cfg, const std::string& key, const std::string& val
     else if (key == "theme") cfg.theme = val;
     else if (key == "quick_terminal_hotkey") cfg.quick_terminal_hotkey = val;
     else if (key == "default_profile_id") cfg.default_profile_id = val;
+    else if (key == "keybinding_preset") cfg.keybinding_preset = val;
 }
 
 // ---------------------------------------------------------------------------

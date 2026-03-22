@@ -17,6 +17,10 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
 
     // Keybindings
     keybindings_ = std::make_unique<KeybindingManager>();
+    if (!config_.keybinding_preset.empty()) {
+        auto preset = parseKeymapPreset(config_.keybinding_preset);
+        keybindings_->loadPreset(preset);
+    }
     if (!config_.keybindings.empty()) {
         std::vector<std::pair<std::string, std::string>> bindings;
         for (const auto& kb : config_.keybindings) {

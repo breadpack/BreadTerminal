@@ -130,6 +130,9 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
 
     // Quick terminal hotkey
     cfg.quick_terminal_hotkey = getStr(t, "quick_terminal_hotkey", cfg.quick_terminal_hotkey);
+
+    // Keybinding preset
+    cfg.keybinding_preset = getStr(t, "keybinding_preset", cfg.keybinding_preset);
 }
 
 /// Initialize the Lua engine with terminal.config() and terminal.keymap() APIs.
@@ -166,6 +169,12 @@ struct LuaConfigState {
         terminal.set_function("keymap", [this](const std::string& trigger,
                                                 const std::string& action) {
             keybindings.push_back({trigger, action});
+        });
+
+        // terminal.keymap_preset("name") — load a preset keybinding set
+        // Available: "Ghostty", "Kitty", "tmux", "Warp", "Windows Terminal", "Alacritty", "iTerm2"
+        terminal.set_function("keymap_preset", [this](const std::string& name) {
+            config.keybinding_preset = name;
         });
 
         // terminal.colorscheme("name", { background = ..., ... })
@@ -386,9 +395,12 @@ terminal.config({
 -- Quick terminal (visor mode)
 -- terminal.config({ quick_terminal_hotkey = "ctrl+`" })
 
--- Keybindings
+-- Keybinding preset: use keybindings from another terminal emulator.
+-- Available presets: "Ghostty", "Kitty", "tmux", "Warp", "Windows Terminal", "Alacritty", "iTerm2"
+-- terminal.keymap_preset("Ghostty")  -- or use: terminal.config({ keybinding_preset = "Ghostty" })
+
+-- Custom keybindings (applied on top of the preset or default)
 -- Platform modifier: use "ctrl" on Windows/Linux, "cmd" on macOS.
--- Defaults are already set; only override what you want to change.
 local mod = terminal.platform == "macos" and "cmd" or "ctrl"
 
 -- Examples (uncomment to customize):

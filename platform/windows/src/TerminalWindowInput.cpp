@@ -83,6 +83,7 @@ void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
     if (controller->needsRender()) {
         needsRender = true;
         controller->clearNeedsRender();
+        if (renderer) renderer->markContentDirty();
     }
 }
 
