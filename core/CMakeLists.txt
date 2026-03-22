@@ -27,6 +27,7 @@ set(TERMCORE_SOURCES
     src/font/glyph_cache.cpp
     src/font/font_collection.cpp
     src/font/variable_font.cpp
+    src/font/ligature.cpp
     src/mux.cpp
     src/mux_layout.cpp
     src/notification.cpp
@@ -94,6 +95,8 @@ set(TERMCORE_SOURCES
     src/ssh_session.cpp
     src/ssh_terminfo.cpp
     src/ssh_profile.cpp
+    src/ssh_mux.cpp
+    src/ssh_mux_manager.cpp
     src/grapheme.cpp
 )
 

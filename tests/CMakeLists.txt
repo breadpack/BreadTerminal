@@ -62,6 +62,9 @@ add_executable(termcore_tests
     test_ssh.cpp
     test_accessibility.cpp
     test_grapheme.cpp
+    test_ligature.cpp
+    test_url_highlight.cpp
+    test_tab_drag.cpp
 )
 
 target_link_libraries(termcore_tests
