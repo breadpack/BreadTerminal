@@ -48,6 +48,7 @@ set(TERMCORE_SOURCES
     src/url_detector.cpp
     src/kitty_keyboard.cpp
     src/sixel.cpp
+    src/sixel_animation.cpp
     src/kitty_graphics.cpp
     src/shell_integration.cpp
     src/paste_guard.cpp
