@@ -222,6 +222,48 @@ TEST_F(ProfileManagerTest, FieldLevelMerge_CommandOverride) {
     EXPECT_EQ(merged->name, "PowerShell");
 }
 
+TEST(ProfileIntegrationTest, ConfigBackwardCompat_ShellField) {
+    // When no profiles but Config::shell is set,
+    // ProfileManager + TerminalController should create a legacy fallback
+    ProfileManager mgr;
+
+    // Simulate what TerminalController does:
+    std::string config_shell = "/usr/bin/zsh";
+    if (mgr.allProfiles().empty() && !config_shell.empty()) {
+        Profile legacy;
+        legacy.id = "__legacy_shell__";
+        legacy.name = "Shell";
+        legacy.command = config_shell;
+        mgr.setProfile(legacy);
+        mgr.setDefaultProfile(legacy.id);
+    }
+
+    EXPECT_EQ(mgr.defaultProfile().command, "/usr/bin/zsh");
+    EXPECT_EQ(mgr.defaultProfile().id, "__legacy_shell__");
+}
+
+TEST(ProfileIntegrationTest, ResolveProfileConfigEndToEnd) {
+    Config global;
+    global.font_family = "Consolas";
+    global.font_size = 14.0f;
+    global.theme = "Catppuccin Mocha";
+
+    ProfileManager mgr;
+    std::vector<Profile> detected;
+    Profile d; d.id = "bash"; d.name = "Bash"; d.command = "/bin/bash"; d.auto_detected = true;
+    detected.push_back(d);
+    mgr.setDetectedProfiles(std::move(detected));
+
+    Profile user; user.id = "bash"; user.theme = "Dracula";
+    mgr.setProfile(user);
+
+    auto* p = mgr.findProfile("bash");
+    ASSERT_NE(p, nullptr);
+    Config resolved = resolveProfileConfig(global, *p);
+    EXPECT_EQ(resolved.theme, "Dracula");
+    EXPECT_EQ(resolved.font_family, "Consolas");
+}
+
 #if TERMCORE_HAS_LUA
 #include "termcore/lua_config.h"
 
