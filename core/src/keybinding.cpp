@@ -117,6 +117,8 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"toggle_broadcast", Action::ToggleBroadcast},
         {"ssh_connect", Action::SshConnect},
         {"toggle_inspector", Action::ToggleInspector},
+        {"enter_instant_replay", Action::EnterInstantReplay},
+        {"exit_instant_replay", Action::ExitInstantReplay},
         {"custom", Action::Custom},
     };
     return map;

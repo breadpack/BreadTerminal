@@ -63,6 +63,8 @@ enum class Action : uint16_t {
     SshConnect,
     // Debug
     ToggleInspector,
+    // Instant Replay
+    EnterInstantReplay, ExitInstantReplay,
     // Custom (string-based action)
     Custom,
 };
