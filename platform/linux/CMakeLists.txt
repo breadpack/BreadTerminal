@@ -115,11 +115,15 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND XKBCOMMON_FOUND)
 
     target_compile_definitions(termcore_wayland PUBLIC TERMCORE_HAS_WAYLAND=1)
 
+    # Wayland protocol headers (xdg-shell) are typically provided by
+    # wayland-protocols; if not pre-generated, use wayland-scanner.
+
     # ─── Generate zwp_text_input_v3 protocol glue ────────────────
     pkg_check_modules(WAYLAND_PROTOCOLS wayland-protocols)
     find_program(WAYLAND_SCANNER wayland-scanner)
 
     if(WAYLAND_PROTOCOLS_FOUND AND WAYLAND_SCANNER)
+        # Locate the protocol XML from wayland-protocols package
         execute_process(
             COMMAND ${PKG_CONFIG_EXECUTABLE} --variable=pkgdatadir wayland-protocols
             OUTPUT_VARIABLE WAYLAND_PROTOCOLS_DIR
