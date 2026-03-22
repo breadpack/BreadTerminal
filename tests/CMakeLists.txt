@@ -50,6 +50,9 @@ add_executable(termcore_tests
     test_command_dispatcher.cpp
     test_theme_loader.cpp
     test_theme_index.cpp
+    test_theme_importer.cpp
+    test_theme_repository.cpp
+    test_theme_preview.cpp
     test_font_index.cpp
     test_profile.cpp
     test_shell_detector.cpp

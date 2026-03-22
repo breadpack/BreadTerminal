@@ -309,7 +309,13 @@ std::vector<Theme> scanThemeDirectory(const std::string& dir) {
 }
 
 std::string defaultThemeDir() {
-#ifdef __APPLE__
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata) {
+        return std::string(appdata) + "\\BreadTerminal\\themes";
+    }
+    return "";
+#elif defined(__APPLE__)
     const char* home = std::getenv("HOME");
     if (!home) return "";
     return std::string(home) + "/Library/Application Support/BreadTerminal/themes";
