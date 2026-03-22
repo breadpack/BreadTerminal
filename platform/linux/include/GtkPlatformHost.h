@@ -65,6 +65,9 @@ private:
     // Synchronous clipboard text (filled by async read, used by getClipboardText)
     std::string pendingClipboardText_;
 
+    // Notification ID counter for unique notification IDs
+    int notificationSeq_ = 0;
+
     // Unified settings window
     std::unique_ptr<termcore::UnifiedSettingsWindow> settingsWindow_;
 };

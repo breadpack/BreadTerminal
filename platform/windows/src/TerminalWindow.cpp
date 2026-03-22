@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <windowsx.h>
+#include <shellapi.h>
 #include <imm.h>
 #include <UIAutomationCore.h>
 #include <UIAutomationCoreApi.h>
@@ -17,9 +18,15 @@ namespace termcore {
     std::string handleImeComposition(HWND hwnd, LPARAM lParam);
     void handleImeEndComposition(HWND hwnd);
     void positionImeWindow(HWND hwnd, int x, int y, int height);
+
+    // Notification helpers (TerminalWindowNotify.cpp)
+    void removeNotificationIcon(HWND hwnd);
 }
 
 namespace {
+
+// Must match kNotifyCallbackMsg in TerminalWindowNotify.cpp
+constexpr UINT kNotifyCallbackMsg = WM_APP + 100;
 
 constexpr UINT_PTR kRenderTimerId = 1;
 constexpr UINT kRenderIntervalMs = 16;
@@ -273,6 +280,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
         case WM_DESTROY:
             KillTimer(hWnd, kRenderTimerId);
             KillTimer(hWnd, kCursorBlinkTimerId);
+            if (state && state->notifyIconAdded) {
+                termcore::removeNotificationIcon(hWnd);
+                state->notifyIconAdded = false;
+            }
             if (state && state->accessibilityProvider) {
                 UiaReturnRawElementProvider(hWnd, 0, 0, nullptr);
                 state->accessibilityProvider->Release();
@@ -297,6 +308,19 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 0;
 
         default:
+            // Handle notification tray icon callback
+            if (msg == kNotifyCallbackMsg && state) {
+                UINT event = LOWORD(lParam);
+                if (event == NIN_BALLOONUSERCLICK ||
+                    event == WM_LBUTTONUP) {
+                    // Bring the terminal window to the foreground
+                    if (IsIconic(hWnd)) {
+                        ShowWindow(hWnd, SW_RESTORE);
+                    }
+                    SetForegroundWindow(hWnd);
+                }
+                return 0;
+            }
             break;
     }
 
