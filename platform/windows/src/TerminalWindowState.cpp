@@ -52,6 +52,14 @@ LRESULT CALLBACK SearchEditSubclassProc(
                 }
                 return 0;
             }
+            if (wParam == VK_UP) {
+                if (state->controller) state->controller->onSearchHistoryPrev();
+                return 0;
+            }
+            if (wParam == VK_DOWN) {
+                if (state->controller) state->controller->onSearchHistoryNext();
+                return 0;
+            }
             break;
 
         case WM_CHAR:
@@ -243,6 +251,20 @@ void TerminalWindowState::renderFrame() {
 
     // Update command palette state on renderer
     updateCommandPalette();
+
+    // Update search highlights on renderer
+    if (controller->search().isActive()) {
+        const auto& matches = controller->search().search().matches();
+        int currentIdx = controller->search().currentMatch();
+        std::vector<termcore::D3DTextRenderer::SearchHighlight> highlights;
+        highlights.reserve(matches.size());
+        for (const auto& m : matches) {
+            highlights.push_back({m.row, m.start_col, m.end_col});
+        }
+        renderer->setSearchHighlights(highlights, currentIdx);
+    } else {
+        renderer->setSearchHighlights({}, -1);
+    }
 
     renderer->render(*screen);
 

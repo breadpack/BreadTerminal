@@ -103,6 +103,10 @@ void MacPlatformHost::updateSearchResults(int current, int total) {
     (void)total;
 }
 
+void MacPlatformHost::setSearchBarText(const std::string& text) {
+    (void)text;
+}
+
 // --- IME ---
 
 void MacPlatformHost::positionIME(int x, int y, int height) {

@@ -167,6 +167,10 @@ void GtkPlatformHost::updateSearchResults(int current, int total) {
     (void)total;
 }
 
+void GtkPlatformHost::setSearchBarText(const std::string& text) {
+    (void)text;
+}
+
 // --- IME ---
 
 void GtkPlatformHost::positionIME(int x, int y, int height) {

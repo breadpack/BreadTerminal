@@ -34,6 +34,7 @@ public:
     void showSearchBar() override;
     void hideSearchBar() override;
     void updateSearchResults(int current, int total) override;
+    void setSearchBarText(const std::string& text) override;
 
     void positionIME(int x, int y, int height) override;
 
