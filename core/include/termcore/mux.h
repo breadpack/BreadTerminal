@@ -4,9 +4,12 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace termcore {
+
+class SshMuxSession;
 
 using PaneId = uint32_t;
 using TabId = uint32_t;
@@ -114,6 +117,24 @@ public:
     /// Set all split ratios to 0.5 (equal spacing).
     void equalizeSplits(WorkspaceId ws_id, TabId tab_id);
 
+    // --- SSH mux integration ---
+
+    /// Register an existing pane as backed by an SSH mux channel.
+    void addSshPane(PaneId pane_id, int channel_id,
+                    std::shared_ptr<SshMuxSession> session);
+
+    /// Remove the SSH-backing association for a pane.
+    void removeSshPane(PaneId pane_id);
+
+    /// Query whether a pane is backed by an SSH channel.
+    bool isSshPane(PaneId pane_id) const;
+
+    /// Get the SshMuxSession for a pane, or nullptr.
+    std::shared_ptr<SshMuxSession> sshSessionForPane(PaneId pane_id) const;
+
+    /// Get the SSH channel id for a pane, or -1.
+    int sshChannelForPane(PaneId pane_id) const;
+
 private:
     SplitNode* findNode(SplitNode* node, PaneId pane_id);
     SplitNode* findParent(SplitNode* node, PaneId pane_id);
@@ -138,6 +159,12 @@ private:
     PaneCreateCallback create_cb_;
     PaneDestroyCallback destroy_cb_;
     MuxChangeCallback on_changed_;
+
+    struct SshPaneBinding {
+        int channel_id = -1;
+        std::shared_ptr<SshMuxSession> session;
+    };
+    std::unordered_map<PaneId, SshPaneBinding> ssh_panes_;
 };
 
 }  // namespace termcore

@@ -3,13 +3,19 @@
 namespace termcore {
 
 static bool cellsEqual(const TermCell& a, const TermCell& b) {
-    return a.codepoint == b.codepoint &&
-           a.fg_color == b.fg_color &&
-           a.bg_color == b.bg_color &&
-           a.attributes == b.attributes &&
-           a.width == b.width &&
-           a.underline_style == b.underline_style &&
-           a.underline_color == b.underline_color;
+    if (a.codepoint != b.codepoint ||
+        a.fg_color != b.fg_color ||
+        a.bg_color != b.bg_color ||
+        a.attributes != b.attributes ||
+        a.width != b.width ||
+        a.underline_style != b.underline_style ||
+        a.underline_color != b.underline_color ||
+        a.extra_count != b.extra_count)
+        return false;
+    for (uint8_t i = 0; i < a.extra_count; ++i) {
+        if (a.extra[i] != b.extra[i]) return false;
+    }
+    return true;
 }
 
 void CompressedRow::compress(const std::vector<TermCell>& row) {
@@ -86,7 +92,11 @@ std::string CompressedRow::text(int cols) const {
         if (count <= 0) break;
 
         for (int j = 0; j < count; ++j) {
+            if (run.cell.codepoint == 0 && run.cell.width == 0) continue;
             appendCodepointUtf8(result, run.cell.codepoint);
+            for (uint8_t ei = 0; ei < run.cell.extra_count; ++ei) {
+                appendCodepointUtf8(result, run.cell.extra[ei]);
+            }
         }
         pos = run_end;
         if (pos >= cols) break;

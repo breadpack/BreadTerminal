@@ -66,6 +66,7 @@ add_executable(termcore_tests
     test_ligature.cpp
     test_url_highlight.cpp
     test_session_autosave.cpp
+    test_shader_effect.cpp
 )
 
 target_link_libraries(termcore_tests

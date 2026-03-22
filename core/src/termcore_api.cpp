@@ -158,6 +158,9 @@ void tc_pane_get_cell(TermPane* pane, int row, int col, TermCellData* out) {
     out->bg_color = cell.bg_color;
     out->attributes = cell.attributes;
     out->width = cell.width;
+    out->extra_count = cell.extra_count;
+    for (uint8_t i = 0; i < cell.extra_count; ++i)
+        out->extra[i] = static_cast<uint32_t>(cell.extra[i]);
 }
 
 void tc_pane_get_cursor(TermPane* pane, TermCursorData* out) {

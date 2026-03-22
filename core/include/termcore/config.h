@@ -69,6 +69,10 @@ struct Config {
     bool notify_on_command_finish = true;
     float notify_after_seconds = 5.0f;  // only notify if command took > N seconds
 
+    // Post-processing shader: "none", "crt", "bloom", etc., or path to custom shader file
+    std::string custom_shader = "none";
+    float shader_intensity = 1.0f;     // 0.0 to 1.0 shader effect strength
+
     // Background transparency
     float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
     int background_blur = 0;           // 0=none, 1=low, 2=medium, 3=high

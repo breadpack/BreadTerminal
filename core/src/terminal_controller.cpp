@@ -718,6 +718,7 @@ void TerminalController::initInputHandler() {
     deps.cellWidth = [this]() { return cellWidth(); };
     deps.cellHeight = [this]() { return cellHeight(); };
     deps.needsRender = [this]() -> bool& { return needsRender_; };
+    deps.urlHighlight = [this]() -> UrlHighlightManager* { return &urlHighlightMgr_; };
     inputHandler_ = std::make_unique<InputHandler>(std::move(deps));
 }
 

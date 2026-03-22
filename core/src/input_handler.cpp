@@ -134,6 +134,44 @@ void InputHandler::onMouseEvent(const InputMouseEvent& e) {
         offsetY = static_cast<int>(ch);
     }
 
+    // Grid coordinates for URL hover/click
+    int gridCol = static_cast<int>((e.x - offsetX) / cw);
+    int gridRow = static_cast<int>((e.y - offsetY) / ch);
+
+    // URL hover tracking on mouse move
+    if (e.type == InputMouseEvent::Move && d_.urlHighlight) {
+        UrlHighlightManager* mgr = d_.urlHighlight();
+        if (mgr && mgr->isEnabled()) {
+            bool hoverChanged = mgr->updateHover(gridRow, gridCol);
+            if (hoverChanged) {
+                d_.needsRender() = true;
+                // Update cursor to hand when hovering a URL
+                if (d_.host) {
+                    auto hovered = mgr->getHoveredUrl();
+                    d_.host->setMouseCursor(hovered.has_value()
+                        ? IPlatformHost::CursorType::Hand
+                        : IPlatformHost::CursorType::Arrow);
+                }
+            }
+        }
+    }
+
+    // Ctrl+Click (Cmd+Click on macOS) to open URL
+    if (e.type == InputMouseEvent::Press && e.button == 0 && d_.urlHighlight) {
+        bool ctrlHeld = (e.modifiers & ModCtrl) != 0 || (e.modifiers & ModSuper) != 0;
+        if (ctrlHeld) {
+            UrlHighlightManager* mgr = d_.urlHighlight();
+            if (mgr && mgr->isEnabled()) {
+                mgr->updateHover(gridRow, gridCol);
+                auto hovered = mgr->getHoveredUrl();
+                if (hovered.has_value() && d_.host) {
+                    d_.host->openUrl(hovered->url);
+                    return;  // Consume the click — don't start selection
+                }
+            }
+        }
+    }
+
     switch (e.type) {
         case InputMouseEvent::Press:
             d_.selMgr->onMouseDown(e.x, e.y, cw, ch, offsetX, offsetY);

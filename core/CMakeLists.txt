@@ -100,6 +100,8 @@ set(TERMCORE_SOURCES
     src/ssh_mux.cpp
     src/ssh_mux_manager.cpp
     src/grapheme.cpp
+    src/shader_effect.cpp
+    src/shader_builtins.cpp
 )
 
 if(UNIX)

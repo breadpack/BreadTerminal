@@ -126,6 +126,8 @@ std::string SelectionManager::getSelectedText(const Screen& screen) const {
 
         for (int col = colStart; col <= lastNonSpace; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
+            // Skip continuation cells (second cell of wide character)
+            if (cell.codepoint == 0 && cell.width == 0) continue;
             char32_t cp = cell.codepoint;
             if (cp == 0) cp = ' ';
 
