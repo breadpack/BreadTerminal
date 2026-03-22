@@ -1,8 +1,14 @@
-#include "termcore/image_preview.h"
-
-// stb_image is already compiled in iterm_image.cpp (STB_IMAGE_IMPLEMENTATION).
-// Here we only need the declarations; do NOT define the implementation again.
+// stb_image: single-file image loader.
+// Define the implementation here (only one .cpp should do this).
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_GIF
+#define STBI_ONLY_BMP
+#define STBI_NO_STDIO
 #include "stb_image.h"
+
+#include "termcore/image_preview.h"
 
 #include <algorithm>
 #include <array>
@@ -19,7 +25,8 @@ namespace {
 /// Lowercase a string for case-insensitive comparison.
 std::string toLower(const std::string& s) {
     std::string result = s;
-    for (auto& c : result) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (auto& c : result)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return result;
 }
 
@@ -218,27 +225,18 @@ std::string encodeForITermProtocol(const std::vector<uint8_t>& rgba,
                                    int width, int height) {
     if (rgba.empty() || width <= 0 || height <= 0) return {};
 
-    // iTerm2 inline image protocol expects encoded image file data (PNG).
-    // We write a minimal uncompressed RGBA bitmap and base64-encode it.
-    // For simplicity, we base64-encode the raw RGBA and set size params.
-    // Real iTerm2 expects actual PNG/JPEG, but the raw RGBA is accepted
-    // by many implementations when the format is conveyed via params.
-    //
-    // Use a minimal BMP encoding for broad compatibility.
-    // BMP: 54-byte header + pixel data (bottom-up, BGRA).
-    int row_bytes = width * 4;
-    int padding = (4 - (width * 3) % 4) % 4;
-    // Actually use 32-bit BMP (no row padding needed for 4-byte pixels).
+    // iTerm2 inline image protocol expects encoded image file data.
+    // Encode as a 32-bit BMP for broad compatibility.
     int bmp_row = width * 4;  // no padding for 32bpp
     int data_size = bmp_row * height;
     int file_size = 54 + data_size;
 
     std::vector<uint8_t> bmp(file_size);
-    // BMP header
+    // BMP file header
     bmp[0] = 'B'; bmp[1] = 'M';
     std::memcpy(&bmp[2], &file_size, 4);
-    int offset = 54;
-    std::memcpy(&bmp[10], &offset, 4);
+    int pixel_offset = 54;
+    std::memcpy(&bmp[10], &pixel_offset, 4);
     // DIB header (BITMAPINFOHEADER = 40 bytes)
     int dib_size = 40;
     std::memcpy(&bmp[14], &dib_size, 4);
@@ -248,7 +246,7 @@ std::string encodeForITermProtocol(const std::vector<uint8_t>& rgba,
     std::memcpy(&bmp[26], &planes, 2);
     uint16_t bpp = 32;
     std::memcpy(&bmp[28], &bpp, 2);
-    // compression = 0 (BI_RGB), size, resolution, colors = 0 (rest is zeroed)
+    // compression = 0 (BI_RGB), rest zeroed by vector initialization
     std::memcpy(&bmp[34], &data_size, 4);
 
     // Pixel data: BMP is bottom-up, BGRA order
@@ -266,7 +264,7 @@ std::string encodeForITermProtocol(const std::vector<uint8_t>& rgba,
 
     std::string b64 = base64Encode(bmp.data(), bmp.size());
 
-    // OSC 1337 ; File=inline=1;size=<size>;width=<w>px;height=<h>px:<base64> ST
+    // OSC 1337 ; File=inline=1;size=<size>;width=<w>px;height=<h>px:<base64> BEL
     std::string result;
     result += "\033]1337;File=inline=1";
     result += ";size=" + std::to_string(bmp.size());
@@ -295,8 +293,7 @@ std::vector<std::string> previewImages(const std::vector<std::string>& filenames
         auto thumb = generateThumbnail(file, max_width_px, max_height_px);
         if (thumb.empty()) continue;
 
-        // Determine thumbnail dimensions from pixel count
-        // Re-read info to know the aspect ratio
+        // Determine thumbnail dimensions from the image info
         auto info = getImageInfo(file);
         if (info.width <= 0 || info.height <= 0) continue;
 

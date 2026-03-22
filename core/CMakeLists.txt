@@ -56,6 +56,7 @@ set(TERMCORE_SOURCES
     src/sixel.cpp
     src/kitty_graphics.cpp
     src/iterm_image.cpp
+    src/image_preview.cpp
     src/shell_integration.cpp
     src/paste_guard.cpp
     src/vi_copy_mode.cpp

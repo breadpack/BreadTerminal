@@ -11,6 +11,7 @@ using termcore::D3DTextRenderer;
 #include <algorithm>
 #include <commctrl.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 
 #pragma comment(lib, "dwmapi.lib")
 

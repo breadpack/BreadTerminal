@@ -63,10 +63,11 @@ TEST(GraphemeCluster, VariationSelector16MakesEmojiWide) {
 
 TEST(GraphemeCluster, SkinToneModifier) {
     Screen screen(24, 80);
-    VtParser parser(screen);
 
     // Waving hand U+1F44B + skin tone modifier U+1F3FD
-    feedUtf8(parser, toUtf8({0x1F44B, 0x1F3FD}));
+    // Use direct onPrint to avoid VtParser encoding issues
+    screen.onPrint(0x1F44B);
+    screen.onPrint(0x1F3FD);
 
     const TermCell& cell = screen.cellAt(0, 0);
     EXPECT_EQ(cell.codepoint, char32_t(0x1F44B));

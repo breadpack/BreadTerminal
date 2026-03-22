@@ -113,6 +113,10 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
     cfg.clipboard_paste_bracketed_safe = getBool(t, "clipboard_paste_bracketed_safe", cfg.clipboard_paste_bracketed_safe);
     cfg.allow_clipboard_write = getBool(t, "allow_clipboard_write", cfg.allow_clipboard_write);
 
+    // Clickable URLs
+    cfg.clickable_urls = getBool(t, "clickable_urls", cfg.clickable_urls);
+    cfg.url_color = getColor(t, "url_color", cfg.url_color);
+
     // Notifications
     cfg.notify_on_command_finish = getBool(t, "notify_on_command_finish", cfg.notify_on_command_finish);
     cfg.notify_after_seconds = getFloat(t, "notify_after_seconds", cfg.notify_after_seconds);
