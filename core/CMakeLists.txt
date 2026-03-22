@@ -78,6 +78,7 @@ set(TERMCORE_SOURCES
     src/config_applier.cpp
     src/settings_model.cpp
     src/config_value_adapter.cpp
+    src/profile_manager.cpp
 )
 
 if(UNIX)
