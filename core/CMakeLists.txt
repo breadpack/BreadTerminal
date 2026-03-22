@@ -84,6 +84,9 @@ set(TERMCORE_SOURCES
     src/shell_detector.cpp
     src/update_checker.cpp
     src/command_palette.cpp
+    src/ssh_session.cpp
+    src/ssh_terminfo.cpp
+    src/ssh_profile.cpp
 )
 
 if(UNIX)

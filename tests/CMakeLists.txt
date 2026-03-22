@@ -54,6 +54,7 @@ add_executable(termcore_tests
     test_profile.cpp
     test_shell_detector.cpp
     test_update_checker.cpp
+    test_ssh.cpp
 )
 
 target_link_libraries(termcore_tests
