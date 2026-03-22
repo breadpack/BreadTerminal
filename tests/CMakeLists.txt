@@ -55,6 +55,7 @@ add_executable(termcore_tests
     test_command_dispatcher.cpp
     test_mcp_agent_commands.cpp
     test_terminal_inspector.cpp
+    test_serial_port.cpp
     test_theme_loader.cpp
     test_theme_index.cpp
     test_theme_importer.cpp

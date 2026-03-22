@@ -114,6 +114,7 @@ set(TERMCORE_SOURCES
     src/shader_builtins.cpp
     src/instant_replay.cpp
     src/annotations.cpp
+    src/serial_port.cpp
 )
 
 if(UNIX)
