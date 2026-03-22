@@ -33,6 +33,7 @@ add_executable(termcore_tests
     test_agent.cpp
     test_keybinding.cpp
     test_search.cpp
+    test_search_history.cpp
     test_url_detector.cpp
     test_kitty_keyboard.cpp
     test_sixel.cpp

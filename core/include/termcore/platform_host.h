@@ -69,6 +69,11 @@ public:
     virtual void openThemeHub(const Config& config) = 0;
     virtual void openFontHub(const Config& config) = 0;
 
+    // Search history persistence path
+    virtual std::string getSearchHistoryPath() {
+        return {};  // Default: empty (use SearchHistory::defaultPath())
+    }
+
     // DPI
     virtual float dpiScale() = 0;
 
