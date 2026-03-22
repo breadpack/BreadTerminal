@@ -59,6 +59,8 @@ enum class Action : uint16_t {
     OpenCommandPalette,
     // SSH
     SshConnect,
+    // Export
+    ExportScreen,
     // Custom (string-based action)
     Custom,
 };
