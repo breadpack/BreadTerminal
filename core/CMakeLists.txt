@@ -63,6 +63,8 @@ set(TERMCORE_SOURCES
     src/vi_copy_mode.cpp
     src/webview_stub.cpp
     src/terminfo.cpp
+    src/ssh_integration_deploy.cpp
+    src/ssh_session.cpp
     src/session_paths.cpp
     src/session_serializer.cpp
     src/session_deserializer.cpp

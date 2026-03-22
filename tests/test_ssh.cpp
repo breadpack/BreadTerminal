@@ -1,6 +1,7 @@
 #include "termcore/ssh_session.h"
 #include "termcore/ssh_terminfo.h"
 #include "termcore/ssh_profile.h"
+#include "termcore/ssh_integration_deploy.h"
 #include <gtest/gtest.h>
 
 #include <cstdio>
@@ -217,7 +218,6 @@ TEST(SshSession, BuildSshCommandFull) {
     ASSERT_GE(args.size(), 6u);
     EXPECT_EQ(args[0], "ssh");
 
-    // Check that all expected flags are present
     bool has_port = false, has_identity = false, has_agent = false;
     std::string dest;
     for (size_t i = 0; i < args.size(); ++i) {
@@ -235,7 +235,6 @@ TEST(SshSession, BuildSshCommandFull) {
     EXPECT_TRUE(has_identity);
     EXPECT_TRUE(has_agent);
 
-    // Last arg should be the destination
     EXPECT_EQ(args.back(), "admin@server.example.com");
 }
 
@@ -304,7 +303,6 @@ TEST(SshSession, DisplayName) {
 TEST(SshTerminfoHelper, Base64TerminfoNotEmpty) {
     auto b64 = SshTerminfoHelper::getBase64TerminfoSource();
     EXPECT_FALSE(b64.empty());
-    // Base64 output should only contain valid characters
     for (char c : b64) {
         bool valid = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
                      (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
@@ -315,7 +313,6 @@ TEST(SshTerminfoHelper, Base64TerminfoNotEmpty) {
 TEST(SshTerminfoHelper, GenerateInstallScript) {
     auto script = SshTerminfoHelper::generateTerminfoInstallScript();
     EXPECT_FALSE(script.empty());
-    // Should contain key elements
     EXPECT_NE(script.find("xterm-breadterminal"), std::string::npos);
     EXPECT_NE(script.find("base64"), std::string::npos);
     EXPECT_NE(script.find("TERM_PROGRAM=BreadTerminal"), std::string::npos);
@@ -337,16 +334,13 @@ TEST(SshTerminfoHelper, WrapSshArgs) {
     auto wrapped = SshTerminfoHelper::wrapSshArgs(base);
 
     ASSERT_GT(wrapped.size(), base.size());
-    // Should start with the base args
     EXPECT_EQ(wrapped[0], "ssh");
     EXPECT_EQ(wrapped[1], "-p");
     EXPECT_EQ(wrapped[2], "22");
     EXPECT_EQ(wrapped[3], "user@host");
-    // Should have -- separator
     EXPECT_EQ(wrapped[4], "--");
     EXPECT_EQ(wrapped[5], "sh");
     EXPECT_EQ(wrapped[6], "-c");
-    // Last arg should contain the install script
     EXPECT_NE(wrapped[7].find("xterm-breadterminal"), std::string::npos);
 }
 
@@ -409,7 +403,7 @@ TEST(SshProfileManager, RemoveProfile) {
     EXPECT_EQ(mgr.profiles().size(), 1u);
     EXPECT_TRUE(mgr.removeProfile("to-remove"));
     EXPECT_TRUE(mgr.profiles().empty());
-    EXPECT_FALSE(mgr.removeProfile("to-remove")); // already removed
+    EXPECT_FALSE(mgr.removeProfile("to-remove"));
 }
 
 TEST(SshProfileManager, AddDuplicateReplaces) {
@@ -441,7 +435,6 @@ TEST(SshProfileManager, DiscoverSkipsDuplicates) {
 
     SshProfileManager mgr;
 
-    // Add a profile with the same host name
     SshProfile p;
     p.name = "server1";
     p.config.host = "server1";
@@ -450,15 +443,108 @@ TEST(SshProfileManager, DiscoverSkipsDuplicates) {
 
     mgr.discoverFromSSHConfig(cfg.path());
 
-    // Should still have the original, not replaced
     EXPECT_EQ(mgr.profiles().size(), 1u);
     EXPECT_EQ(mgr.findProfile("server1")->config.hostname, "original.example.com");
 }
 
 TEST(SshProfileManager, DefaultSSHConfigPath) {
     auto path = SshProfileManager::defaultSSHConfigPath();
-    // Should contain .ssh/config or .ssh\config
     EXPECT_FALSE(path.empty());
     EXPECT_NE(path.find("ssh"), std::string::npos);
     EXPECT_NE(path.find("config"), std::string::npos);
+}
+
+// ===========================================================================
+// SshIntegrationDeploy tests
+// ===========================================================================
+
+TEST(SshIntegrationDeploy, DeployScriptIsNonEmpty) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_FALSE(script.empty());
+}
+
+TEST(SshIntegrationDeploy, DeployScriptContainsMkdir) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_NE(script.find("mkdir -p"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DeployScriptContainsTic) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_NE(script.find("tic"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DeployScriptContainsMarkerFile) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_NE(script.find(".deployed-v1"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DeployScriptContainsShellCaseBlock) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_NE(script.find("case"), std::string::npos);
+    EXPECT_NE(script.find("bash)"), std::string::npos);
+    EXPECT_NE(script.find("zsh)"), std::string::npos);
+    EXPECT_NE(script.find("fish)"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DeployScriptRespectsRemoteShell) {
+    auto script = SshIntegrationDeploy::deployScript("zsh");
+    EXPECT_NE(script.find("_BT_SHELL=\"zsh\""), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DeployScriptUsesDetectionWhenNoShellSpecified) {
+    auto script = SshIntegrationDeploy::deployScript();
+    EXPECT_NE(script.find("basename"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, CheckDeployedCommandIsCorrect) {
+    auto cmd = SshIntegrationDeploy::checkDeployedCommand();
+    EXPECT_NE(cmd.find(".deployed-v1"), std::string::npos);
+    EXPECT_NE(cmd.find("DEPLOYED"), std::string::npos);
+    EXPECT_NE(cmd.find("NOT_DEPLOYED"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, DetectShellCommandUsesBasename) {
+    auto cmd = SshIntegrationDeploy::detectShellCommand();
+    EXPECT_NE(cmd.find("basename"), std::string::npos);
+    EXPECT_NE(cmd.find("$SHELL"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, BashIntegrationContainsOSC133) {
+    auto script = SshIntegrationDeploy::bashIntegration();
+    EXPECT_FALSE(script.empty());
+    EXPECT_NE(script.find("133;A"), std::string::npos);
+    EXPECT_NE(script.find("133;C"), std::string::npos);
+    EXPECT_NE(script.find("133;D"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, ZshIntegrationContainsPrecmd) {
+    auto script = SshIntegrationDeploy::zshIntegration();
+    EXPECT_FALSE(script.empty());
+    EXPECT_NE(script.find("precmd"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, FishIntegrationContainsFishPrompt) {
+    auto script = SshIntegrationDeploy::fishIntegration();
+    EXPECT_FALSE(script.empty());
+    EXPECT_NE(script.find("fish_prompt"), std::string::npos);
+}
+
+TEST(SshIntegrationDeploy, TerminfoSourceIsNonEmptyAndContainsBreadterminal) {
+    auto source = SshIntegrationDeploy::terminfoSource();
+    EXPECT_FALSE(source.empty());
+    EXPECT_NE(source.find("breadterminal"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// SshSessionConfig tests
+// ---------------------------------------------------------------------------
+
+TEST(SshSessionConfig, DefaultAutoDeployIsTrue) {
+    SshSessionConfig config;
+    EXPECT_TRUE(config.auto_deploy_integration);
+}
+
+TEST(SshSessionConfig, DefaultFallbackTerm) {
+    SshSessionConfig config;
+    EXPECT_EQ(config.fallback_term, "xterm-256color");
 }

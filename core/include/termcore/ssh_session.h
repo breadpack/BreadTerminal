@@ -21,25 +21,39 @@ struct SshConfig {
     std::string displayName() const;
 };
 
+/// Configuration for SSH sessions, including shell integration auto-deployment.
+struct SshSessionConfig {
+    /// Hostname or IP address of the remote host
+    std::string host;
+
+    /// Remote user (empty = use system default)
+    std::string user;
+
+    /// SSH port (0 = use default 22)
+    int port = 0;
+
+    /// Automatically deploy shell integration and terminfo to the remote host
+    /// on first connection (similar to Kitty's ssh kitten).
+    bool auto_deploy_integration = true;
+
+    /// TERM value to use if terminfo deployment fails on the remote host.
+    std::string fallback_term = "xterm-256color";
+};
+
 /// Manages SSH session creation — builds commands for spawning ssh via PTY.
 /// Does NOT implement the SSH protocol; it wraps the system `ssh` binary.
 class SshSession {
 public:
     /// Parse an OpenSSH config file and return all Host entries.
-    /// Supports: Host, HostName, Port, User, IdentityFile, ForwardAgent,
-    ///           ProxyCommand, ProxyJump, Include.
-    /// Wildcard-only hosts (e.g., Host *) are excluded from the result.
     static std::vector<SshConfig> parseSSHConfig(const std::string& path);
 
     /// Build the ssh command line from an SshConfig.
-    /// Returns a string like: ssh -p 2222 -i ~/.ssh/id_rsa user@hostname
     static std::string buildSshCommand(const SshConfig& config);
 
     /// Build an argv-style vector for the ssh command.
     static std::vector<std::string> buildSshArgs(const SshConfig& config);
 
     /// Find an SshConfig matching a given host alias from a list of configs.
-    /// Supports simple wildcard matching (e.g., *.example.com).
     static const SshConfig* findHost(const std::vector<SshConfig>& configs,
                                      const std::string& host);
 
