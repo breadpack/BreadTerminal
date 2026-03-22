@@ -45,6 +45,7 @@ add_executable(termcore_tests
     test_session.cpp
     test_git_branch_detector.cpp
     test_workspace_status.cpp
+    test_ssh.cpp
     test_jsonrpc.cpp
     test_command_dispatcher.cpp
     test_theme_loader.cpp
