@@ -69,6 +69,8 @@ enum class Action : uint16_t {
     AddAnnotation,
     // Password manager
     OpenPasswordManager,
+    // Export
+    ExportScreen,
     // Custom (string-based action)
     Custom,
 };

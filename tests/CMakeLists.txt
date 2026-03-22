@@ -82,6 +82,7 @@ add_executable(termcore_tests
     test_password_manager.cpp
     test_tmux_integration.cpp
     test_subpixel.cpp
+    test_screen_export.cpp
 )
 
 target_link_libraries(termcore_tests

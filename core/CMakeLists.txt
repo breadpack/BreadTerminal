@@ -84,6 +84,7 @@ set(TERMCORE_SOURCES
     src/socket/command_dispatcher_status.cpp
     src/socket/socket_server.cpp
     src/screen_capture.cpp
+    src/screen_export.cpp
     src/mcp_server_spec.cpp
     src/quick_terminal.cpp
     src/clipboard_history.cpp
