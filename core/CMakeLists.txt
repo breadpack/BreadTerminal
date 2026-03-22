@@ -36,6 +36,9 @@ set(TERMCORE_SOURCES
     src/config_themes.cpp
     src/theme_loader.cpp
     src/theme_index.cpp
+    src/theme_importer.cpp
+    src/theme_repository.cpp
+    src/theme_preview.cpp
     src/font_index.cpp
     src/agent.cpp
     src/agent_orchestrator.cpp
