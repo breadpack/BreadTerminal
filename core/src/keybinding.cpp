@@ -326,6 +326,18 @@ void KeybindingManager::initDefaults() {
     b(mk(M, ","),       Action::OpenSettings);
     b(mk(MS, "t"),      Action::OpenThemeHub);
     b(mk(MS, "p"),      Action::OpenFontHub);
+
+    // Profile shortcuts
+    b(mk(MS, "1"), Action::NewTabProfile1);
+    b(mk(MS, "2"), Action::NewTabProfile2);
+    b(mk(MS, "3"), Action::NewTabProfile3);
+    b(mk(MS, "4"), Action::NewTabProfile4);
+    b(mk(MS, "5"), Action::NewTabProfile5);
+    b(mk(MS, "6"), Action::NewTabProfile6);
+    b(mk(MS, "7"), Action::NewTabProfile7);
+    b(mk(MS, "8"), Action::NewTabProfile8);
+    b(mk(MS, "9"), Action::NewTabProfile9);
+    b(mk(MS, "p"), Action::ShowProfileDropdown);
 }
 
 } // namespace termcore

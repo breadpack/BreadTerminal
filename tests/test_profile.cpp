@@ -12,7 +12,6 @@ TEST(ProfileTest, DefaultConstruction) {
     EXPECT_TRUE(p.args.empty());
     EXPECT_TRUE(p.working_dir.empty());
     EXPECT_TRUE(p.icon.empty());
-    EXPECT_FALSE(p.is_default);
     EXPECT_FALSE(p.hidden);
     EXPECT_FALSE(p.auto_detected);
     EXPECT_FALSE(p.theme.has_value());

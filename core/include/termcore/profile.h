@@ -22,7 +22,6 @@ struct Profile {
     std::optional<float> font_size;
     std::optional<std::string> cursor_style;
 
-    bool is_default = false;
     bool hidden = false;
     bool auto_detected = false;
 };

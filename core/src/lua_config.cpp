@@ -233,7 +233,9 @@ struct LuaConfigState {
 
         // terminal.hide_profile("id") — hide a profile from the UI
         terminal.set_function("hide_profile", [this](const std::string& id) {
-            config.hidden_profile_ids.push_back(id);
+            auto& v = config.hidden_profile_ids;
+            if (std::find(v.begin(), v.end(), id) == v.end())
+                v.push_back(id);
         });
 
         // Utility: terminal.platform

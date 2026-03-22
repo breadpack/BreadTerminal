@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -30,6 +31,7 @@ static std::string getEnv(const char* name) {
     return val ? val : "";
 }
 
+// SECURITY: Only call with hardcoded command strings. Never pass user input.
 static std::string runCommand(const std::string& cmd, int timeout_ms = 3000) {
     SECURITY_ATTRIBUTES sa = {};
     sa.nLength = sizeof(sa);
@@ -87,8 +89,10 @@ static std::vector<Profile> detectWslDistros() {
 
     std::wstring wide;
     if (raw.size() >= 2) {
-        const auto* data = reinterpret_cast<const wchar_t*>(raw.data());
-        size_t wlen = raw.size() / sizeof(wchar_t);
+        std::wstring aligned(raw.size() / sizeof(wchar_t), L'\0');
+        std::memcpy(aligned.data(), raw.data(), aligned.size() * sizeof(wchar_t));
+        const auto* data = aligned.data();
+        size_t wlen = aligned.size();
         if (wlen > 0 && data[0] == 0xFEFF) wide.assign(data + 1, wlen - 1);
         else wide.assign(data, wlen);
     }
