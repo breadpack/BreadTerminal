@@ -73,6 +73,7 @@ add_executable(BreadTerminal WIN32
     src/TerminalWindowState.cpp
     src/TerminalWindowStateEvents.cpp
     src/TerminalWindowInput.cpp
+    src/QuickTerminalWindow.cpp
 )
 target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus)
 

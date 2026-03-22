@@ -121,8 +121,13 @@ std::string serializeConfigLua(const Config& config) {
 
     // Quick terminal
     if (!config.quick_terminal_hotkey.empty()) {
-        o << "terminal.config({ quick_terminal_hotkey = "
-          << escLua(config.quick_terminal_hotkey) << " })\n\n";
+        o << "terminal.config({\n";
+        o << "    quick_terminal_hotkey = " << escLua(config.quick_terminal_hotkey) << ",\n";
+        o << "    quick_terminal_height = " << config.quick_terminal_height << ",\n";
+        o << "    quick_terminal_animation_ms = " << config.quick_terminal_animation_ms << ",\n";
+        o << "    quick_terminal_position = " << escLua(config.quick_terminal_position) << ",\n";
+        o << "    quick_terminal_auto_hide = " << (config.quick_terminal_auto_hide ? "true" : "false") << ",\n";
+        o << "})\n\n";
     }
 
     // Sidebar

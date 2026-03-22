@@ -128,8 +128,12 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
     // Theme
     cfg.theme = getStr(t, "theme", cfg.theme);
 
-    // Quick terminal hotkey
+    // Quick terminal
     cfg.quick_terminal_hotkey = getStr(t, "quick_terminal_hotkey", cfg.quick_terminal_hotkey);
+    cfg.quick_terminal_height = getFloat(t, "quick_terminal_height", cfg.quick_terminal_height);
+    cfg.quick_terminal_animation_ms = getInt(t, "quick_terminal_animation_ms", cfg.quick_terminal_animation_ms);
+    cfg.quick_terminal_position = getStr(t, "quick_terminal_position", cfg.quick_terminal_position);
+    cfg.quick_terminal_auto_hide = getBool(t, "quick_terminal_auto_hide", cfg.quick_terminal_auto_hide);
 
     // Keybinding preset
     cfg.keybinding_preset = getStr(t, "keybinding_preset", cfg.keybinding_preset);
