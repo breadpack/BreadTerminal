@@ -18,6 +18,7 @@
 #include "termcore/notification.h"
 #include "termcore/agent.h"
 #include "UnifiedSettingsWindow.h"
+#include "ClipboardHistoryPopup.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -67,6 +68,7 @@ struct TerminalWindowState : public termcore::IPlatformHost {
 
     // UI windows
     std::unique_ptr<termcore::UnifiedSettingsWindow> unifiedSettings;
+    std::unique_ptr<ClipboardHistoryPopup> clipboardHistoryPopup;
 
     // Accessibility
     TerminalAccessibilityProvider* accessibilityProvider = nullptr;

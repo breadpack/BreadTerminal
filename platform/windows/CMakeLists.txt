@@ -46,6 +46,7 @@ set(TERMCORE_WIN_SOURCES
     src/TerminalAccessibility.cpp
     src/TerminalTextRange.cpp
     src/HighContrastDetector.cpp
+    src/ClipboardHistoryPopup.cpp
 )
 
 # WebView2Bridge.cpp has internal #if guards; always compile it.

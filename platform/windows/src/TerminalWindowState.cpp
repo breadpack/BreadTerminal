@@ -698,8 +698,18 @@ void TerminalWindowState::showNotification(const std::string& title,
 
 void TerminalWindowState::showClipboardHistory(
         const std::vector<termcore::ClipboardEntry>& entries) {
-    // TODO: show clipboard history popup
-    (void)entries;
+    if (entries.empty()) return;
+
+    if (!clipboardHistoryPopup) {
+        clipboardHistoryPopup = std::make_unique<ClipboardHistoryPopup>();
+    }
+
+    clipboardHistoryPopup->show(hwnd, entries,
+        [this](const std::string& text) {
+            if (controller) {
+                controller->pasteText(text);
+            }
+        });
 }
 
 void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
