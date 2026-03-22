@@ -79,17 +79,22 @@ set(TERMCORE_SOURCES
     src/settings_model.cpp
     src/config_value_adapter.cpp
     src/profile_manager.cpp
+    src/shell_detector.cpp
 )
 
 if(UNIX)
     list(APPEND TERMCORE_SOURCES
         src/pty_unix.cpp
         src/socket/unix_socket_transport.cpp
+        src/shell_detector_unix.cpp
     )
 endif()
 
 if(WIN32)
-    list(APPEND TERMCORE_SOURCES src/pty_windows.cpp)
+    list(APPEND TERMCORE_SOURCES
+        src/pty_windows.cpp
+        src/shell_detector_windows.cpp
+    )
 endif()
 
 # ICU for Unicode properties

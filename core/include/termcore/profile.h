@@ -56,5 +56,10 @@ private:
     void ensureFallback();
 };
 
+class ShellDetector {
+public:
+    static std::vector<Profile> detect();
+};
+
 } // namespace termcore
 #endif
