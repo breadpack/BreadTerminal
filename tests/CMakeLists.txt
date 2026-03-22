@@ -39,6 +39,7 @@ add_executable(termcore_tests
     test_kitty_graphics.cpp
     test_shell_integration.cpp
     test_variable_font.cpp
+    test_color_font.cpp
     test_bitmap_flip.cpp
     test_terminfo.cpp
     test_paste_guard.cpp
