@@ -45,6 +45,12 @@ public:
 
     /// Send signal to child process.
     virtual void signal(int sig) = 0;
+
+    /// Get the name of the foreground process (e.g. "git", "vim").
+    virtual std::string foregroundProcessName() const { return {}; }
+
+    /// Get the current working directory of the foreground process.
+    virtual std::string foregroundCwd() const { return {}; }
 };
 
 /// Factory function
