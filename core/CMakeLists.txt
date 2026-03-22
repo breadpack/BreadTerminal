@@ -74,6 +74,8 @@ set(TERMCORE_SOURCES
     src/search_controller.cpp
     src/tab_controller.cpp
     src/config_applier.cpp
+    src/shader_effect.cpp
+    src/shader_builtins.cpp
 )
 
 if(UNIX)
