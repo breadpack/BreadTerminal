@@ -52,6 +52,7 @@ add_executable(termcore_tests
     test_font_index.cpp
     test_profile.cpp
     test_shell_detector.cpp
+    test_update_checker.cpp
 )
 
 target_link_libraries(termcore_tests

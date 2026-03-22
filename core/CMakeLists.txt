@@ -81,6 +81,7 @@ set(TERMCORE_SOURCES
     src/config_value_adapter.cpp
     src/profile_manager.cpp
     src/shell_detector.cpp
+    src/update_checker.cpp
 )
 
 if(UNIX)

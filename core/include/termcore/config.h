@@ -85,6 +85,10 @@ struct Config {
     std::string default_profile_id;
     std::vector<std::string> hidden_profile_ids;
 
+    // Update checking
+    bool check_for_updates = true;
+    int update_check_interval = 24;  // hours
+
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;
 };
