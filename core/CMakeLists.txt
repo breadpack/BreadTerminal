@@ -84,6 +84,7 @@ set(TERMCORE_SOURCES
     src/mcp_server_spec.cpp
     src/quick_terminal.cpp
     src/clipboard_history.cpp
+    src/terminal_inspector.cpp
     src/terminal_controller.cpp
     src/input_handler.cpp
     src/font_manager.cpp

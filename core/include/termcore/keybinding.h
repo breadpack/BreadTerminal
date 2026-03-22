@@ -61,6 +61,8 @@ enum class Action : uint16_t {
     ToggleBroadcast,
     // SSH
     SshConnect,
+    // Debug
+    ToggleInspector,
     // Custom (string-based action)
     Custom,
 };

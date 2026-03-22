@@ -1,6 +1,69 @@
 #include "termcore/vt_parser.h"
+#include "termcore/terminal_inspector.h"
+
+#include <sstream>
 
 namespace termcore {
+
+// Helper to format CSI params as a string for inspector logging
+static std::string formatCsiParams(const std::vector<VtParam>& params,
+                                   const std::string& intermediates,
+                                   char32_t final_char) {
+    std::ostringstream oss;
+    oss << "CSI ";
+    if (!intermediates.empty()) oss << intermediates;
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) oss << ";";
+        if (params[i].value >= 0) oss << params[i].value;
+        for (size_t j = 0; j < params[i].sub.size(); ++j) {
+            oss << ":";
+            if (params[i].sub[j] >= 0) oss << params[i].sub[j];
+        }
+    }
+    oss << static_cast<char>(final_char);
+    return oss.str();
+}
+
+static std::string formatCsiRaw(const std::vector<VtParam>& params,
+                                const std::string& intermediates,
+                                char32_t final_char) {
+    std::ostringstream oss;
+    oss << "\x1b[";
+    if (!intermediates.empty()) oss << intermediates;
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) oss << ";";
+        if (params[i].value >= 0) oss << params[i].value;
+        for (size_t j = 0; j < params[i].sub.size(); ++j) {
+            oss << ":";
+            if (params[i].sub[j] >= 0) oss << params[i].sub[j];
+        }
+    }
+    oss << static_cast<char>(final_char);
+    return oss.str();
+}
+
+static std::string controlName(uint8_t byte) {
+    switch (byte) {
+        case 0x07: return "BEL";
+        case 0x08: return "BS";
+        case 0x09: return "HT";
+        case 0x0A: return "LF";
+        case 0x0B: return "VT";
+        case 0x0C: return "FF";
+        case 0x0D: return "CR";
+        case 0x0E: return "SO";
+        case 0x0F: return "SI";
+        case 0x18: return "CAN";
+        case 0x1A: return "SUB";
+        case 0x1B: return "ESC";
+        case 0x7F: return "DEL";
+        default: {
+            std::ostringstream oss;
+            oss << "C0 0x" << std::hex << static_cast<int>(byte);
+            return oss.str();
+        }
+    }
+}
 
 VtParser::VtParser(VtParserHandler& handler)
     : handler_(handler) {
@@ -9,6 +72,10 @@ VtParser::VtParser(VtParserHandler& handler)
     osc_string_.reserve(512);
     dcs_data_.reserve(256);
     intermediates_.reserve(4);
+}
+
+void VtParser::setInspector(TerminalInspector* inspector) {
+    inspector_ = inspector;
 }
 
 void VtParser::feed(const char* data, size_t len) {
@@ -51,6 +118,9 @@ bool VtParser::isC0(uint8_t byte) const {
 }
 
 void VtParser::executeC0(uint8_t byte) {
+    if (inspector_ && inspector_->isEnabled()) {
+        inspector_->logControl(static_cast<char>(byte), controlName(byte));
+    }
     handler_.onExecute(byte);
 }
 
@@ -121,14 +191,29 @@ void VtParser::csiDispatch(uint8_t byte) {
         params_.push_back(std::move(vp));
         current_subs_.clear();
     }
+    if (inspector_ && inspector_->isEnabled()) {
+        inspector_->logCSI(
+            formatCsiRaw(params_, intermediates_, static_cast<char32_t>(byte)),
+            formatCsiParams(params_, intermediates_, static_cast<char32_t>(byte)));
+    }
     handler_.onCsiDispatch(static_cast<char32_t>(byte), params_, intermediates_);
 }
 
 void VtParser::escDispatch(uint8_t byte) {
+    if (inspector_ && inspector_->isEnabled()) {
+        std::string raw = "\x1b" + intermediates_ + std::string(1, static_cast<char>(byte));
+        std::string desc = "ESC " + intermediates_ + std::string(1, static_cast<char>(byte));
+        inspector_->logESC(raw, desc);
+    }
     handler_.onEscDispatch(static_cast<char32_t>(byte), intermediates_);
 }
 
 void VtParser::oscDispatch() {
+    if (inspector_ && inspector_->isEnabled()) {
+        std::string desc = "OSC " + std::to_string(osc_number_);
+        if (!osc_string_.empty()) desc += ": " + osc_string_;
+        inspector_->logOSC(osc_number_, osc_string_, desc);
+    }
     handler_.onOscDispatch(osc_number_, osc_string_);
 }
 
@@ -231,6 +316,9 @@ void VtParser::handleGround(uint8_t byte) {
         // Stray continuation byte, ignore or print replacement
     } else {
         // Printable ASCII
+        if (inspector_ && inspector_->isEnabled()) {
+            inspector_->logText(std::string(1, static_cast<char>(byte)));
+        }
         handler_.onPrint(static_cast<char32_t>(byte));
     }
 }
@@ -555,6 +643,27 @@ void VtParser::handleUtf8Collect(uint8_t byte) {
     utf8_remaining_--;
     if (utf8_remaining_ == 0) {
         state_ = utf8_return_state_;
+        if (inspector_ && inspector_->isEnabled()) {
+            // Encode codepoint back to UTF-8 for logging
+            std::string utf8str;
+            char32_t cp = utf8_codepoint_;
+            if (cp < 0x80) {
+                utf8str += static_cast<char>(cp);
+            } else if (cp < 0x800) {
+                utf8str += static_cast<char>(0xC0 | (cp >> 6));
+                utf8str += static_cast<char>(0x80 | (cp & 0x3F));
+            } else if (cp < 0x10000) {
+                utf8str += static_cast<char>(0xE0 | (cp >> 12));
+                utf8str += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                utf8str += static_cast<char>(0x80 | (cp & 0x3F));
+            } else {
+                utf8str += static_cast<char>(0xF0 | (cp >> 18));
+                utf8str += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                utf8str += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                utf8str += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+            inspector_->logText(utf8str);
+        }
         handler_.onPrint(utf8_codepoint_);
     }
 }

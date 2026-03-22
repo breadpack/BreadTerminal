@@ -8,6 +8,8 @@
 
 namespace termcore {
 
+class TerminalInspector;
+
 /// A single CSI/DCS parameter with optional colon-separated sub-parameters.
 struct VtParam {
     int value = -1;              ///< Main parameter value (-1 = default/omitted)
@@ -90,6 +92,9 @@ public:
     /// Reset the parser to Ground state.
     void reset();
 
+    /// Set an optional inspector for logging parsed sequences.
+    void setInspector(TerminalInspector* inspector);
+
 private:
     void processByte(uint8_t byte);
 
@@ -121,6 +126,7 @@ private:
     void beginUtf8(uint8_t byte);
 
     VtParserHandler& handler_;
+    TerminalInspector* inspector_ = nullptr;
     VtParserState state_ = VtParserState::Ground;
 
     // CSI/ESC parameter collection
