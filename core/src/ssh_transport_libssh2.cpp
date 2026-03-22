@@ -2,7 +2,6 @@
 
 #if TERMCORE_HAS_LIBSSH2
 
-#include <algorithm>
 #include <cstring>
 
 #if defined(_WIN32)
@@ -121,7 +120,6 @@ bool Libssh2Transport::connectSocket() {
         socket_t s = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (s == kInvalidSocket) continue;
 
-        // Set connect timeout via SO_RCVTIMEO / SO_SNDTIMEO
 #if defined(_WIN32)
         DWORD timeout_ms = config_.connect_timeout_seconds * 1000;
         setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
@@ -169,7 +167,6 @@ bool Libssh2Transport::performHandshake() {
         return false;
     }
 
-    // Use non-blocking mode for channel I/O later
     libssh2_session_set_blocking(session_, 1);
 
     int rc = libssh2_session_handshake(session_, static_cast<int>(socket_));
@@ -195,7 +192,6 @@ bool Libssh2Transport::verifyHostKey() {
         return false;
     }
 
-    // Encode key as hex for storage
     std::string key_hex;
     key_hex.reserve(len * 2);
     for (size_t i = 0; i < len; ++i) {
@@ -207,12 +203,12 @@ bool Libssh2Transport::verifyHostKey() {
 
     std::string key_type;
     switch (type) {
-        case LIBSSH2_HOSTKEY_TYPE_RSA:     key_type = "ssh-rsa"; break;
-        case LIBSSH2_HOSTKEY_TYPE_DSS:     key_type = "ssh-dss"; break;
+        case LIBSSH2_HOSTKEY_TYPE_RSA:       key_type = "ssh-rsa"; break;
+        case LIBSSH2_HOSTKEY_TYPE_DSS:       key_type = "ssh-dss"; break;
         case LIBSSH2_HOSTKEY_TYPE_ECDSA_256: key_type = "ecdsa-sha2-nistp256"; break;
         case LIBSSH2_HOSTKEY_TYPE_ECDSA_384: key_type = "ecdsa-sha2-nistp384"; break;
         case LIBSSH2_HOSTKEY_TYPE_ECDSA_521: key_type = "ecdsa-sha2-nistp521"; break;
-        case LIBSSH2_HOSTKEY_TYPE_ED25519: key_type = "ssh-ed25519"; break;
+        case LIBSSH2_HOSTKEY_TYPE_ED25519:   key_type = "ssh-ed25519"; break;
         default: key_type = "unknown"; break;
     }
 
@@ -226,12 +222,7 @@ bool Libssh2Transport::verifyHostKey() {
                      " - possible MITM attack");
             return false;
         case KnownHostResult::NotFound:
-            // Accept on first use
-            known_hosts_.addEntry(config_.hostname, config_.port,
-                                  key_type, key_hex);
-            return true;
         case KnownHostResult::Error:
-            // Cannot read known_hosts; accept anyway (first-use)
             known_hosts_.addEntry(config_.hostname, config_.port,
                                   key_type, key_hex);
             return true;
@@ -269,12 +260,9 @@ bool Libssh2Transport::tryAuthAgent() {
 
 bool Libssh2Transport::tryAuthPublicKey(const std::string& key_path) {
     std::string pub_path = key_path + ".pub";
-
     int rc = libssh2_userauth_publickey_fromfile(
         session_, config_.username.c_str(),
-        pub_path.c_str(), key_path.c_str(),
-        nullptr  // passphrase - empty for now
-    );
+        pub_path.c_str(), key_path.c_str(), nullptr);
     return rc == 0;
 }
 
@@ -293,7 +281,6 @@ bool Libssh2Transport::authenticate() {
         return false;
     }
 
-    // Check what methods the server supports
     char* auth_list = libssh2_userauth_list(session_, config_.username.c_str(),
                                              static_cast<unsigned int>(
                                                  config_.username.size()));
@@ -307,17 +294,14 @@ bool Libssh2Transport::authenticate() {
                 break;
             case SshAuthMethod::PublicKey:
                 if (server_methods.find("publickey") == std::string::npos &&
-                    !server_methods.empty()) {
-                    continue;
-                }
+                    !server_methods.empty()) continue;
                 if (!config_.identity_files.empty()) {
                     for (const auto& key : config_.identity_files) {
                         ok = tryAuthPublicKey(key);
                         if (ok) break;
                     }
                 } else {
-                    auto defaults = defaultIdentityFiles();
-                    for (const auto& key : defaults) {
+                    for (const auto& key : defaultIdentityFiles()) {
                         ok = tryAuthPublicKey(key);
                         if (ok) break;
                     }
@@ -325,9 +309,7 @@ bool Libssh2Transport::authenticate() {
                 break;
             case SshAuthMethod::Password:
                 if (server_methods.find("password") == std::string::npos &&
-                    !server_methods.empty()) {
-                    continue;
-                }
+                    !server_methods.empty()) continue;
                 ok = tryAuthPassword();
                 break;
             case SshAuthMethod::None:
@@ -355,10 +337,8 @@ bool Libssh2Transport::connect() {
     if (!verifyHostKey()) { cleanupSession(); closeSocket(); return false; }
     if (!authenticate()) { cleanupSession(); closeSocket(); return false; }
 
-    // Switch to non-blocking for channel I/O
     libssh2_session_set_blocking(session_, 0);
 
-    // Set keepalive
     if (config_.keepalive_seconds > 0) {
         libssh2_keepalive_config(session_, 1, config_.keepalive_seconds);
     }
@@ -368,13 +348,12 @@ bool Libssh2Transport::connect() {
 }
 
 // ---------------------------------------------------------------------------
-// Disconnect
+// Disconnect and cleanup
 // ---------------------------------------------------------------------------
 
 void Libssh2Transport::disconnect() {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Close all channels
     for (auto& [id, ch] : channels_) {
         if (ch.channel) {
             libssh2_channel_send_eof(ch.channel);
@@ -408,170 +387,6 @@ void Libssh2Transport::closeSocket() {
 #endif
         socket_ = kInvalidSocket;
     }
-}
-
-// ---------------------------------------------------------------------------
-// Channel management
-// ---------------------------------------------------------------------------
-
-int Libssh2Transport::openChannel() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (state_ != SshTransportState::Authenticated || !session_) return -1;
-
-    // Temporarily switch to blocking for channel open
-    libssh2_session_set_blocking(session_, 1);
-
-    LIBSSH2_CHANNEL* ch = libssh2_channel_open_session(session_);
-    if (!ch) {
-        libssh2_session_set_blocking(session_, 0);
-        return -1;
-    }
-
-    // Request PTY
-    int rc = libssh2_channel_request_pty_ex(
-        ch, config_.term_type.c_str(),
-        static_cast<unsigned int>(config_.term_type.size()),
-        nullptr, 0,  // modes
-        config_.pty_cols, config_.pty_rows, 0, 0);
-    if (rc != 0) {
-        libssh2_channel_free(ch);
-        libssh2_session_set_blocking(session_, 0);
-        return -1;
-    }
-
-    // Start shell
-    rc = libssh2_channel_shell(ch);
-    if (rc != 0) {
-        libssh2_channel_free(ch);
-        libssh2_session_set_blocking(session_, 0);
-        return -1;
-    }
-
-    libssh2_session_set_blocking(session_, 0);
-
-    int id = next_channel_id_++;
-    Libssh2Channel lcd;
-    lcd.id = id;
-    lcd.channel = ch;
-    lcd.active = true;
-    channels_[id] = std::move(lcd);
-    return id;
-}
-
-bool Libssh2Transport::closeChannel(int channel_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = channels_.find(channel_id);
-    if (it == channels_.end()) return false;
-
-    if (it->second.channel) {
-        libssh2_session_set_blocking(session_, 1);
-        libssh2_channel_send_eof(it->second.channel);
-        libssh2_channel_close(it->second.channel);
-        libssh2_channel_free(it->second.channel);
-        libssh2_session_set_blocking(session_, 0);
-    }
-    channels_.erase(it);
-    return true;
-}
-
-bool Libssh2Transport::writeToChannel(int channel_id, const std::string& data) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = channels_.find(channel_id);
-    if (it == channels_.end() || !it->second.active) return false;
-    it->second.write_buffer += data;
-    return true;
-}
-
-std::string Libssh2Transport::readFromChannel(int channel_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = channels_.find(channel_id);
-    if (it == channels_.end() || !it->second.active) return {};
-    std::string data;
-    std::swap(data, it->second.read_buffer);
-    return data;
-}
-
-// ---------------------------------------------------------------------------
-// I/O polling
-// ---------------------------------------------------------------------------
-
-void Libssh2Transport::poll() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!session_ || state_ != SshTransportState::Authenticated) return;
-
-    char buf[4096];
-    for (auto& [id, ch] : channels_) {
-        if (!ch.active || !ch.channel) continue;
-
-        // Read from channel
-        for (;;) {
-            int nread = libssh2_channel_read(ch.channel, buf, sizeof(buf));
-            if (nread > 0) {
-                ch.read_buffer.append(buf, nread);
-            } else {
-                break;
-            }
-        }
-
-        // Also read stderr
-        for (;;) {
-            int nread = libssh2_channel_read_stderr(ch.channel, buf, sizeof(buf));
-            if (nread > 0) {
-                ch.read_buffer.append(buf, nread);
-            } else {
-                break;
-            }
-        }
-
-        // Flush write buffer
-        while (!ch.write_buffer.empty()) {
-            int nwritten = libssh2_channel_write(
-                ch.channel, ch.write_buffer.data(),
-                ch.write_buffer.size());
-            if (nwritten > 0) {
-                ch.write_buffer.erase(0, nwritten);
-            } else if (nwritten == LIBSSH2_ERROR_EAGAIN) {
-                break;
-            } else {
-                // Write error
-                ch.active = false;
-                break;
-            }
-        }
-
-        // Check if channel has been closed by remote
-        if (libssh2_channel_eof(ch.channel)) {
-            ch.active = false;
-        }
-    }
-}
-
-void Libssh2Transport::sendKeepalive() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!session_ || state_ != SshTransportState::Authenticated) return;
-
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        now - last_keepalive_);
-    if (elapsed.count() >= config_.keepalive_seconds &&
-        config_.keepalive_seconds > 0) {
-        int seconds_to_next = 0;
-        libssh2_keepalive_send(session_, &seconds_to_next);
-        last_keepalive_ = now;
-    }
-}
-
-bool Libssh2Transport::resizeChannel(int channel_id, int cols, int rows) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = channels_.find(channel_id);
-    if (it == channels_.end() || !it->second.active || !it->second.channel) {
-        return false;
-    }
-
-    libssh2_session_set_blocking(session_, 1);
-    int rc = libssh2_channel_request_pty_size(it->second.channel, cols, rows);
-    libssh2_session_set_blocking(session_, 0);
-    return rc == 0;
 }
 
 } // namespace termcore

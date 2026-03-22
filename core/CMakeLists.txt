@@ -104,6 +104,7 @@ set(TERMCORE_SOURCES
     src/ssh_transport.cpp
     src/ssh_known_hosts.cpp
     src/ssh_transport_libssh2.cpp
+    src/ssh_transport_libssh2_channel.cpp
     src/grapheme.cpp
     src/shader_effect.cpp
     src/shader_builtins.cpp

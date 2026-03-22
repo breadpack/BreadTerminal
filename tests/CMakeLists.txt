@@ -64,6 +64,7 @@ add_executable(termcore_tests
     test_update_checker.cpp
     test_ssh.cpp
     test_ssh_mux.cpp
+    test_ssh_transport.cpp
     test_accessibility.cpp
     test_grapheme.cpp
     test_ligature.cpp
