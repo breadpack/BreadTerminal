@@ -54,6 +54,7 @@ bool isProcessAlive(int pid) {
 
 AgentTracker::AgentTracker() {
     initDefaultPatterns();
+    initDefaultStatePatterns();
 }
 
 AgentTracker::~AgentTracker() = default;
@@ -209,6 +210,99 @@ void AgentTracker::sweepStale() {
 
         ++it;
     }
+}
+
+void AgentTracker::initDefaultStatePatterns() {
+    // Claude Code patterns
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Thinking, "Thinking...", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::ToolUse, "Tool:", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::ToolUse, "Running", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Waiting, "Do you want to", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Waiting, "Allow?", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Error, "Error:", false});
+    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Idle, "> ", false});
+
+    // Aider patterns
+    state_patterns_.push_back({AgentType::Aider, AgentState::Thinking, "Thinking...", false});
+    state_patterns_.push_back({AgentType::Aider, AgentState::ToolUse, "Editing", false});
+    state_patterns_.push_back({AgentType::Aider, AgentState::Waiting, "Allow creation", false});
+    state_patterns_.push_back({AgentType::Aider, AgentState::Error, "Error", false});
+
+    // Codex patterns
+    state_patterns_.push_back({AgentType::Codex, AgentState::Thinking, "thinking", false});
+    state_patterns_.push_back({AgentType::Codex, AgentState::Error, "error", false});
+
+    // Generic patterns (apply to all agent types)
+    state_patterns_.push_back({AgentType::Unknown, AgentState::Error, "fatal error", false});
+    state_patterns_.push_back({AgentType::Unknown, AgentState::Error, "FATAL", false});
+}
+
+void AgentTracker::addStatePattern(const AgentStatePattern& pattern) {
+    state_patterns_.push_back(pattern);
+}
+
+bool AgentTracker::evaluateOutput(uint32_t pane_id, const std::string& output) {
+    auto it = agents_.find(pane_id);
+    if (it == agents_.end()) return false;
+
+    auto& info = it->second;
+
+    for (const auto& sp : state_patterns_) {
+        // Check agent type match: Unknown matches all
+        if (sp.agent_type != AgentType::Unknown && sp.agent_type != info.type) {
+            continue;
+        }
+
+        bool matched = false;
+        if (!sp.is_regex) {
+            matched = containsIgnoreCase(output, sp.pattern);
+        } else {
+            // Simple substring match for regex patterns as well (regex support
+            // would require <regex> which is heavy; substring is sufficient)
+            matched = containsIgnoreCase(output, sp.pattern);
+        }
+
+        if (matched && info.state != sp.target_state) {
+            info.state = sp.target_state;
+            info.last_activity = std::chrono::steady_clock::now();
+            if (callback_) {
+                callback_(pane_id, info);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::string AgentTracker::stateToString(AgentState state) {
+    switch (state) {
+        case AgentState::Inactive:   return "inactive";
+        case AgentState::Starting:   return "starting";
+        case AgentState::Idle:       return "idle";
+        case AgentState::Running:    return "running";
+        case AgentState::Thinking:   return "thinking";
+        case AgentState::ToolUse:    return "tool_use";
+        case AgentState::Waiting:    return "waiting";
+        case AgentState::NeedsInput: return "needs_input";
+        case AgentState::Error:      return "error";
+        case AgentState::Exited:     return "exited";
+    }
+    return "unknown";
+}
+
+AgentState AgentTracker::stringToState(const std::string& str) {
+    if (str == "inactive")    return AgentState::Inactive;
+    if (str == "starting")    return AgentState::Starting;
+    if (str == "idle")        return AgentState::Idle;
+    if (str == "running")     return AgentState::Running;
+    if (str == "thinking")    return AgentState::Thinking;
+    if (str == "tool_use")    return AgentState::ToolUse;
+    if (str == "waiting")     return AgentState::Waiting;
+    if (str == "needs_input") return AgentState::NeedsInput;
+    if (str == "error")       return AgentState::Error;
+    if (str == "exited")      return AgentState::Exited;
+    return AgentState::Inactive;
 }
 
 } // namespace termcore

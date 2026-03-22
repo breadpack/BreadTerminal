@@ -37,8 +37,11 @@ public:
     /// Called when a new notification arrives for a pane.
     void onNotification(PaneId pane, const std::string& text);
 
-    /// Called when an agent in the given pane transitions to NeedsInput.
+    /// Called when an agent in the given pane transitions to NeedsInput/Waiting.
     void onAgentNeedsInput(PaneId pane);
+
+    /// Called when an agent requests attention with specific color and intensity.
+    void onAgentRequestAttention(PaneId pane, float intensity, uint32_t color);
 
     /// Called when the user focuses a pane -- clears unread / attention flags.
     void onPaneFocused(PaneId pane);

@@ -264,6 +264,93 @@ std::vector<McpToolSpec> McpServerSpec::agentTools() {
   "properties": {},
   "additionalProperties": false
 })"
+        },
+        {
+            "breadterminal_agent_set_status",
+            "Set agent state with a custom label and icon on a pane.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." },
+    "state": { "type": "string", "enum": ["inactive","starting","idle","running","thinking","tool_use","waiting","needs_input","error","exited"], "description": "Agent state." },
+    "label": { "type": "string", "description": "Custom label text." },
+    "icon": { "type": "string", "description": "Icon name or emoji." }
+  },
+  "required": ["pane_id", "state"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_agent_set_status_pills",
+            "Set status pills (badges) on a pane for agent display.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." },
+    "pills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "bg_color": { "type": "string" },
+          "fg_color": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    }
+  },
+  "required": ["pane_id", "pills"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_agent_request_attention",
+            "Trigger a border glow and notification on a pane to get the user's attention.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." },
+    "urgency": { "type": "string", "enum": ["low","normal","critical"], "description": "Attention urgency level." },
+    "message": { "type": "string", "description": "Message to display in notification." },
+    "color": { "type": "string", "description": "Hex color for border glow (e.g. '#ff5500')." }
+  },
+  "required": ["pane_id"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_agent_clear_status",
+            "Clear all agent UI elements (pills, progress, status) from a pane.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." }
+  },
+  "required": ["pane_id"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_agent_broadcast",
+            "Send a message to all tracked agent panes.",
+            R"({
+  "type": "object",
+  "properties": {
+    "message": { "type": "string", "description": "Message to broadcast." }
+  },
+  "required": ["message"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_agent_list",
+            "List all active agents with their states and pane IDs.",
+            R"({
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+})"
         }
     };
 }
@@ -316,6 +403,65 @@ std::vector<McpToolSpec> McpServerSpec::statusTools() {
     }
   },
   "required": ["text"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_get_screen_content",
+            "Read visible terminal content from a pane with optional row range.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." },
+    "start_row": { "type": "integer", "description": "First row to read (0-based). Default: 0." },
+    "end_row": { "type": "integer", "description": "Last row (exclusive). Default: all rows." }
+  },
+  "required": ["pane_id"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_get_selection",
+            "Get the currently selected text from a pane.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." }
+  },
+  "required": ["pane_id"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_get_cursor_position",
+            "Get the cursor row and column in a pane.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." }
+  },
+  "required": ["pane_id"],
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_list_panes",
+            "List all panes across all workspaces with their agent status.",
+            R"({
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+})"
+        },
+        {
+            "breadterminal_get_pane_info",
+            "Get detailed information about a specific pane including agent state.",
+            R"({
+  "type": "object",
+  "properties": {
+    "pane_id": { "type": "integer", "description": "Target pane ID." }
+  },
+  "required": ["pane_id"],
   "additionalProperties": false
 })"
         }

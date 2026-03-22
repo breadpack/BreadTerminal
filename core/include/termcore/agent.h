@@ -30,7 +30,11 @@ enum class AgentState : uint8_t {
     Starting,      // Process started, not yet ready
     Idle,          // Waiting at prompt for user input
     Running,       // Processing/thinking
-    NeedsInput,    // Waiting for permission/approval
+    Thinking,      // Agent is processing (e.g., Claude "Thinking...")
+    ToolUse,       // Agent is executing a tool
+    Waiting,       // Agent is waiting for user input/approval
+    NeedsInput,    // Waiting for permission/approval (legacy alias for Waiting)
+    Error,         // Agent encountered an error
     Exited,        // Process has terminated
 };
 
@@ -44,6 +48,17 @@ struct AgentInfo {
     uint32_t pane_id = 0;       // Which pane this agent is in
     std::chrono::steady_clock::time_point last_activity;
     std::string last_message;   // Last status message
+    std::string custom_label;   // Custom label set via MCP
+    std::string custom_icon;    // Custom icon set via MCP
+};
+
+/// Pattern-based state detection rule.
+/// Matches terminal output text to determine agent state transitions.
+struct AgentStatePattern {
+    AgentType agent_type = AgentType::Unknown;  // Which agent this applies to (Unknown = all)
+    AgentState target_state = AgentState::Idle;
+    std::string pattern;                         // Substring to match in terminal output
+    bool is_regex = false;                       // If true, treat pattern as regex
 };
 
 /// Callback for agent state changes
@@ -96,6 +111,23 @@ public:
     /// Get registered agent patterns count
     size_t registeredCount() const { return patterns_.size(); }
 
+    /// Add a pattern-based state detection rule.
+    /// When terminal output matches the pattern, the agent transitions to target_state.
+    void addStatePattern(const AgentStatePattern& pattern);
+
+    /// Evaluate terminal output against registered state patterns for a pane.
+    /// Returns true if a state transition occurred.
+    bool evaluateOutput(uint32_t pane_id, const std::string& output);
+
+    /// Get all registered state patterns.
+    const std::vector<AgentStatePattern>& statePatterns() const { return state_patterns_; }
+
+    /// Convert AgentState to string representation.
+    static std::string stateToString(AgentState state);
+
+    /// Parse string to AgentState. Returns Inactive on unrecognized input.
+    static AgentState stringToState(const std::string& str);
+
 private:
     struct AgentPattern {
         AgentType type;
@@ -107,8 +139,10 @@ private:
     std::vector<AgentPattern> patterns_;
     std::unordered_map<uint32_t, AgentInfo> agents_;  // pane_id -> AgentInfo
     AgentStateCallback callback_;
+    std::vector<AgentStatePattern> state_patterns_;
 
     void initDefaultPatterns();
+    void initDefaultStatePatterns();
 };
 
 } // namespace termcore

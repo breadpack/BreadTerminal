@@ -73,6 +73,30 @@ rpc::Response CommandDispatcher::dispatch(const rpc::Request& req) {
     if (method == "query.agent-state")  return handleQueryAgentState(id, p);
     if (method == "query.scrollback")  return handleQueryScrollback(id, p);
 
+    // terminal.* (terminal control)
+    if (method == "terminal.getScreenContent")    return handleTerminalGetScreenContent(id, p);
+    if (method == "terminal.sendInput")           return handleTerminalSendInput(id, p);
+    if (method == "terminal.getSelection")        return handleTerminalGetSelection(id, p);
+    if (method == "terminal.getCursorPosition")   return handleTerminalGetCursorPosition(id, p);
+
+    // agent.* (status display)
+    if (method == "agent.setStatus")        return handleAgentSetStatus(id, p);
+    if (method == "agent.setProgress")      return handleAgentSetProgress(id, p);
+    if (method == "agent.setStatusPills")   return handleAgentSetStatusPills(id, p);
+    if (method == "agent.requestAttention") return handleAgentRequestAttention(id, p);
+    if (method == "agent.clearStatus")      return handleAgentClearStatus(id, p);
+    if (method == "agent.addStatePattern")  return handleAgentAddStatePattern(id, p);
+
+    // workspace.* (awareness)
+    if (method == "workspace.listPanes")    return handleWorkspaceListPanes(id, p);
+    if (method == "workspace.getActivePane") return handleWorkspaceGetActivePane(id, p);
+    if (method == "workspace.getPaneInfo")  return handleWorkspaceGetPaneInfo(id, p);
+
+    // agent.* (orchestration enhanced)
+    if (method == "agent.broadcast")        return handleAgentBroadcast(id, p);
+    if (method == "agent.sendToAgent")      return handleAgentSendToAgent(id, p);
+    if (method == "agent.listAgents")       return handleAgentListAgents(id, p);
+
     return rpc::makeError(id, rpc::kMethodNotFound,
                           "Method not found: " + method);
 }
@@ -162,22 +186,10 @@ rpc::Response CommandDispatcher::handleQueryAgentState(
             return rpc::makeError(id, rpc::kNotFound, "No agent in pane");
         }
 
-        auto stateStr = [](AgentState s) -> std::string {
-            switch (s) {
-                case AgentState::Inactive:   return "inactive";
-                case AgentState::Starting:   return "starting";
-                case AgentState::Idle:       return "idle";
-                case AgentState::Running:    return "running";
-                case AgentState::NeedsInput: return "needs_input";
-                case AgentState::Exited:     return "exited";
-            }
-            return "unknown";
-        };
-
         return rpc::makeResult(id, {
             {"pane_id", pane_id},
             {"type", static_cast<int>(info->type)},
-            {"state", stateStr(info->state)},
+            {"state", AgentTracker::stateToString(info->state)},
             {"name", info->name},
             {"pid", info->pid},
             {"last_message", info->last_message}
@@ -188,22 +200,10 @@ rpc::Response CommandDispatcher::handleQueryAgentState(
     auto agents = agent_tracker_.allAgents();
     nlohmann::json arr = nlohmann::json::array();
     for (const auto* info : agents) {
-        auto stateStr = [](AgentState s) -> std::string {
-            switch (s) {
-                case AgentState::Inactive:   return "inactive";
-                case AgentState::Starting:   return "starting";
-                case AgentState::Idle:       return "idle";
-                case AgentState::Running:    return "running";
-                case AgentState::NeedsInput: return "needs_input";
-                case AgentState::Exited:     return "exited";
-            }
-            return "unknown";
-        };
-
         arr.push_back({
             {"pane_id", info->pane_id},
             {"type", static_cast<int>(info->type)},
-            {"state", stateStr(info->state)},
+            {"state", AgentTracker::stateToString(info->state)},
             {"name", info->name},
             {"pid", info->pid},
             {"last_message", info->last_message}

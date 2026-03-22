@@ -65,6 +65,8 @@ set(TERMCORE_SOURCES
     src/socket/command_dispatcher_browser.cpp
     src/socket/command_dispatcher_agent.cpp
     src/socket/command_dispatcher_orchestrator.cpp
+    src/socket/command_dispatcher_terminal.cpp
+    src/socket/command_dispatcher_status.cpp
     src/socket/socket_server.cpp
     src/screen_capture.cpp
     src/mcp_server_spec.cpp

@@ -174,4 +174,46 @@ void AgentOrchestrator::closeAll(WorkspaceId ws_id) {
     }
 }
 
+void AgentOrchestrator::broadcastToAgents(const std::string& message) {
+    if (!send_text_cb_) return;
+
+    for (const auto& [pid, tracking] : tracked_panes_) {
+        send_text_cb_(pid, message + "\r");
+    }
+}
+
+void AgentOrchestrator::sendToAgent(PaneId pane, const std::string& message) {
+    if (!send_text_cb_) return;
+
+    auto it = tracked_panes_.find(pane);
+    if (it != tracked_panes_.end()) {
+        send_text_cb_(pane, message + "\r");
+        it->second.last_activity = std::chrono::steady_clock::now();
+    }
+}
+
+std::vector<AgentInfo> AgentOrchestrator::listAgents(const AgentTracker& tracker) const {
+    std::vector<AgentInfo> result;
+    result.reserve(tracked_panes_.size());
+
+    for (const auto& [pid, tracking] : tracked_panes_) {
+        const AgentInfo* info = tracker.getAgent(pid);
+        if (info) {
+            result.push_back(*info);
+        } else {
+            // Pane is tracked but no agent info -- create a minimal entry
+            AgentInfo minimal;
+            minimal.pane_id = pid;
+            minimal.state = AgentState::Inactive;
+            result.push_back(minimal);
+        }
+    }
+
+    return result;
+}
+
+bool AgentOrchestrator::isTracked(PaneId pane) const {
+    return tracked_panes_.find(pane) != tracked_panes_.end();
+}
+
 }  // namespace termcore

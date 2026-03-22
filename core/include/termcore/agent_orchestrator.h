@@ -71,6 +71,18 @@ public:
     /// Get the workspace ID of the most recently launched agent group.
     WorkspaceId lastWorkspaceId() const { return last_workspace_id_; }
 
+    /// Send a message to all tracked agent panes.
+    void broadcastToAgents(const std::string& message);
+
+    /// Send a message to a specific agent pane.
+    void sendToAgent(PaneId pane, const std::string& message);
+
+    /// List all active agents with their states.
+    std::vector<AgentInfo> listAgents(const AgentTracker& tracker) const;
+
+    /// Check if an agent pane is tracked by the orchestrator.
+    bool isTracked(PaneId pane) const;
+
 private:
     Mux& mux_;
     SendTextCallback send_text_cb_;
