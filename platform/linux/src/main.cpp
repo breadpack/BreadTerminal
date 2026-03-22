@@ -11,9 +11,12 @@ static void on_activate(GtkApplication* app, gpointer /*user_data*/) {
     gtk_window_set_default_size(GTK_WINDOW(window),
                                 config.window_width, config.window_height);
 
+    // Wrap terminal in a GtkOverlay so the search bar can float on top
+    GtkWidget* overlay = gtk_overlay_new();
     GtkWidget* terminal = terminal_widget_new();
     terminal_widget_set_config(TERMINAL_WIDGET(terminal), config);
-    gtk_window_set_child(GTK_WINDOW(window), terminal);
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), terminal);
+    gtk_window_set_child(GTK_WINDOW(window), overlay);
 
     gtk_window_present(GTK_WINDOW(window));
 

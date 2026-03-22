@@ -2,12 +2,17 @@
 #define TERMCORE_SSH_MUX_H
 
 #include "termcore/ssh_session.h"
+#include "termcore/ssh_transport.h"
 
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#if TERMCORE_HAS_LIBSSH2
+#include "termcore/ssh_transport_libssh2.h"
+#endif
 
 namespace termcore {
 
@@ -20,8 +25,9 @@ struct SshChannel {
 
 /// A single multiplexed SSH connection that can host many PTY channels.
 ///
-/// This is the control-plane infrastructure only; actual SSH transport is
-/// stubbed and will be wired to a real SSH library in future work.
+/// When built with TERMCORE_HAS_LIBSSH2, this class delegates to a real
+/// libssh2 transport.  Otherwise, the stub implementation is used (buffers
+/// data locally without networking).
 class SshMuxSession {
 public:
     explicit SshMuxSession(const SshConfig& config);
@@ -33,6 +39,10 @@ public:
     SshMuxSession(SshMuxSession&&) = default;
     SshMuxSession& operator=(SshMuxSession&&) = default;
 
+    /// Explicitly connect the SSH session.  With stubs this is a no-op.
+    /// Returns true on success.
+    bool connect();
+
     /// Open a new PTY channel on this SSH connection.
     /// Returns a positive channel_id on success, or -1 on failure.
     int openChannel();
@@ -43,9 +53,12 @@ public:
     /// Write data to a channel.  Returns true on success.
     bool writeToChannel(int channel_id, const std::string& data);
 
-    /// Read pending data from a channel (non-blocking stub).
+    /// Read pending data from a channel (non-blocking).
     /// Returns the buffered data, or an empty string.
     std::string readFromChannel(int channel_id);
+
+    /// Poll channels for I/O and send keepalive.
+    void poll();
 
     /// List all channels (both active and inactive).
     std::vector<SshChannel> listChannels() const;
@@ -56,6 +69,12 @@ public:
     /// Whether the underlying SSH connection is (logically) connected.
     bool isConnected() const;
 
+    /// Transport state (always Authenticated for stubs).
+    SshTransportState transportState() const;
+
+    /// Last error message from the transport layer.
+    std::string lastError() const;
+
     /// The SshConfig that this session was created from.
     const SshConfig& config() const { return config_; }
 
@@ -64,17 +83,22 @@ public:
     static std::string makeSessionKey(const SshConfig& config);
 
 private:
+    SshConfig config_;
+
+#if TERMCORE_HAS_LIBSSH2
+    std::unique_ptr<Libssh2Transport> transport_;
+#else
+    // Stub state
     struct ChannelData {
         SshChannel info;
         std::string read_buffer;
         std::string write_buffer;
     };
-
-    SshConfig config_;
     bool connected_ = true;  // stub: always "connected" after construction
     int next_channel_id_ = 1;
     std::unordered_map<int, ChannelData> channels_;
     mutable std::mutex mutex_;
+#endif
 };
 
 } // namespace termcore

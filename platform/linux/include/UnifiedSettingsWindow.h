@@ -6,6 +6,7 @@
 #include "termcore/settings_model.h"
 #include "termcore/config.h"
 #include "termcore/font_index.h"
+#include "termcore/keybinding.h"
 #include "termcore/theme_index.h"
 
 #include <gtk/gtk.h>
@@ -100,6 +101,16 @@ private:
                              int width, int height, gpointer data);
     void onFontFilterChanged(int filterIndex);
     void onFontCardClick(int idx);
+    void onFontCardInstall(int idx);
+    void onFontCardUninstall(int idx);
+
+    // --- Keybinding editor (UnifiedSettingsKeybindings.cpp) ---
+    void showKeybindingList();
+    void onKeybindingEdit(int idx);
+    void showKeyCaptureDialog(int idx);
+    std::string comboToDisplayString(const KeyCombo& combo) const;
+    std::string actionToDisplayString(Action action) const;
+    int findConflict(const KeyCombo& combo, int excludeIdx) const;
 
     // --- Search ---
     void onSearchChanged(const char* text);
@@ -158,6 +169,9 @@ private:
     enum class FontFilter { All, Installed, NerdFonts, Ligatures };
     FontFilter activeFontFilter_ = FontFilter::All;
     std::vector<const FontMetadata*> filteredFonts_;
+
+    // Keybinding editor
+    KeybindingManager keybindMgr_;
 
     // CSS provider
     GtkCssProvider* cssProvider_ = nullptr;

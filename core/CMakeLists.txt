@@ -101,6 +101,9 @@ set(TERMCORE_SOURCES
     src/ssh_profile.cpp
     src/ssh_mux.cpp
     src/ssh_mux_manager.cpp
+    src/ssh_transport.cpp
+    src/ssh_known_hosts.cpp
+    src/ssh_transport_libssh2.cpp
     src/grapheme.cpp
     src/shader_effect.cpp
     src/shader_builtins.cpp
@@ -213,4 +216,43 @@ if(TERMCORE_HAS_LUA)
     target_link_libraries(termcore PUBLIC sol2_header_only ${LUA_LIBRARIES})
     target_link_directories(termcore PUBLIC ${LUA_LIBRARY_DIRS})
     target_compile_definitions(termcore PUBLIC TERMCORE_HAS_LUA=1)
+endif()
+
+# libssh2 (optional — real SSH transport)
+set(TERMCORE_HAS_LIBSSH2 OFF)
+if(WIN32)
+    find_package(Libssh2 CONFIG QUIET)
+    if(Libssh2_FOUND)
+        set(TERMCORE_HAS_LIBSSH2 ON)
+    endif()
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBSSH2 libssh2)
+        if(LIBSSH2_FOUND)
+            set(TERMCORE_HAS_LIBSSH2 ON)
+        endif()
+    endif()
+    if(NOT TERMCORE_HAS_LIBSSH2)
+        find_package(Libssh2 CONFIG QUIET)
+        if(Libssh2_FOUND)
+            set(TERMCORE_HAS_LIBSSH2 ON)
+        endif()
+    endif()
+endif()
+
+if(TERMCORE_HAS_LIBSSH2)
+    target_compile_definitions(termcore PUBLIC TERMCORE_HAS_LIBSSH2=1)
+    if(WIN32)
+        target_link_libraries(termcore PUBLIC Libssh2::libssh2 ws2_32)
+    elseif(TARGET Libssh2::libssh2)
+        target_link_libraries(termcore PUBLIC Libssh2::libssh2)
+    else()
+        target_include_directories(termcore PUBLIC ${LIBSSH2_INCLUDE_DIRS})
+        target_link_libraries(termcore PUBLIC ${LIBSSH2_LIBRARIES})
+        target_link_directories(termcore PUBLIC ${LIBSSH2_LIBRARY_DIRS})
+    endif()
+    message(STATUS "SSH transport: ENABLED (libssh2)")
+else()
+    message(STATUS "SSH transport: STUB (libssh2 not found)")
 endif()

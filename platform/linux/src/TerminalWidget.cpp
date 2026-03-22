@@ -129,6 +129,9 @@ static void terminal_widget_realize(GtkWidget* widget) {
     self->controller = std::make_unique<termcore::TerminalController>(
         self->platformHost.get(), self->config, self->fontCollection.get());
 
+    // Wire controller back to platform host for search/config callbacks
+    self->platformHost->setController(self->controller.get());
+
     // Render / poll timer (~60 fps)
     self->render_timer_id = g_timeout_add(16, on_render_tick, self);
 }

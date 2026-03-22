@@ -35,6 +35,7 @@ public:
                                             bool ligatures_only) const;
 
     void markInstalled(const std::string& name);
+    void markUninstalled(const std::string& name);
 
     /// Inject a platform predicate that checks if a font (by family name)
     /// is available on the system.

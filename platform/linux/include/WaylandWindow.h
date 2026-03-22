@@ -23,6 +23,10 @@ struct xdg_toplevel;
 struct wl_data_device_manager;
 struct wl_data_device;
 
+// text-input-v3 (IME) forward declarations
+struct zwp_text_input_manager_v3;
+struct zwp_text_input_v3;
+
 // Forward declarations for EGL
 typedef void* EGLDisplay;
 typedef void* EGLContext;
@@ -51,6 +55,11 @@ struct WaylandState {
     wl_shm* shm = nullptr;
     wl_data_device_manager* data_device_manager = nullptr;
     wl_data_device* data_device = nullptr;
+
+    // text-input-v3 (IME positioning)
+    zwp_text_input_manager_v3* text_input_manager = nullptr;
+    zwp_text_input_v3* text_input = nullptr;
+    bool text_input_focused = false;
 
     // Surface hierarchy
     wl_surface* surface = nullptr;
@@ -142,6 +151,10 @@ public:
 
     /// Set event callbacks.
     void setCallbacks(const WaylandCallbacks& callbacks);
+
+    /// Set the IME cursor rectangle so the compositor positions
+    /// the candidate window near the text cursor.
+    void setIMECursorRect(int x, int y, int width, int height);
 
     /// Access the raw Wayland state (for clipboard, etc.).
     const WaylandState& state() const;

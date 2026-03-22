@@ -1,10 +1,12 @@
 #if defined(__linux__)
 
 #include "UnifiedSettingsWindow.h"
+#include "FontInstaller.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 namespace termcore {
 
@@ -341,10 +343,96 @@ void UnifiedSettingsWindow::onFontCardClick(int idx) {
         notifySave();
         showCategoryContent(selectedCategoryId_);
     } else {
-        // TODO: Install font (requires FontInstaller integration for Linux)
-        g_debug("BreadTerminal: font install not yet implemented on Linux: %s",
-                meta->name.c_str());
+        onFontCardInstall(idx);
     }
+}
+
+// ---------------------------------------------------------------------------
+// onFontCardInstall
+// ---------------------------------------------------------------------------
+
+void UnifiedSettingsWindow::onFontCardInstall(int idx) {
+    if (idx < 0 || idx >= (int)filteredFonts_.size()) return;
+    const FontMetadata* meta = filteredFonts_[idx];
+    if (!meta || meta->download_url.empty()) return;
+
+    std::string dlUrl = meta->download_url;
+    std::string dlName = meta->name;
+
+    // Show "Installing..." status
+    if (statusLabel_)
+        gtk_label_set_text(GTK_LABEL(statusLabel_),
+                           ("Installing " + dlName + "...").c_str());
+
+    // Run download + install in a background thread
+    std::thread([this, dlUrl, dlName]() {
+        bool ok = installFontFromUrl(dlUrl, dlName,
+            [](const std::string&) { /* progress */ });
+
+        // Schedule UI update back on the main thread
+        struct ResultData {
+            UnifiedSettingsWindow* self;
+            std::string name;
+            bool success;
+        };
+        auto* rd = new ResultData{this, dlName, ok};
+
+        g_idle_add(+[](gpointer data) -> gboolean {
+            auto* rd = static_cast<ResultData*>(data);
+            if (rd->success) {
+                // Reload font index to pick up installed state
+                rd->self->fontIndex_.markInstalled(rd->name);
+                rd->self->rebuildFontFilteredList();
+                rd->self->showCategoryContent(rd->self->selectedCategoryId_);
+                if (rd->self->statusLabel_)
+                    gtk_label_set_text(GTK_LABEL(rd->self->statusLabel_),
+                                       (rd->name + " installed").c_str());
+            } else {
+                if (rd->self->statusLabel_)
+                    gtk_label_set_text(GTK_LABEL(rd->self->statusLabel_),
+                                       ("Failed to install " + rd->name).c_str());
+            }
+            delete rd;
+            return G_SOURCE_REMOVE;
+        }, rd);
+    }).detach();
+}
+
+// ---------------------------------------------------------------------------
+// onFontCardUninstall
+// ---------------------------------------------------------------------------
+
+void UnifiedSettingsWindow::onFontCardUninstall(int idx) {
+    if (idx < 0 || idx >= (int)filteredFonts_.size()) return;
+    const FontMetadata* meta = filteredFonts_[idx];
+    if (!meta || !meta->installed) return;
+
+    std::string name = meta->name;
+
+    std::thread([this, name]() {
+        bool ok = uninstallFont(name);
+
+        struct ResultData {
+            UnifiedSettingsWindow* self;
+            std::string name;
+            bool success;
+        };
+        auto* rd = new ResultData{this, name, ok};
+
+        g_idle_add(+[](gpointer data) -> gboolean {
+            auto* rd = static_cast<ResultData*>(data);
+            if (rd->success) {
+                rd->self->fontIndex_.markUninstalled(rd->name);
+                rd->self->rebuildFontFilteredList();
+                rd->self->showCategoryContent(rd->self->selectedCategoryId_);
+                if (rd->self->statusLabel_)
+                    gtk_label_set_text(GTK_LABEL(rd->self->statusLabel_),
+                                       (rd->name + " uninstalled").c_str());
+            }
+            delete rd;
+            return G_SOURCE_REMOVE;
+        }, rd);
+    }).detach();
 }
 
 } // namespace termcore

@@ -6,6 +6,10 @@
 #include <EGL/egl.h>
 #include <xkbcommon/xkbcommon.h>
 
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+#include <text-input-unstable-v3-client-protocol.h>
+#endif
+
 #include <cstring>
 #include <cstdio>
 #include <poll.h>
@@ -41,6 +45,15 @@ static void registry_handle_global(void* data, wl_registry* registry,
             wl_registry_bind(registry, name,
                              &wl_data_device_manager_interface, 3));
     }
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+    else if (strcmp(interface,
+                    zwp_text_input_manager_v3_interface.name) == 0) {
+        state->text_input_manager =
+            static_cast<zwp_text_input_manager_v3*>(
+                wl_registry_bind(registry, name,
+                                 &zwp_text_input_manager_v3_interface, 1));
+    }
+#endif
 }
 
 static void registry_handle_global_remove(void* /*data*/,
@@ -110,6 +123,70 @@ static const xdg_toplevel_listener toplevel_listener = {
     .configure = xdg_toplevel_configure,
     .close = xdg_toplevel_close,
 };
+
+// ─── text-input-v3 listener (IME) ──────────────────────────────────
+
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+
+static void text_input_v3_enter(void* data,
+                                zwp_text_input_v3* /*text_input*/,
+                                wl_surface* /*surface*/) {
+    auto* state = static_cast<WaylandState*>(data);
+    state->text_input_focused = true;
+    // Enable text input when we gain focus
+    if (state->text_input) {
+        zwp_text_input_v3_enable(state->text_input);
+        zwp_text_input_v3_commit(state->text_input);
+    }
+}
+
+static void text_input_v3_leave(void* data,
+                                zwp_text_input_v3* /*text_input*/,
+                                wl_surface* /*surface*/) {
+    auto* state = static_cast<WaylandState*>(data);
+    state->text_input_focused = false;
+    // Disable text input when we lose focus
+    if (state->text_input) {
+        zwp_text_input_v3_disable(state->text_input);
+        zwp_text_input_v3_commit(state->text_input);
+    }
+}
+
+static void text_input_v3_preedit_string(
+        void* /*data*/, zwp_text_input_v3* /*text_input*/,
+        const char* /*text*/, int32_t /*cursor_begin*/,
+        int32_t /*cursor_end*/) {
+    // Pre-edit (inline composition) display — not used for positioning
+}
+
+static void text_input_v3_commit_string(
+        void* /*data*/, zwp_text_input_v3* /*text_input*/,
+        const char* /*text*/) {
+    // Committed text from IME — keyboard input path handles this
+}
+
+static void text_input_v3_delete_surrounding_text(
+        void* /*data*/, zwp_text_input_v3* /*text_input*/,
+        uint32_t /*before_length*/, uint32_t /*after_length*/) {
+    // Surrounding text deletion — not applicable for terminal
+}
+
+static void text_input_v3_done(void* /*data*/,
+                               zwp_text_input_v3* /*text_input*/,
+                               uint32_t /*serial*/) {
+    // Compositor finished processing; no action needed
+}
+
+static const zwp_text_input_v3_listener text_input_v3_listener = {
+    .enter = text_input_v3_enter,
+    .leave = text_input_v3_leave,
+    .preedit_string = text_input_v3_preedit_string,
+    .commit_string = text_input_v3_commit_string,
+    .delete_surrounding_text = text_input_v3_delete_surrounding_text,
+    .done = text_input_v3_done,
+};
+
+#endif // TERMCORE_HAS_TEXT_INPUT_V3
 
 // ─── Keyboard listener ─────────────────────────────────────────────
 
@@ -404,6 +481,11 @@ WaylandWindow::~WaylandWindow() {
     if (state_.xkb_ctx) xkb_context_unref(state_.xkb_ctx);
 
     // Tear down Wayland objects (reverse order of creation)
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+    if (state_.text_input) zwp_text_input_v3_destroy(state_.text_input);
+    if (state_.text_input_manager)
+        zwp_text_input_manager_v3_destroy(state_.text_input_manager);
+#endif
     if (state_.pointer) wl_pointer_destroy(state_.pointer);
     if (state_.keyboard) wl_keyboard_destroy(state_.keyboard);
     if (state_.data_device) wl_data_device_destroy(state_.data_device);
@@ -497,6 +579,19 @@ bool WaylandWindow::init() {
         state_.data_device = wl_data_device_manager_get_data_device(
             state_.data_device_manager, state_.seat);
     }
+
+    // Create text_input for IME positioning
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+    if (state_.text_input_manager && state_.seat) {
+        state_.text_input =
+            zwp_text_input_manager_v3_get_text_input(
+                state_.text_input_manager, state_.seat);
+        if (state_.text_input) {
+            zwp_text_input_v3_add_listener(
+                state_.text_input, &text_input_v3_listener, &state_);
+        }
+    }
+#endif
 
     // Commit surface to trigger initial configure
     wl_surface_commit(state_.surface);
@@ -675,6 +770,17 @@ const WaylandState& WaylandWindow::state() const {
 
 WaylandState& WaylandWindow::state() {
     return state_;
+}
+
+void WaylandWindow::setIMECursorRect(int x, int y, int width, int height) {
+#if defined(TERMCORE_HAS_TEXT_INPUT_V3)
+    if (!state_.text_input || !state_.text_input_focused) return;
+    zwp_text_input_v3_set_cursor_rectangle(state_.text_input,
+                                           x, y, width, height);
+    zwp_text_input_v3_commit(state_.text_input);
+#else
+    (void)x; (void)y; (void)width; (void)height;
+#endif
 }
 
 } // namespace termcore

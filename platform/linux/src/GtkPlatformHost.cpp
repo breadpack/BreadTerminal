@@ -1,4 +1,5 @@
 #include "GtkPlatformHost.h"
+#include "termcore/terminal_controller.h"
 #include "termcore/pty.h"
 
 #include <cstring>
@@ -8,6 +9,10 @@ GtkPlatformHost::GtkPlatformHost(GtkWidget* glArea)
 
 void GtkPlatformHost::setWindow(GtkWindow* window) {
     window_ = window;
+}
+
+void GtkPlatformHost::setController(termcore::TerminalController* controller) {
+    controller_ = controller;
 }
 
 GtkWindow* GtkPlatformHost::resolveWindow() {
@@ -152,23 +157,171 @@ void GtkPlatformHost::showConfirmDialog(const std::string& msg,
 
 // --- Search UI ---
 
+void GtkPlatformHost::buildSearchBar() {
+    GtkWindow* win = resolveWindow();
+    if (!win) return;
+
+    // Create a horizontal box for the search bar
+    searchOverlay_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_halign(searchOverlay_, GTK_ALIGN_END);
+    gtk_widget_set_valign(searchOverlay_, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(searchOverlay_, 8);
+    gtk_widget_set_margin_end(searchOverlay_, 8);
+
+    // Apply CSS styling for the search bar background
+    GtkCssProvider* css = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(css,
+        ".search-bar { background: alpha(@theme_bg_color, 0.95); "
+        "border: 1px solid @borders; border-radius: 6px; padding: 4px 8px; }"
+        ".search-bar entry { min-width: 240px; }"
+        ".search-bar .search-count { opacity: 0.7; font-size: 0.85em; }");
+    gtk_style_context_add_provider_for_display(
+        gdk_display_get_default(),
+        GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
+
+    gtk_widget_add_css_class(searchOverlay_, "search-bar");
+
+    // Search entry
+    searchEntry_ = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(searchEntry_), "Search...");
+    gtk_widget_set_hexpand(searchEntry_, TRUE);
+    gtk_box_append(GTK_BOX(searchOverlay_), searchEntry_);
+
+    // Match count label
+    searchLabel_ = gtk_label_new("");
+    gtk_widget_add_css_class(searchLabel_, "search-count");
+    gtk_box_append(GTK_BOX(searchOverlay_), searchLabel_);
+
+    // Connect text-changed signal to fire incremental search
+    g_signal_connect(searchEntry_, "changed",
+        G_CALLBACK(+[](GtkEditable* editable, gpointer user_data) {
+            auto* self = static_cast<GtkPlatformHost*>(user_data);
+            if (self->updatingSearchText_ || !self->controller_) return;
+            const char* text = gtk_editable_get_text(editable);
+            self->controller_->onSearchQuery(text ? text : "");
+        }),
+        this);
+
+    // Key event controller for Enter/Shift+Enter/Escape/Up/Down
+    searchKeyCtrl_ = gtk_event_controller_key_new();
+    g_signal_connect(searchKeyCtrl_, "key-pressed",
+        G_CALLBACK(+[](GtkEventControllerKey* /*ctrl*/,
+                        guint keyval, guint /*keycode*/,
+                        GdkModifierType state,
+                        gpointer user_data) -> gboolean {
+            auto* self = static_cast<GtkPlatformHost*>(user_data);
+            if (!self->controller_) return FALSE;
+
+            if (keyval == GDK_KEY_Escape) {
+                self->controller_->onSearchQuery("");
+                self->hideSearchBar();
+                return TRUE;
+            }
+            if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
+                if (state & GDK_SHIFT_MASK)
+                    self->controller_->onSearchPrev();
+                else
+                    self->controller_->onSearchNext();
+                return TRUE;
+            }
+            if (keyval == GDK_KEY_F3) {
+                if (state & GDK_SHIFT_MASK)
+                    self->controller_->onSearchPrev();
+                else
+                    self->controller_->onSearchNext();
+                return TRUE;
+            }
+            if (keyval == GDK_KEY_Up) {
+                self->controller_->onSearchHistoryPrev();
+                return TRUE;
+            }
+            if (keyval == GDK_KEY_Down) {
+                self->controller_->onSearchHistoryNext();
+                return TRUE;
+            }
+            return FALSE;
+        }),
+        this);
+    gtk_widget_add_controller(searchEntry_, searchKeyCtrl_);
+
+    // Find the GtkOverlay parent of glArea_ and add the search bar to it
+    GtkWidget* parent = gtk_widget_get_parent(glArea_);
+    if (parent && GTK_IS_OVERLAY(parent)) {
+        gtk_overlay_add_overlay(GTK_OVERLAY(parent), searchOverlay_);
+    } else {
+        // Fallback: add directly to the window's title bar area
+        // This shouldn't happen if main.cpp sets up the overlay correctly
+        g_warning("BreadTerminal: search bar needs GtkOverlay parent");
+        g_object_ref_sink(searchOverlay_);
+    }
+}
+
+void GtkPlatformHost::destroySearchBar() {
+    if (searchOverlay_) {
+        GtkWidget* parent = gtk_widget_get_parent(searchOverlay_);
+        if (parent && GTK_IS_OVERLAY(parent)) {
+            gtk_overlay_remove_overlay(GTK_OVERLAY(parent), searchOverlay_);
+        }
+        searchOverlay_ = nullptr;
+        searchEntry_ = nullptr;
+        searchLabel_ = nullptr;
+        searchKeyCtrl_ = nullptr;
+    }
+    searchBarVisible_ = false;
+}
+
 void GtkPlatformHost::showSearchBar() {
-    // TODO: Implement GTK search bar widget
-    g_debug("BreadTerminal: showSearchBar (not yet implemented)");
+    if (searchBarVisible_ && searchEntry_) {
+        // Already visible; just focus and select all text
+        gtk_widget_grab_focus(searchEntry_);
+        gtk_editable_select_region(GTK_EDITABLE(searchEntry_), 0, -1);
+        return;
+    }
+
+    buildSearchBar();
+    searchBarVisible_ = true;
+
+    if (searchEntry_) {
+        gtk_widget_grab_focus(searchEntry_);
+    }
 }
 
 void GtkPlatformHost::hideSearchBar() {
-    // TODO: Implement GTK search bar widget
-    g_debug("BreadTerminal: hideSearchBar (not yet implemented)");
+    destroySearchBar();
+
+    // Return focus to the terminal GL area
+    if (glArea_) {
+        gtk_widget_grab_focus(glArea_);
+    }
+
+    // Request a redraw to clear search highlights
+    invalidate();
 }
 
 void GtkPlatformHost::updateSearchResults(int current, int total) {
-    (void)current;
-    (void)total;
+    if (!searchLabel_) return;
+
+    if (total > 0) {
+        // Display "current of total" (1-based for the user)
+        std::string text = std::to_string(current + 1) + " of "
+                         + std::to_string(total);
+        gtk_label_set_text(GTK_LABEL(searchLabel_), text.c_str());
+    } else {
+        gtk_label_set_text(GTK_LABEL(searchLabel_), "No results");
+    }
+
+    invalidate();
 }
 
 void GtkPlatformHost::setSearchBarText(const std::string& text) {
-    (void)text;
+    if (!searchEntry_) return;
+
+    // Prevent re-entrant signal from firing onSearchQuery
+    updatingSearchText_ = true;
+    gtk_editable_set_text(GTK_EDITABLE(searchEntry_), text.c_str());
+    updatingSearchText_ = false;
 }
 
 // --- IME ---
@@ -214,6 +367,15 @@ void GtkPlatformHost::showNotification(const std::string& title,
     g_debug("BreadTerminal: notification: %s - %s", title.c_str(), body.c_str());
 }
 
+// --- Clipboard history ---
+
+void GtkPlatformHost::showClipboardHistory(
+        const std::vector<termcore::ClipboardEntry>& entries) {
+    // TODO: Implement clipboard history popup
+    (void)entries;
+    g_debug("BreadTerminal: showClipboardHistory (not yet implemented)");
+}
+
 // --- Settings/Hub windows ---
 
 void GtkPlatformHost::openSettingsWindow(const termcore::Config& config) {
@@ -223,9 +385,10 @@ void GtkPlatformHost::openSettingsWindow(const termcore::Config& config) {
     }
 
     settingsWindow_->setConfig(config);
-    settingsWindow_->setSaveCallback([this](const termcore::Config& /*newConfig*/) {
-        // TODO: Wire up ConfigApplier to apply changes to the terminal
-        g_debug("BreadTerminal: settings saved");
+    settingsWindow_->setSaveCallback([this](const termcore::Config& newConfig) {
+        if (controller_) {
+            controller_->onConfigChanged(newConfig);
+        }
     });
 
     GtkWindow* parent = resolveWindow();

@@ -96,6 +96,15 @@ void FontIndex::markInstalled(const std::string& name) {
     }
 }
 
+void FontIndex::markUninstalled(const std::string& name) {
+    for (auto& font : fonts_) {
+        if (font.name == name) {
+            font.installed = false;
+            return;
+        }
+    }
+}
+
 void FontIndex::setInstalledPredicate(std::function<bool(const std::string&)> pred) {
     installedPredicate_ = std::move(pred);
 }

@@ -9,6 +9,10 @@
 #include <memory>
 #include <string>
 
+namespace termcore {
+class TerminalController;
+}
+
 /// IPlatformHost implementation for GTK4/Linux.
 /// Bridges TerminalController with GTK4 widgets.
 class GtkPlatformHost : public termcore::IPlatformHost {
@@ -17,6 +21,9 @@ public:
 
     // Set the parent window (resolved lazily from glArea)
     void setWindow(GtkWindow* window);
+
+    // Set the controller reference (needed for search bar callbacks)
+    void setController(termcore::TerminalController* controller);
 
     // --- IPlatformHost interface ---
     void invalidate() override;
@@ -45,6 +52,9 @@ public:
     void showNotification(const std::string& title,
                           const std::string& body) override;
 
+    void showClipboardHistory(
+        const std::vector<termcore::ClipboardEntry>& entries) override;
+
     void openSettingsWindow(const termcore::Config& config) override;
 
     float dpiScale() override;
@@ -57,13 +67,24 @@ public:
 
 private:
     GtkWindow* resolveWindow();
+    void buildSearchBar();
+    void destroySearchBar();
 
     GtkWidget* glArea_ = nullptr;
     GtkWindow* window_ = nullptr;
+    termcore::TerminalController* controller_ = nullptr;
     bool isFullscreen_ = false;
 
     // Synchronous clipboard text (filled by async read, used by getClipboardText)
     std::string pendingClipboardText_;
+
+    // Search bar widgets
+    GtkWidget* searchOverlay_ = nullptr;   // GtkBox container
+    GtkWidget* searchEntry_ = nullptr;     // GtkEntry for search text
+    GtkWidget* searchLabel_ = nullptr;     // GtkLabel for "N of M"
+    GtkEventController* searchKeyCtrl_ = nullptr;
+    bool searchBarVisible_ = false;
+    bool updatingSearchText_ = false;      // guard against re-entrant signal
 
     // Unified settings window
     std::unique_ptr<termcore::UnifiedSettingsWindow> settingsWindow_;
