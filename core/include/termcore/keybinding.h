@@ -50,6 +50,11 @@ enum class Action : uint16_t {
     SwitchTab6, SwitchTab7, SwitchTab8, SwitchTab9,
     // Hub / Settings windows
     OpenSettings, OpenThemeHub, OpenFontHub,
+    // Profile shortcuts (open new tab with a specific profile)
+    NewTabProfile1, NewTabProfile2, NewTabProfile3,
+    NewTabProfile4, NewTabProfile5, NewTabProfile6,
+    NewTabProfile7, NewTabProfile8, NewTabProfile9,
+    ShowProfileDropdown,
     // Custom (string-based action)
     Custom,
 };
@@ -70,6 +75,30 @@ struct Keybinding {
     Action action;
     std::string custom_action;  // For Action::Custom
 };
+
+/// Available keybinding presets for easy migration from other terminals
+enum class KeymapPreset {
+    Default,           // BreadTerminal native keybindings
+    Ghostty,           // Ghostty-style keybindings
+    Kitty,             // Kitty-style keybindings
+    Tmux,              // tmux-style keybindings (Ctrl+B prefix emulated)
+    Warp,              // Warp-style keybindings
+    WindowsTerminal,   // Windows Terminal-style keybindings
+    Alacritty,         // Alacritty-style keybindings
+    ITerm2,            // iTerm2-style keybindings (macOS)
+};
+
+/// Parse a preset name string. Returns Default if unrecognized.
+KeymapPreset parseKeymapPreset(const std::string& name);
+
+/// Get the display name of a preset
+std::string keymapPresetName(KeymapPreset preset);
+
+/// List all available preset names
+std::vector<std::string> listKeymapPresets();
+
+/// Get the keybinding definitions for a preset (trigger, action pairs)
+std::vector<std::pair<std::string, std::string>> keymapPresetBindings(KeymapPreset preset);
 
 /// Manages keybindings with default and user-configurable mappings
 class KeybindingManager {
@@ -103,6 +132,9 @@ public:
 
     /// Reset to defaults
     void resetDefaults();
+
+    /// Load a named preset (replaces current bindings)
+    void loadPreset(KeymapPreset preset);
 
     /// Number of bindings
     size_t count() const { return bindings_.size(); }

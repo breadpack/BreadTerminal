@@ -41,6 +41,7 @@ set(TERMCORE_SOURCES
     src/agent.cpp
     src/agent_orchestrator.cpp
     src/keybinding.cpp
+    src/keybinding_presets.cpp
     src/git_branch_detector.cpp
     src/port_detector.cpp
     src/pr_detector.cpp

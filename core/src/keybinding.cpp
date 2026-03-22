@@ -102,6 +102,16 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"open_settings", Action::OpenSettings},
         {"open_theme_hub", Action::OpenThemeHub},
         {"open_font_hub", Action::OpenFontHub},
+        {"new_tab_profile1", Action::NewTabProfile1},
+        {"new_tab_profile2", Action::NewTabProfile2},
+        {"new_tab_profile3", Action::NewTabProfile3},
+        {"new_tab_profile4", Action::NewTabProfile4},
+        {"new_tab_profile5", Action::NewTabProfile5},
+        {"new_tab_profile6", Action::NewTabProfile6},
+        {"new_tab_profile7", Action::NewTabProfile7},
+        {"new_tab_profile8", Action::NewTabProfile8},
+        {"new_tab_profile9", Action::NewTabProfile9},
+        {"show_profile_dropdown", Action::ShowProfileDropdown},
         {"custom", Action::Custom},
     };
     return map;
@@ -207,6 +217,25 @@ void KeybindingManager::loadFromConfig(
         auto combo = parseCombo(trigger);
         auto action = parseAction(action_str);
         // If action string not recognized, treat as custom
+        if (action == Action::None && toLower(action_str) != "none") {
+            bind(combo, Action::Custom, action_str);
+        } else {
+            bind(combo, action);
+        }
+    }
+}
+
+void KeybindingManager::loadPreset(KeymapPreset preset) {
+    bindings_.clear();
+    if (preset == KeymapPreset::Default) {
+        initDefaults();
+        return;
+    }
+    // Load preset bindings
+    auto pairs = keymapPresetBindings(preset);
+    for (const auto& [trigger, action_str] : pairs) {
+        auto combo = parseCombo(trigger);
+        auto action = parseAction(action_str);
         if (action == Action::None && toLower(action_str) != "none") {
             bind(combo, Action::Custom, action_str);
         } else {
