@@ -39,8 +39,35 @@ TEST_F(ScreenOscTest, Osc0SetsTitle) {
     EXPECT_EQ(screen.iconName(), "My Title");
 }
 
-// Note: ST (ESC \) as OSC terminator is not yet supported by VtParser.
-// BEL (0x07) termination works correctly. ST support is a parser-level fix.
+// --- OSC 0 with ST (ESC \) terminator ---
+
+TEST_F(ScreenOscTest, Osc0SetsTitleWithST) {
+    feed("\033]0;My Title\033\\");
+    EXPECT_EQ(screen.title(), "My Title");
+    EXPECT_EQ(screen.iconName(), "My Title");
+}
+
+TEST_F(ScreenOscTest, Osc2SetsTitleWithST) {
+    feed("\033]2;ST Title\033\\");
+    EXPECT_EQ(screen.title(), "ST Title");
+}
+
+TEST_F(ScreenOscTest, Osc7WithST) {
+    feed("\033]7;file:///home/user/projects\033\\");
+    EXPECT_EQ(screen.workingDirectory(), "/home/user/projects");
+}
+
+TEST_F(ScreenOscTest, OscSTFollowedByNormalText) {
+    feed("\033]2;My Terminal\033\\Hello");
+    EXPECT_EQ(screen.title(), "My Terminal");
+    EXPECT_EQ(screen.getLineText(0), "Hello");
+}
+
+TEST_F(ScreenOscTest, OscSTAndBelMixed) {
+    feed("\033]0;First\033\\\033]2;Second\007");
+    EXPECT_EQ(screen.title(), "Second");
+    EXPECT_EQ(screen.iconName(), "First");
+}
 
 // --- OSC 1: Set icon name only ---
 

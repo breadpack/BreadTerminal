@@ -41,6 +41,7 @@ add_library(termcore_linux STATIC
     src/UnifiedSettingsThemeCards.cpp
     src/UnifiedSettingsFontCards.cpp
     src/UnifiedSettingsKeybindings.cpp
+    src/UnifiedSettingsKeyCaptureDialog.cpp
     src/FontInstaller.cpp
     src/WebKitWebViewBridge.cpp
 )

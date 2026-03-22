@@ -1,6 +1,8 @@
 #include "cli_client.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -10,8 +12,135 @@
 
 namespace bread {
 
+#ifdef _WIN32
+
+// --- Windows Named Pipe implementation ---
+
 bool CliClient::connect(const std::string& socket_path, int timeout_ms) {
-#ifndef _WIN32
+    // The socket_path is used as the named pipe path directly.
+    // Expected format: \\.\pipe\breadterminal  (or similar)
+    std::string pipe_name = socket_path;
+
+    // Try to connect, waiting if the pipe is busy
+    while (true) {
+        pipe_ = CreateFileA(
+            pipe_name.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            0,              // no sharing
+            nullptr,        // default security
+            OPEN_EXISTING,
+            0,              // default attributes
+            nullptr         // no template file
+        );
+
+        if (pipe_ != INVALID_HANDLE_VALUE) {
+            break;  // connected
+        }
+
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND) {
+            error_ = "BreadTerminal is not running (pipe not found at " + pipe_name + ")";
+            return false;
+        }
+        if (err != ERROR_PIPE_BUSY) {
+            error_ = "Failed to connect to pipe: error code " + std::to_string(err);
+            return false;
+        }
+
+        // Pipe is busy, wait for it to become available
+        if (!WaitNamedPipeA(pipe_name.c_str(), static_cast<DWORD>(timeout_ms))) {
+            error_ = "Timeout waiting for pipe: " + pipe_name;
+            return false;
+        }
+    }
+
+    // Configure a read timeout via COMMTIMEOUTS
+    COMMTIMEOUTS timeouts{};
+    timeouts.ReadTotalTimeoutConstant = static_cast<DWORD>(timeout_ms);
+    SetCommTimeouts(pipe_, &timeouts);
+
+    return true;
+}
+
+bool CliClient::sendRequest(const std::string& json_line, std::string& response) {
+    if (pipe_ == INVALID_HANDLE_VALUE) {
+        error_ = "Not connected";
+        return false;
+    }
+
+    // Send request with newline
+    std::string data = json_line + "\n";
+    const char* ptr = data.c_str();
+    DWORD remaining = static_cast<DWORD>(data.size());
+
+    while (remaining > 0) {
+        DWORD written = 0;
+        if (!WriteFile(pipe_, ptr, remaining, &written, nullptr)) {
+            error_ = "Write failed: error code " + std::to_string(GetLastError());
+            return false;
+        }
+        ptr += written;
+        remaining -= written;
+    }
+
+    // Flush to ensure the server receives the data
+    FlushFileBuffers(pipe_);
+
+    // Read response until newline
+    response.clear();
+    char buf[4096];
+    while (true) {
+        DWORD bytesRead = 0;
+        BOOL ok = ReadFile(pipe_, buf, sizeof(buf), &bytesRead, nullptr);
+        if (!ok) {
+            DWORD err = GetLastError();
+            if (err == ERROR_MORE_DATA) {
+                // More data available, append what we got and continue
+                response.append(buf, bytesRead);
+                auto pos = response.find('\n');
+                if (pos != std::string::npos) {
+                    response.resize(pos);
+                    break;
+                }
+                continue;
+            }
+            if (response.empty()) {
+                error_ = "Read failed: error code " + std::to_string(err);
+                return false;
+            }
+            break;
+        }
+        if (bytesRead == 0) {
+            if (response.empty()) {
+                error_ = "Connection closed by server";
+                return false;
+            }
+            break;
+        }
+        response.append(buf, bytesRead);
+        // Check for newline
+        auto pos = response.find('\n');
+        if (pos != std::string::npos) {
+            response.resize(pos);  // Strip trailing newline
+            break;
+        }
+    }
+
+    return true;
+}
+
+void CliClient::close() {
+    if (pipe_ != INVALID_HANDLE_VALUE) {
+        CloseHandle(pipe_);
+        pipe_ = INVALID_HANDLE_VALUE;
+    }
+}
+
+#else
+
+// --- Unix domain socket implementation ---
+
+bool CliClient::connect(const std::string& socket_path, int timeout_ms) {
     fd_ = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd_ < 0) {
         error_ = "Failed to create socket: " + std::string(std::strerror(errno));
@@ -46,14 +175,9 @@ bool CliClient::connect(const std::string& socket_path, int timeout_ms) {
     setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     return true;
-#else
-    error_ = "Windows not yet supported";
-    return false;
-#endif
 }
 
 bool CliClient::sendRequest(const std::string& json_line, std::string& response) {
-#ifndef _WIN32
     if (fd_ < 0) {
         error_ = "Not connected";
         return false;
@@ -105,19 +229,15 @@ bool CliClient::sendRequest(const std::string& json_line, std::string& response)
     }
 
     return true;
-#else
-    error_ = "Windows not yet supported";
-    return false;
-#endif
 }
 
 void CliClient::close() {
-#ifndef _WIN32
     if (fd_ >= 0) {
         ::close(fd_);
         fd_ = -1;
     }
-#endif
 }
+
+#endif  // _WIN32
 
 }  // namespace bread

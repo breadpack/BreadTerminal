@@ -121,6 +121,7 @@ if(WIN32)
     list(APPEND TERMCORE_SOURCES
         src/pty_windows.cpp
         src/shell_detector_windows.cpp
+        src/socket/win_pipe_transport.cpp
     )
 endif()
 

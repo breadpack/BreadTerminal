@@ -316,7 +316,11 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
 
     // Resolve defaults from environment
     const char* env_socket = std::getenv("BREADTERMINAL_SOCKET");
+#ifdef _WIN32
+    result.socket_path = env_socket ? env_socket : "\\\\.\\pipe\\breadterminal";
+#else
     result.socket_path = env_socket ? env_socket : "/tmp/breadterminal.sock";
+#endif
 
     const char* env_token = std::getenv("BREADTERMINAL_TOKEN");
     if (env_token) result.auth_token = env_token;

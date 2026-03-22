@@ -152,11 +152,7 @@ std::string resolveSocketPath() {
     }
 
 #if defined(_WIN32)
-    const char* tmp = std::getenv("TEMP");
-    if (tmp && tmp[0] != '\0') {
-        return std::string(tmp) + "\\breadterminal.sock";
-    }
-    return "breadterminal.sock";
+    return "\\\\.\\pipe\\breadterminal";
 #else
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0] != '\0') {
