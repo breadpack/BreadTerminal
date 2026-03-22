@@ -34,3 +34,5 @@ endif()
 add_subdirectory(tools/bread)
 
 add_subdirectory(tests)
+
+add_subdirectory(benchmarks)
