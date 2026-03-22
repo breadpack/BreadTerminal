@@ -48,7 +48,7 @@ public:
 
     float dpiScale() override;
 
-    std::unique_ptr<termcore::Pty> createPty(const std::string& shell,
+    std::unique_ptr<termcore::Pty> createPty(const termcore::Profile& profile,
                                               int rows, int cols) override;
 
 private:

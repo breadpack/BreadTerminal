@@ -42,9 +42,9 @@ void TerminalController::initTerminal() {
     auto mux = std::make_unique<Mux>();
     auto wsId = mux->createWorkspace("default");
 
-    PtyFactory factory = [this](int rows, int cols) -> std::unique_ptr<Pty> {
+    PtyFactory factory = [this](const Profile& profile, int rows, int cols) -> std::unique_ptr<Pty> {
         if (!host_) return nullptr;
-        return host_->createPty(config_.shell, rows, cols);
+        return host_->createPty(profile, rows, cols);
     };
 
     tabCtrl_ = std::make_unique<TabController>(

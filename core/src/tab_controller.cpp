@@ -19,8 +19,10 @@ TabController::TabController(std::unique_ptr<Mux> mux, WorkspaceId wsId,
 
 // --- Tab operations ---
 
-void TabController::createTab(int rows, int cols) {
+void TabController::createTab(int rows, int cols, const std::string& profile_id) {
+    pendingProfileId_ = profile_id;
     mux_->createTab(wsId_, rows, cols);
+    pendingProfileId_.clear();
     syncActivePointers();
 }
 
@@ -57,19 +59,23 @@ void TabController::switchToTab(int index) {
 
 // --- Pane operations ---
 
-void TabController::splitRight(int rows, int cols) {
+void TabController::splitRight(int rows, int cols, const std::string& profile_id) {
     auto* tab = mux_->activeTab(wsId_);
     if (!tab) return;
+    pendingProfileId_ = profile_id;
     mux_->splitPane(wsId_, tab->id, tab->active_pane,
                     SplitDirection::Horizontal, rows, cols);
+    pendingProfileId_.clear();
     syncActivePointers();
 }
 
-void TabController::splitDown(int rows, int cols) {
+void TabController::splitDown(int rows, int cols, const std::string& profile_id) {
     auto* tab = mux_->activeTab(wsId_);
     if (!tab) return;
+    pendingProfileId_ = profile_id;
     mux_->splitPane(wsId_, tab->id, tab->active_pane,
                     SplitDirection::Vertical, rows, cols);
+    pendingProfileId_.clear();
     syncActivePointers();
 }
 
@@ -135,8 +141,22 @@ PaneId TabController::createPaneState(int rows, int cols) {
     ps->screen->resize(rows, cols);
     ps->parser = std::make_unique<VtParser>(*ps->screen);
 
+    // Resolve profile from pendingProfileId_
+    Profile profile;
+    if (profileMgr_) {
+        if (!pendingProfileId_.empty()) {
+            auto* p = profileMgr_->findProfile(pendingProfileId_);
+            profile = p ? *p : profileMgr_->defaultProfile();
+        } else {
+            profile = profileMgr_->defaultProfile();
+        }
+    }
+    // When profileMgr_ is not set (e.g., C API path, tests), profile
+    // remains default-constructed — PtyFactory will use its own defaults.
+    ps->profile_id = profile.id;
+
     if (ptyFactory_) {
-        ps->pty = ptyFactory_(rows, cols);
+        ps->pty = ptyFactory_(profile, rows, cols);
     }
 
     panes_[id] = std::move(ps);

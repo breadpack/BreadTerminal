@@ -173,11 +173,13 @@ float MacPlatformHost::dpiScale() {
 // --- PTY factory ---
 
 std::unique_ptr<termcore::Pty> MacPlatformHost::createPty(
-        const std::string& shell, int rows, int cols) {
+        const termcore::Profile& profile, int rows, int cols) {
     auto pty = termcore::createPty();
-    std::string homeDir;
-    if (const char* home = std::getenv("HOME")) homeDir = home;
-    if (!pty->spawn(shell, {}, homeDir, rows, cols)) {
+    std::string workDir = profile.working_dir;
+    if (workDir.empty()) {
+        if (const char* home = std::getenv("HOME")) workDir = home;
+    }
+    if (!pty->spawn(profile.command, profile.args, workDir, rows, cols)) {
         NSLog(@"BreadTerminal: failed to spawn shell for pane");
     }
     return pty;

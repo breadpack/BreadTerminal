@@ -244,9 +244,9 @@ float GtkPlatformHost::dpiScale() {
 // --- PTY factory ---
 
 std::unique_ptr<termcore::Pty> GtkPlatformHost::createPty(
-        const std::string& shell, int rows, int cols) {
+        const termcore::Profile& profile, int rows, int cols) {
     auto pty = termcore::createPty();
-    if (!pty->spawn(shell, {}, "", rows, cols)) {
+    if (!pty->spawn(profile.command, profile.args, profile.working_dir, rows, cols)) {
         g_warning("BreadTerminal: failed to spawn shell for pane");
     }
     return pty;

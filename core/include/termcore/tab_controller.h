@@ -3,6 +3,7 @@
 
 #include "termcore/config.h"
 #include "termcore/mux.h"
+#include "termcore/profile.h"
 #include "termcore/screen.h"
 #include "termcore/vt_parser.h"
 #include "termcore/pty.h"
@@ -15,13 +16,14 @@ namespace termcore {
 
 struct PaneState {
     PaneId id = kInvalidPane;
+    std::string profile_id;
     std::unique_ptr<Screen> screen;
     std::unique_ptr<VtParser> parser;
     std::unique_ptr<Pty> pty;
 };
 
 // Called when a new pane needs a PTY
-using PtyFactory = std::function<std::unique_ptr<Pty>(int rows, int cols)>;
+using PtyFactory = std::function<std::unique_ptr<Pty>(const Profile& profile, int rows, int cols)>;
 
 class TabController {
 public:
@@ -29,15 +31,15 @@ public:
                   PtyFactory ptyFactory, const Config& config);
 
     // Tab operations
-    void createTab(int rows, int cols);
+    void createTab(int rows, int cols, const std::string& profile_id = "");
     void closeTab();
     void nextTab();
     void prevTab();
     void switchToTab(int index);
 
     // Pane operations
-    void splitRight(int rows, int cols);
-    void splitDown(int rows, int cols);
+    void splitRight(int rows, int cols, const std::string& profile_id = "");
+    void splitDown(int rows, int cols, const std::string& profile_id = "");
     void closePane();
 
     // Active pane access
@@ -77,10 +79,14 @@ public:
     Mux* mux() { return mux_.get(); }
     WorkspaceId workspaceId() const { return wsId_; }
 
+    void setProfileManager(ProfileManager* mgr) { profileMgr_ = mgr; }
+
 private:
     std::unique_ptr<Mux> mux_;
     WorkspaceId wsId_;
     PtyFactory ptyFactory_;
+    ProfileManager* profileMgr_ = nullptr;
+    std::string pendingProfileId_;
 
     std::unordered_map<PaneId, std::unique_ptr<PaneState>> panes_;
     PaneId nextPaneId_ = 1;

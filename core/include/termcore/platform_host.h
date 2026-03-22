@@ -3,6 +3,7 @@
 
 #include "termcore/config.h"
 #include "termcore/keybinding.h"  // KeyMod (ModNone, ModShift, etc.)
+#include "termcore/profile.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -71,7 +72,7 @@ public:
     virtual float dpiScale() = 0;
 
     // PTY factory - platform creates PTY since it's OS-specific
-    virtual std::unique_ptr<Pty> createPty(const std::string& shell,
+    virtual std::unique_ptr<Pty> createPty(const Profile& profile,
                                            int rows, int cols) = 0;
 };
 
