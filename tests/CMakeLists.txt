@@ -38,6 +38,7 @@ add_executable(termcore_tests
     test_url_highlight.cpp
     test_kitty_keyboard.cpp
     test_sixel.cpp
+    test_sixel_animation.cpp
     test_kitty_graphics.cpp
     test_iterm_image.cpp
     test_image_preview.cpp

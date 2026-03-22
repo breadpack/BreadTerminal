@@ -56,6 +56,7 @@ set(TERMCORE_SOURCES
     src/url_highlight.cpp
     src/kitty_keyboard.cpp
     src/sixel.cpp
+    src/sixel_animation.cpp
     src/kitty_graphics.cpp
     src/iterm_image.cpp
     src/image_preview.cpp
