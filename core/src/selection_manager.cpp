@@ -145,6 +145,25 @@ std::string SelectionManager::getSelectedText(const Screen& screen) const {
                 result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
                 result += static_cast<char>(0x80 | (cp & 0x3F));
             }
+            // Encode extra codepoints from grapheme clusters
+            for (uint8_t ei = 0; ei < cell.extra_count; ++ei) {
+                char32_t ecp = cell.extra[ei];
+                if (ecp < 0x80) {
+                    result += static_cast<char>(ecp);
+                } else if (ecp < 0x800) {
+                    result += static_cast<char>(0xC0 | (ecp >> 6));
+                    result += static_cast<char>(0x80 | (ecp & 0x3F));
+                } else if (ecp < 0x10000) {
+                    result += static_cast<char>(0xE0 | (ecp >> 12));
+                    result += static_cast<char>(0x80 | ((ecp >> 6) & 0x3F));
+                    result += static_cast<char>(0x80 | (ecp & 0x3F));
+                } else {
+                    result += static_cast<char>(0xF0 | (ecp >> 18));
+                    result += static_cast<char>(0x80 | ((ecp >> 12) & 0x3F));
+                    result += static_cast<char>(0x80 | ((ecp >> 6) & 0x3F));
+                    result += static_cast<char>(0x80 | (ecp & 0x3F));
+                }
+            }
         }
 
         if (row < er) {

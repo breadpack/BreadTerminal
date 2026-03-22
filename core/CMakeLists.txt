@@ -94,6 +94,7 @@ set(TERMCORE_SOURCES
     src/ssh_session.cpp
     src/ssh_terminfo.cpp
     src/ssh_profile.cpp
+    src/grapheme.cpp
 )
 
 if(UNIX)
