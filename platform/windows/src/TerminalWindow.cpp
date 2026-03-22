@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "HighContrastDetector.h"
 
 #include <algorithm>
 #include <chrono>
@@ -45,6 +46,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 return -1;
             }
             newState->initTerminal();
+            newState->checkAccessibilitySettings();
 
             newState->needsRender = true;
 
@@ -253,6 +255,21 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             KillTimer(hWnd, kRenderTimerId);
             KillTimer(hWnd, kCursorBlinkTimerId);
             PostQuitMessage(0);
+            return 0;
+
+        case WM_THEMECHANGED:
+            if (state) {
+                state->checkAccessibilitySettings();
+            }
+            return 0;
+
+        case WM_SETTINGCHANGE:
+            if (state) {
+                if (wParam == SPI_SETHIGHCONTRAST ||
+                    wParam == SPI_SETCLIENTAREAANIMATION) {
+                    state->checkAccessibilitySettings();
+                }
+            }
             return 0;
 
         default:

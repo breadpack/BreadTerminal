@@ -75,6 +75,10 @@ struct Config {
     // Theme
     std::string theme;  // Theme name or "dark:name,light:name"
 
+    // Accessibility
+    bool auto_detect_high_contrast = true;  // auto-switch to HC theme when OS HC is on
+    bool respect_reduced_motion = true;      // honor OS reduced motion setting
+
     // Keybindings
     std::vector<KeyBinding> keybindings;
 

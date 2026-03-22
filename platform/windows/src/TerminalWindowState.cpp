@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "HighContrastDetector.h"
 #include "DirectWriteRasterizer.h"
 #include "DirectWriteDiscovery.h"
 
@@ -694,6 +695,52 @@ void TerminalWindowState::repositionSearchBar() {
     SetWindowPos(searchEditHwnd, nullptr, x, y,
                  kSearchBarWidth, kSearchBarHeight,
                  SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// --- Accessibility ---
+
+void TerminalWindowState::checkAccessibilitySettings() {
+    if (!controller) return;
+
+    const auto& config = controller->config();
+
+    // High contrast detection
+    bool hcNow = termcore::HighContrastDetector::isHighContrastEnabled();
+    if (config.auto_detect_high_contrast) {
+        if (hcNow && !accessibility.high_contrast) {
+            // HC just turned on — save current theme and apply HC theme
+            themeBeforeHighContrast = config.theme;
+            auto sysColors =
+                termcore::HighContrastDetector::getSystemColors();
+            auto hcTheme =
+                termcore::HighContrastDetector::buildThemeFromSystemColors(
+                    sysColors);
+            // Build a new config with the HC theme colors applied
+            termcore::Config newConfig = config;
+            termcore::applyTheme(newConfig, hcTheme);
+            newConfig.theme = hcTheme.name;
+            controller->onConfigChanged(newConfig);
+            needsRender = true;
+        } else if (!hcNow && accessibility.high_contrast) {
+            // HC just turned off — restore previous theme
+            if (!themeBeforeHighContrast.empty()) {
+                controller->onThemeChanged(themeBeforeHighContrast);
+            }
+            needsRender = true;
+        }
+    }
+    accessibility.high_contrast = hcNow;
+
+    // Reduced motion detection
+    bool reducedNow =
+        termcore::HighContrastDetector::isReducedMotionEnabled();
+    if (config.respect_reduced_motion) {
+        accessibility.reduced_motion = reducedNow;
+        accessibility.animation_speed_factor = reducedNow ? 0.0f : 1.0f;
+    } else {
+        accessibility.reduced_motion = false;
+        accessibility.animation_speed_factor = 1.0f;
+    }
 }
 
 #endif // _WIN32

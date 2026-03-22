@@ -14,6 +14,7 @@
 #include "termcore/font/i_font_rasterizer.h"
 #include "termcore/font/i_font_discovery.h"
 #include "termcore/config.h"
+#include "termcore/accessibility.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
 #include "ThemeHubWindow.h"
@@ -88,6 +89,10 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     int resizeOverlayCols = 0;
     int resizeOverlayRows = 0;
 
+    // Accessibility
+    termcore::AccessibilityPreferences accessibility;
+    std::string themeBeforeHighContrast;  // user's theme to restore when HC is disabled
+
     // Search bar UI
     bool searchActive = false;
     HWND searchEditHwnd = nullptr;
@@ -122,6 +127,9 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void handleMouseUp(int x, int y);
     void handleDoubleClick(int x, int y);
     void handleMouseWheel(int delta, int x, int y);
+
+    // --- Accessibility ---
+    void checkAccessibilitySettings();
 
     // --- Search bar UI ---
     void repositionSearchBar();

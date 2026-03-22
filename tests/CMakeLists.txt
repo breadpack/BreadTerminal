@@ -50,6 +50,7 @@ add_executable(termcore_tests
     test_theme_loader.cpp
     test_theme_index.cpp
     test_font_index.cpp
+    test_accessibility.cpp
 )
 
 target_link_libraries(termcore_tests
@@ -57,6 +58,10 @@ target_link_libraries(termcore_tests
         termcore
         GTest::gtest_main
 )
+
+if(WIN32)
+    target_link_libraries(termcore_tests PRIVATE termcore_windows)
+endif()
 
 if(APPLE)
     target_sources(termcore_tests PRIVATE
