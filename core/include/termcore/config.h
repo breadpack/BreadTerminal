@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "termcore/profile.h"
 
 namespace termcore {
 
@@ -77,6 +78,11 @@ struct Config {
 
     // Keybindings
     std::vector<KeyBinding> keybindings;
+
+    // Profiles (user-defined only — auto-detected are runtime)
+    std::vector<Profile> profiles;
+    std::string default_profile_id;
+    std::vector<std::string> hidden_profile_ids;
 
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;
