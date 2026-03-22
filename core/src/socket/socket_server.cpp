@@ -145,7 +145,11 @@ std::string resolveSocketPath() {
     if (env && env[0] != '\0') {
         return env;
     }
+#ifdef _WIN32
+    return "\\\\.\\pipe\\breadterminal";
+#else
     return "/tmp/breadterminal.sock";
+#endif
 }
 
 }  // namespace termcore

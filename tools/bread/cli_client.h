@@ -2,12 +2,17 @@
 
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace bread {
 
-/// Minimal Unix socket client for JSON-RPC communication.
+/// Minimal socket/pipe client for JSON-RPC communication.
+/// Uses Unix domain sockets on macOS/Linux, named pipes on Windows.
 class CliClient {
 public:
-    /// Connect to the socket at the given path.
+    /// Connect to the socket/pipe at the given path.
     /// Returns true on success; sets error message on failure.
     bool connect(const std::string& socket_path, int timeout_ms = 3000);
 
@@ -22,7 +27,11 @@ public:
     const std::string& lastError() const { return error_; }
 
 private:
+#ifdef _WIN32
+    HANDLE pipe_ = INVALID_HANDLE_VALUE;
+#else
     int fd_ = -1;
+#endif
     std::string error_;
 };
 

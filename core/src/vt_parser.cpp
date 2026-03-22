@@ -14,6 +14,10 @@ void VtParser::feed(const char* data, size_t len) {
 void VtParser::reset() {
     state_ = VtParserState::Ground;
     clear();
+    osc_pending_ = false;
+    osc_pending_number_ = -1;
+    osc_pending_number_done_ = false;
+    osc_pending_string_.clear();
     utf8_codepoint_ = 0;
     utf8_remaining_ = 0;
 }
@@ -31,6 +35,9 @@ void VtParser::clear() {
     dcs_data_.clear();
     dcs_final_char_ = 0;
     dcs_pending_ = false;
+    // Note: osc_pending_ fields are NOT cleared here; they are managed
+    // explicitly in processByte/handleEscape to survive across the
+    // OscString -> Escape state transition.
 }
 
 bool VtParser::isC0(uint8_t byte) const {
@@ -139,6 +146,17 @@ void VtParser::processByte(uint8_t byte) {
             state_ = VtParserState::Escape;
             return;
         }
+        if (state_ == VtParserState::OscString) {
+            // In OSC string, ESC might be the start of ST (ESC \).
+            // Save the OSC state so we can dispatch if next byte is '\'.
+            osc_pending_ = true;
+            osc_pending_number_ = osc_number_;
+            osc_pending_number_done_ = osc_number_done_;
+            osc_pending_string_ = osc_string_;
+            clear();
+            state_ = VtParserState::Escape;
+            return;
+        }
         // ESC
         clear();
         state_ = VtParserState::Escape;
@@ -208,6 +226,25 @@ void VtParser::handleGround(uint8_t byte) {
 }
 
 void VtParser::handleEscape(uint8_t byte) {
+    // If an OSC string was in progress, ESC was the start of ST (ESC \).
+    if (osc_pending_) {
+        if (byte == '\\') {
+            // ST received: dispatch the saved OSC sequence.
+            osc_number_ = osc_pending_number_;
+            osc_number_done_ = osc_pending_number_done_;
+            osc_string_ = std::move(osc_pending_string_);
+            osc_pending_ = false;
+            oscDispatch();
+            clear();
+            state_ = VtParserState::Ground;
+            return;
+        }
+        // Not ST — the ESC was part of something else. Discard the OSC.
+        osc_pending_ = false;
+        osc_pending_string_.clear();
+        // Fall through to normal escape handling for this byte.
+    }
+
     // If a DCS passthrough was in progress, ESC was the start of ST (ESC \).
     if (dcs_pending_) {
         dcs_pending_ = false;

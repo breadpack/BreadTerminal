@@ -84,7 +84,10 @@ if(UNIX)
 endif()
 
 if(WIN32)
-    list(APPEND TERMCORE_SOURCES src/pty_windows.cpp)
+    list(APPEND TERMCORE_SOURCES
+        src/pty_windows.cpp
+        src/socket/win_pipe_transport.cpp
+    )
 endif()
 
 # ICU for Unicode properties

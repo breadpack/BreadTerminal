@@ -141,6 +141,12 @@ private:
     char32_t dcs_final_char_ = 0;  // The byte that transitioned to DcsPassthrough
     bool dcs_pending_ = false;     // ESC received during DcsPassthrough
 
+    // OSC ST tracking
+    bool osc_pending_ = false;     // ESC received during OscString
+    int osc_pending_number_ = -1;
+    bool osc_pending_number_done_ = false;
+    std::string osc_pending_string_;
+
     // UTF-8 collection
     char32_t utf8_codepoint_ = 0;
     int utf8_remaining_ = 0;
