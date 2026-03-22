@@ -78,6 +78,10 @@ struct Config {
     // Keybindings
     std::vector<KeyBinding> keybindings;
 
+    // Session auto-save for crash recovery
+    bool session_autosave = true;
+    int session_autosave_interval = 30;  // seconds
+
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;
 };
