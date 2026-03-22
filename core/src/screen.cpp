@@ -167,14 +167,128 @@ void Screen::scrollDown(int top, int bottom, int count) {
     }
 }
 
+// --- Grapheme cluster combining helpers ---
+
+bool Screen::shouldCombineWithPrevious(char32_t codepoint) const {
+    int prev_col = getPreviousCellCol();
+    if (prev_col < 0) return false;
+    if (grapheme_row_ < 0 || grapheme_row_ >= rows_) return false;
+
+    const TermCell& prev = grid_[grapheme_row_][prev_col];
+    if (prev.codepoint == ' ' && prev.extra_count == 0) return false;
+
+    char32_t last_cp = prev.extra_count > 0
+        ? prev.extra[prev.extra_count - 1]
+        : prev.codepoint;
+
+    GBP prev_prop = graphemeBreakProperty(last_cp);
+    GBP cur_prop = graphemeBreakProperty(codepoint);
+
+    // Combining marks (Extend) and SpacingMark always attach (GB9, GB9a)
+    if (cur_prop == GBP::Extend || cur_prop == GBP::SpacingMark) return true;
+
+    // ZWJ attaches to previous (GB9)
+    if (cur_prop == GBP::ZWJ) return true;
+
+    // After ZWJ, Extended_Pictographic continues the cluster (GB11)
+    if (prev_prop == GBP::ZWJ && cur_prop == GBP::Extended_Pictographic) {
+        GBP base_prop = graphemeBreakProperty(prev.codepoint);
+        if (base_prop == GBP::Extended_Pictographic) return true;
+        for (uint8_t i = 0; i < prev.extra_count; ++i) {
+            if (graphemeBreakProperty(prev.extra[i]) == GBP::Extended_Pictographic)
+                return true;
+        }
+    }
+
+    // Regional indicator pairing (GB12/GB13)
+    if (cur_prop == GBP::Regional_Indicator) {
+        int ri_count = 0;
+        if (graphemeBreakProperty(prev.codepoint) == GBP::Regional_Indicator)
+            ri_count++;
+        for (uint8_t i = 0; i < prev.extra_count; ++i) {
+            if (graphemeBreakProperty(prev.extra[i]) == GBP::Regional_Indicator)
+                ri_count++;
+        }
+        return ri_count == 1;  // combine only to form a pair
+    }
+
+    return false;
+}
+
+int Screen::getPreviousCellCol() const {
+    if (grapheme_col_ <= 0) return -1;
+    for (int c = grapheme_col_ - 1; c >= 0; --c) {
+        const TermCell& cell = grid_[grapheme_row_][c];
+        if (cell.width > 0 || cell.codepoint != 0) return c;
+    }
+    return -1;
+}
+
+int Screen::graphemeClusterWidth(const TermCell& cell) const {
+    GBP base_prop = graphemeBreakProperty(cell.codepoint);
+
+    // Regional indicator pairs -> 2
+    if (base_prop == GBP::Regional_Indicator && cell.extra_count > 0) return 2;
+
+    // Extended_Pictographic with VS16, ZWJ, or skin tone modifier -> 2
+    if (base_prop == GBP::Extended_Pictographic) {
+        for (uint8_t i = 0; i < cell.extra_count; ++i) {
+            char32_t cp = cell.extra[i];
+            if (cp == 0xFE0F || cp == 0x200D ||
+                (cp >= 0x1F3FB && cp <= 0x1F3FF))
+                return 2;
+        }
+    }
+
+    // ZWJ sequences containing Extended_Pictographic -> 2
+    bool has_ext_pic = (base_prop == GBP::Extended_Pictographic);
+    bool has_zwj = false;
+    for (uint8_t i = 0; i < cell.extra_count; ++i) {
+        GBP p = graphemeBreakProperty(cell.extra[i]);
+        if (p == GBP::Extended_Pictographic) has_ext_pic = true;
+        if (p == GBP::ZWJ) has_zwj = true;
+    }
+    if (has_ext_pic && has_zwj) return 2;
+
+    int w = codepoint_width(cell.codepoint);
+    return w > 0 ? w : 1;
+}
+
 // --- onPrint ---
 void Screen::onPrint(char32_t codepoint) {
     last_printed_ = codepoint;
 
-    int char_width = codepoint_width(codepoint);
-    if (char_width < 1) char_width = 1;  // treat zero-width as single-width for grid
+    // Check if this codepoint should combine with the previous cell
+    if (shouldCombineWithPrevious(codepoint)) {
+        int prev_col = getPreviousCellCol();
+        if (prev_col >= 0) {
+            TermCell& prev = mutableCellAt(grapheme_row_, prev_col);
+            prev.appendCodepoint(codepoint);
 
-    // Mark the current row dirty (scroll operations mark their own rows)
+            int new_width = graphemeClusterWidth(prev);
+            int old_width = prev.width;
+            if (new_width != old_width) {
+                prev.width = static_cast<uint8_t>(new_width);
+                if (new_width == 2 && old_width == 1 && prev_col + 1 < cols_) {
+                    TermCell& cont = mutableCellAt(grapheme_row_, prev_col + 1);
+                    cont.codepoint = 0;
+                    cont.fg_color = prev.fg_color;
+                    cont.bg_color = prev.bg_color;
+                    cont.attributes = prev.attributes;
+                    cont.width = 0;
+                    cont.extra_count = 0;
+                    cont.underline_style = prev.underline_style;
+                    cont.underline_color = prev.underline_color;
+                }
+            }
+            markRowDirty(grapheme_row_);
+            return;
+        }
+    }
+
+    int char_width = codepoint_width(codepoint);
+    if (char_width < 1) char_width = 1;
+
     markRowDirty(cursor_.row);
 
     if (wrap_pending_) {
@@ -188,7 +302,6 @@ void Screen::onPrint(char32_t codepoint) {
         markRowDirty(cursor_.row);
     }
 
-    // For a wide character that would start at the last column, force wrap first
     if (char_width == 2 && cursor_.col == cols_ - 1) {
         if (autowrap_) {
             cursor_.col = 0;
@@ -201,7 +314,6 @@ void Screen::onPrint(char32_t codepoint) {
         }
     }
 
-    // Insert mode (IRM): shift chars right before writing
     if (insert_mode_) {
         auto& row = grid_[cursor_.row];
         int shift = char_width;
@@ -220,20 +332,23 @@ void Screen::onPrint(char32_t codepoint) {
     cell.width = static_cast<uint8_t>(char_width);
     cell.underline_style = pen_.underline_style;
     cell.underline_color = pen_.underline_color;
+    cell.extra_count = 0;
 
-    // Write continuation cell for wide characters
+    grapheme_row_ = cursor_.row;
+    grapheme_col_ = cursor_.col + char_width;
+
     if (char_width == 2 && cursor_.col + 1 < cols_) {
         TermCell& cont = mutableCellAt(cursor_.row, cursor_.col + 1);
-        cont.codepoint = 0;  // continuation marker: codepoint=0
+        cont.codepoint = 0;
         cont.fg_color = pen_.fg_color;
         cont.bg_color = pen_.bg_color;
         cont.attributes = pen_.attributes;
-        cont.width = 0;  // continuation cell width=0
+        cont.width = 0;
         cont.underline_style = pen_.underline_style;
         cont.underline_color = pen_.underline_color;
+        cont.extra_count = 0;
     }
 
-    // Advance cursor by the character's display width
     int new_col = cursor_.col + char_width;
     if (new_col < cols_) {
         cursor_.col = new_col;
@@ -484,22 +599,13 @@ std::string Screen::getLineText(int row) const {
     if (row < 0 || row >= rows_) return "";
     std::string result;
     for (int c = 0; c < cols_; ++c) {
-        char32_t cp = grid_[row][c].codepoint;
-        // Encode as UTF-8
-        if (cp < 0x80) {
-            result += static_cast<char>(cp);
-        } else if (cp < 0x800) {
-            result += static_cast<char>(0xC0 | (cp >> 6));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        } else if (cp < 0x10000) {
-            result += static_cast<char>(0xE0 | (cp >> 12));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        } else {
-            result += static_cast<char>(0xF0 | (cp >> 18));
-            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
+        const TermCell& cell = grid_[row][c];
+        // Skip continuation cells
+        if (cell.codepoint == 0 && cell.width == 0) continue;
+
+        utf8_encode(cell.codepoint, result);
+        for (uint8_t i = 0; i < cell.extra_count; ++i) {
+            utf8_encode(cell.extra[i], result);
         }
     }
     // Trim trailing spaces

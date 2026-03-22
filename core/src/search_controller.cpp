@@ -64,14 +64,18 @@ bool SearchController::flushIncremental(Screen& screen) {
 
     if (elapsed.count() < kDebounceMs) return false;
 
-    search_.search(screen, pending_query_);
+    SearchOptions opts;
+    opts.use_regex = useRegex_;
+    search_.search(screen, pending_query_, opts);
     incremental_dirty_ = false;
     return true;
 }
 
 void SearchController::submitQuery(Screen& screen) {
     if (!pending_query_.empty()) {
-        search_.search(screen, pending_query_);
+        SearchOptions opts;
+        opts.use_regex = useRegex_;
+        search_.search(screen, pending_query_, opts);
         history_.addQuery(pending_query_);
         incremental_dirty_ = false;
     }

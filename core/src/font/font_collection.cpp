@@ -222,6 +222,26 @@ float FontCollection::scaleFactor(CollectionFaceId face) const {
     return chain_[idx].scale_factor;
 }
 
+FontCollection::ShapedClusterResult FontCollection::shapeCluster(
+    const std::u32string& codepoints) {
+    ShapedClusterResult result;
+    if (codepoints.empty()) return result;
+
+    // Resolve the font from the base codepoint
+    result.face = resolveFace(codepoints[0]);
+    if (result.face == kInvalidCollectionFace) return result;
+
+    FontFaceId shaper_face = shaperFaceId(result.face);
+    if (shaper_face == kInvalidFontFace) return result;
+
+    // Shape the full cluster through HarfBuzz
+    auto glyphs = shaper_.shape(shaper_face, codepoints);
+    if (!glyphs.empty()) {
+        result.glyph_index = glyphs[0].glyph_index;
+    }
+    return result;
+}
+
 bool FontCollection::ensureLoaded(FontEntry& entry) {
     if (entry.loaded) {
         return true;

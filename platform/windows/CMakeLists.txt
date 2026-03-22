@@ -45,6 +45,7 @@ set(TERMCORE_WIN_SOURCES
     src/UnifiedSettingsSearch.cpp
     src/TerminalAccessibility.cpp
     src/TerminalTextRange.cpp
+    src/HighContrastDetector.cpp
 )
 
 if(HAS_WEBVIEW2)

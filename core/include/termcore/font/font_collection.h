@@ -69,6 +69,15 @@ public:
     /// Get scale factor for a face (for fallback font x-height matching)
     float scaleFactor(CollectionFaceId face) const;
 
+    /// Shape a multi-codepoint grapheme cluster via HarfBuzz and return
+    /// the primary glyph index.  Resolves the font from the base codepoint.
+    /// Returns {CollectionFaceId, glyph_index}; glyph_index=0 on failure.
+    struct ShapedClusterResult {
+        CollectionFaceId face = kInvalidCollectionFace;
+        uint32_t glyph_index = 0;
+    };
+    ShapedClusterResult shapeCluster(const std::u32string& codepoints);
+
     /// Get the number of fonts in the chain.
     size_t chainLength() const { return chain_.size(); }
 

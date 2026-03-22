@@ -12,7 +12,7 @@ namespace termcore {
 class SearchController {
 public:
     /// Debounce delay for incremental search (milliseconds)
-    static constexpr int kDebounceMs = 150;
+    static constexpr int kDebounceMs = 50;
 
     void open();
     void close();

@@ -60,6 +60,7 @@ add_executable(termcore_tests
     test_shell_detector.cpp
     test_update_checker.cpp
     test_ssh.cpp
+    test_accessibility.cpp
 )
 
 target_link_libraries(termcore_tests
@@ -67,6 +68,10 @@ target_link_libraries(termcore_tests
         termcore
         GTest::gtest_main
 )
+
+if(WIN32)
+    target_link_libraries(termcore_tests PRIVATE termcore_windows)
+endif()
 
 if(APPLE)
     target_sources(termcore_tests PRIVATE

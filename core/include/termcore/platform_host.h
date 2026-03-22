@@ -52,6 +52,7 @@ public:
     virtual void showSearchBar() = 0;
     virtual void hideSearchBar() = 0;
     virtual void updateSearchResults(int current, int total) = 0;
+    virtual void setSearchBarText(const std::string& text) = 0;
 
     // IME
     virtual void positionIME(int x, int y, int height) = 0;

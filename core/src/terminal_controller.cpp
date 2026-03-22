@@ -1,6 +1,7 @@
 #include "termcore/terminal_controller.h"
 #include "termcore/input_handler.h"
 #include "termcore/lua_config.h"
+#include "termcore/search_history.h"
 #include "termcore/theme_loader.h"
 
 namespace termcore {
@@ -36,6 +37,12 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
     for (const auto& id : config_.hidden_profile_ids) profileMgr_->hideProfile(id);
 
     initInputHandler();
+
+    // Load search history from config directory
+    std::string histPath = SearchHistory::defaultPath();
+    if (!histPath.empty()) {
+        searchCtrl_.history().loadFromDisk(histPath);
+    }
 }
 
 // --- Lifecycle ---
@@ -107,8 +114,17 @@ void TerminalController::pollPty() {
 }
 
 void TerminalController::tick() {
-    // Cursor blink, resize overlay timeout, etc.
-    // Platform calls this per frame; currently a placeholder for future use.
+    // Flush debounced incremental search
+    Screen* scr = activeScreen();
+    if (scr && searchCtrl_.isActive()) {
+        if (searchCtrl_.flushIncremental(*scr)) {
+            if (host_) {
+                host_->updateSearchResults(searchCtrl_.currentMatch(),
+                                           searchCtrl_.totalMatches());
+            }
+            needsRender_ = true;
+        }
+    }
 }
 
 // --- Event entry points (delegated to InputHandler) ---
@@ -189,10 +205,17 @@ void TerminalController::onResize(int pixelW, int pixelH) {
 void TerminalController::onSearchQuery(const std::string& query) {
     Screen* scr = activeScreen();
     if (!scr) return;
-    searchCtrl_.setQuery(query, *scr);
-    if (host_) {
-        host_->updateSearchResults(searchCtrl_.currentMatch(),
-                                   searchCtrl_.totalMatches());
+
+    // Use incremental (debounced) search for live updates
+    searchCtrl_.setQueryIncremental(query);
+
+    // For short queries (<=2 chars) or empty, execute immediately
+    if (query.empty() || query.size() <= 2) {
+        searchCtrl_.setQuery(query, *scr);
+        if (host_) {
+            host_->updateSearchResults(searchCtrl_.currentMatch(),
+                                       searchCtrl_.totalMatches());
+        }
     }
     needsRender_ = true;
 }
@@ -200,6 +223,8 @@ void TerminalController::onSearchQuery(const std::string& query) {
 void TerminalController::onSearchNext() {
     Screen* scr = activeScreen();
     if (!scr) return;
+    searchCtrl_.submitQuery(*scr);
+    saveSearchHistory();
     searchCtrl_.next(*scr);
     if (host_) {
         host_->updateSearchResults(searchCtrl_.currentMatch(),
@@ -211,12 +236,70 @@ void TerminalController::onSearchNext() {
 void TerminalController::onSearchPrev() {
     Screen* scr = activeScreen();
     if (!scr) return;
+    searchCtrl_.submitQuery(*scr);
+    saveSearchHistory();
     searchCtrl_.prev(*scr);
     if (host_) {
         host_->updateSearchResults(searchCtrl_.currentMatch(),
                                    searchCtrl_.totalMatches());
     }
     needsRender_ = true;
+}
+
+void TerminalController::onSearchHistoryPrev() {
+    if (searchCtrl_.historyUp()) {
+        if (host_) {
+            host_->setSearchBarText(searchCtrl_.pendingQuery());
+        }
+        // Trigger incremental search with the history query
+        Screen* scr = activeScreen();
+        if (scr) {
+            searchCtrl_.setQuery(searchCtrl_.pendingQuery(), *scr);
+            if (host_) {
+                host_->updateSearchResults(searchCtrl_.currentMatch(),
+                                           searchCtrl_.totalMatches());
+            }
+            needsRender_ = true;
+        }
+    }
+}
+
+void TerminalController::onSearchHistoryNext() {
+    if (searchCtrl_.historyDown()) {
+        if (host_) {
+            host_->setSearchBarText(searchCtrl_.pendingQuery());
+        }
+        Screen* scr = activeScreen();
+        if (scr) {
+            searchCtrl_.setQuery(searchCtrl_.pendingQuery(), *scr);
+            if (host_) {
+                host_->updateSearchResults(searchCtrl_.currentMatch(),
+                                           searchCtrl_.totalMatches());
+            }
+            needsRender_ = true;
+        }
+    } else {
+        // Back to empty (typing position)
+        if (host_) {
+            host_->setSearchBarText("");
+        }
+        Screen* scr = activeScreen();
+        if (scr) {
+            searchCtrl_.setQuery("", *scr);
+            if (host_) {
+                host_->updateSearchResults(searchCtrl_.currentMatch(),
+                                           searchCtrl_.totalMatches());
+            }
+            needsRender_ = true;
+        }
+    }
+}
+
+void TerminalController::saveSearchHistory() {
+    std::string histPath = SearchHistory::defaultPath();
+    if (!histPath.empty()) {
+        searchCtrl_.history().saveToDisk(histPath);
+    }
 }
 
 // --- Config changes ---

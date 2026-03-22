@@ -112,14 +112,24 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 continue;
             }
 
-            CollectionFaceId faceId =
-                fontCollection->resolveFace(cell.codepoint);
-            if (faceId == kInvalidCollectionFace) continue;
+            CollectionFaceId faceId;
+            FontFaceId rastFace;
+            uint32_t glyphIdx;
 
-            FontFaceId rastFace =
-                fontCollection->rasterizerFaceId(faceId);
-            uint32_t glyphIdx =
-                rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+            if (cell.extra_count > 0) {
+                // Multi-codepoint grapheme cluster: shape via HarfBuzz
+                auto shaped = fontCollection->shapeCluster(cell.allCodepoints());
+                faceId = shaped.face;
+                if (faceId == kInvalidCollectionFace) continue;
+                rastFace = fontCollection->rasterizerFaceId(faceId);
+                glyphIdx = shaped.glyph_index;
+            } else {
+                // Single codepoint: use fast cmap lookup
+                faceId = fontCollection->resolveFace(cell.codepoint);
+                if (faceId == kInvalidCollectionFace) continue;
+                rastFace = fontCollection->rasterizerFaceId(faceId);
+                glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+            }
             if (glyphIdx == 0) continue;
 
             GlyphKey key{rastFace, glyphIdx, {0, 0}};

@@ -35,6 +35,8 @@ public:
     void onSearchQuery(const std::string& query);
     void onSearchNext();
     void onSearchPrev();
+    void onSearchHistoryPrev();
+    void onSearchHistoryNext();
 
     // Config changes (from settings/hub UI)
     void onConfigChanged(const Config& newConfig);
@@ -105,6 +107,7 @@ private:
     bool needsRender_ = false;
 
     void initInputHandler();
+    void saveSearchHistory();
 };
 
 } // namespace termcore

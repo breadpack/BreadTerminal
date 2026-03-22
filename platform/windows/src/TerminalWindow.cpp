@@ -2,6 +2,7 @@
 
 #include "TerminalWindowState.h"
 #include "TerminalAccessibility.h"
+#include "HighContrastDetector.h"
 
 #include <algorithm>
 #include <chrono>
@@ -48,6 +49,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 return -1;
             }
             newState->initTerminal();
+            newState->checkAccessibilitySettings();
 
             newState->needsRender = true;
 
@@ -277,6 +279,21 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 state->accessibilityProvider = nullptr;
             }
             PostQuitMessage(0);
+            return 0;
+
+        case WM_THEMECHANGED:
+            if (state) {
+                state->checkAccessibilitySettings();
+            }
+            return 0;
+
+        case WM_SETTINGCHANGE:
+            if (state) {
+                if (wParam == SPI_SETHIGHCONTRAST ||
+                    wParam == SPI_SETCLIENTAREAANIMATION) {
+                    state->checkAccessibilitySettings();
+                }
+            }
             return 0;
 
         default:

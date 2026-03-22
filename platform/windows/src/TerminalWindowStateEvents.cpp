@@ -203,6 +203,28 @@ void TerminalWindowState::updateSearchResults(int current, int total) {
     if (renderer) renderer->markContentDirty();
 }
 
+void TerminalWindowState::setSearchBarText(const std::string& text) {
+    if (!searchEditHwnd) return;
+
+    // Convert UTF-8 to wide string
+    if (text.empty()) {
+        SetWindowTextW(searchEditHwnd, L"");
+    } else {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0,
+                                        text.c_str(), static_cast<int>(text.size()),
+                                        nullptr, 0);
+        if (wlen > 0) {
+            std::wstring wtext(wlen, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0,
+                                text.c_str(), static_cast<int>(text.size()),
+                                &wtext[0], wlen);
+            SetWindowTextW(searchEditHwnd, wtext.c_str());
+            // Move cursor to end
+            SendMessageW(searchEditHwnd, EM_SETSEL, wlen, wlen);
+        }
+    }
+}
+
 void TerminalWindowState::positionIME(int x, int y, int height) {
     termcore::positionImeWindow(hwnd, x, y, height);
 }
