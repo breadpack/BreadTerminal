@@ -50,6 +50,7 @@ add_executable(termcore_tests
     test_theme_loader.cpp
     test_theme_index.cpp
     test_font_index.cpp
+    test_password_manager.cpp
 )
 
 target_link_libraries(termcore_tests
