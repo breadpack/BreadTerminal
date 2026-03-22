@@ -26,7 +26,7 @@ enum class Action : uint16_t {
     SplitRight, SplitDown, ClosePane,
     FocusUp, FocusDown, FocusLeft, FocusRight,
     // Clipboard
-    Copy, Paste, SelectAll,
+    Copy, Paste, PasteFromHistory, SelectAll,
     // Scroll
     ScrollUp, ScrollDown, ScrollPageUp, ScrollPageDown, ScrollToTop, ScrollToBottom,
     // Search

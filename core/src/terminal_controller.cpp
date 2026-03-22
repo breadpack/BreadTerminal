@@ -349,8 +349,11 @@ void TerminalController::handleAction(Action action) {
         case Action::Copy:
             if (selMgr_.hasSelection() && scr) {
                 std::string text = selMgr_.getSelectedText(*scr);
-                if (!text.empty() && host_) {
-                    host_->setClipboardText(text);
+                if (!text.empty()) {
+                    clipboardHistory_.addEntry(text);
+                    if (host_) {
+                        host_->setClipboardText(text);
+                    }
                 }
             }
             break;
@@ -361,6 +364,12 @@ void TerminalController::handleAction(Action action) {
                 if (!text.empty()) {
                     pasteText(text);
                 }
+            }
+            break;
+
+        case Action::PasteFromHistory:
+            if (host_) {
+                host_->showClipboardHistory(clipboardHistory_.getEntries());
             }
             break;
 

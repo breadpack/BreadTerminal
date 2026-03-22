@@ -12,6 +12,7 @@
 #include "termcore/url_detector.h"
 #include "termcore/paste_guard.h"
 #include "termcore/vi_copy_mode.h"
+#include "termcore/clipboard_history.h"
 #include <memory>
 #include <string>
 
@@ -65,6 +66,10 @@ public:
     // Vi copy mode
     bool inCopyMode() const;
 
+    // Clipboard history
+    ClipboardHistory& clipboardHistory() { return clipboardHistory_; }
+    const ClipboardHistory& clipboardHistory() const { return clipboardHistory_; }
+
     // Direct access for platform-specific needs
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
@@ -89,6 +94,8 @@ private:
 
     UrlDetector urlDetector_;
     std::vector<DetectedUrl> detectedUrls_;
+
+    ClipboardHistory clipboardHistory_;
 
     int termRows_ = 24;
     int termCols_ = 80;

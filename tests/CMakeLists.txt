@@ -49,6 +49,7 @@ add_executable(termcore_tests
     test_command_dispatcher.cpp
     test_theme_loader.cpp
     test_theme_index.cpp
+    test_clipboard_history.cpp
     test_font_index.cpp
 )
 
