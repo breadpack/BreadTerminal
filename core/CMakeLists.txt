@@ -112,6 +112,7 @@ set(TERMCORE_SOURCES
     src/shader_effect.cpp
     src/shader_builtins.cpp
     src/instant_replay.cpp
+    src/annotations.cpp
 )
 
 if(UNIX)

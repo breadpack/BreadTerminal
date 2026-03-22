@@ -65,6 +65,8 @@ enum class Action : uint16_t {
     ToggleInspector,
     // Instant Replay
     EnterInstantReplay, ExitInstantReplay,
+    // Annotations
+    AddAnnotation,
     // Custom (string-based action)
     Custom,
 };

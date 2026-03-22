@@ -75,6 +75,7 @@ add_executable(termcore_tests
     test_shader_effect.cpp
     test_port_detector.cpp
     test_instant_replay.cpp
+    test_annotations.cpp
 )
 
 target_link_libraries(termcore_tests

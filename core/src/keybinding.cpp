@@ -119,6 +119,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"toggle_inspector", Action::ToggleInspector},
         {"enter_instant_replay", Action::EnterInstantReplay},
         {"exit_instant_replay", Action::ExitInstantReplay},
+        {"add_annotation", Action::AddAnnotation},
         {"custom", Action::Custom},
     };
     return map;
