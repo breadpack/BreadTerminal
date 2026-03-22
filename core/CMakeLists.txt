@@ -74,6 +74,9 @@ set(TERMCORE_SOURCES
     src/search_controller.cpp
     src/tab_controller.cpp
     src/config_applier.cpp
+    src/ssh_session.cpp
+    src/ssh_terminfo.cpp
+    src/ssh_profile.cpp
 )
 
 if(UNIX)
