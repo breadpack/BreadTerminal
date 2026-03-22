@@ -83,6 +83,7 @@ set(TERMCORE_SOURCES
     src/profile_manager.cpp
     src/shell_detector.cpp
     src/update_checker.cpp
+    src/command_palette.cpp
 )
 
 if(UNIX)

@@ -57,6 +57,9 @@ struct D3DTextRenderer::Impl {
     // Per-pane status pills
     std::unordered_map<PaneId, std::vector<D3DTextRenderer::StatusPillInfo>> paneStatusPills;
 
+    // Command palette state
+    D3DTextRenderer::CommandPaletteInfo commandPalette;
+
     // Resize overlay state
     bool resizeOverlayVisible = false;
     int resizeOverlayCols = 0;
@@ -124,6 +127,10 @@ struct D3DTextRenderer::Impl {
     // Pane status overlays (implemented in D3DCellBuilderPaneStatus.cpp)
     void buildPaneStatusOverlays(float cellW, float cellH,
                                  float ascent, float fontSize);
+
+    // Command palette overlay (implemented in D3DCellBuilderCommandPalette.cpp)
+    void buildCommandPaletteOverlay(float cellW, float cellH,
+                                    float ascent, float fontSize);
 };
 
 } // namespace termcore

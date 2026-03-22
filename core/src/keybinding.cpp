@@ -112,6 +112,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"new_tab_profile8", Action::NewTabProfile8},
         {"new_tab_profile9", Action::NewTabProfile9},
         {"show_profile_dropdown", Action::ShowProfileDropdown},
+        {"open_command_palette", Action::OpenCommandPalette},
         {"custom", Action::Custom},
     };
     return map;
@@ -325,7 +326,8 @@ void KeybindingManager::initDefaults() {
     // Hub / Settings
     b(mk(M, ","),       Action::OpenSettings);
     b(mk(MS, "t"),      Action::OpenThemeHub);
-    b(mk(MS, "p"),      Action::OpenFontHub);
+    b(mk(MS, "p"),      Action::OpenCommandPalette);
+    b(mk(MS, "f"),      Action::OpenFontHub);
 
     // Profile shortcuts
     b(mk(MS, "1"), Action::NewTabProfile1);
@@ -337,7 +339,6 @@ void KeybindingManager::initDefaults() {
     b(mk(MS, "7"), Action::NewTabProfile7);
     b(mk(MS, "8"), Action::NewTabProfile8);
     b(mk(MS, "9"), Action::NewTabProfile9);
-    b(mk(MS, "p"), Action::ShowProfileDropdown);
 }
 
 } // namespace termcore

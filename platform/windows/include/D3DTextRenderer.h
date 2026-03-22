@@ -188,6 +188,27 @@ public:
     /// Set status pills for a specific pane.
     void setPaneStatusPills(PaneId pane_id, const std::vector<StatusPillInfo>& pills);
 
+    /// Command palette overlay.
+    struct CommandPaletteInfo {
+        bool visible = false;
+        std::string query;                  // current input text
+        int selectedIndex = 0;              // highlighted item
+        struct Item {
+            std::string name;
+            std::string shortcut_hint;
+        };
+        std::vector<Item> items;            // filtered items to display
+        uint32_t bg_color = 0x252526;       // palette background
+        uint32_t input_bg_color = 0x3c3c3c; // input field background
+        uint32_t fg_color = 0xcccccc;       // text color
+        uint32_t selected_bg = 0x094771;    // selected item background
+        uint32_t selected_fg = 0xffffff;    // selected item text
+        uint32_t hint_fg = 0x808080;        // shortcut hint color
+    };
+
+    /// Set command palette state for rendering.
+    void setCommandPalette(const CommandPaletteInfo& info);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

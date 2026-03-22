@@ -14,6 +14,7 @@
 #include "termcore/paste_guard.h"
 #include "termcore/vi_copy_mode.h"
 #include "termcore/input_handler.h"
+#include "termcore/command_palette.h"
 #include <memory>
 #include <string>
 
@@ -67,6 +68,9 @@ public:
     // Vi copy mode
     bool inCopyMode() const;
 
+    // Command palette
+    CommandPalette& commandPalette() { return commandPalette_; }
+
     // Direct access for platform-specific needs
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
@@ -94,6 +98,7 @@ private:
     std::vector<DetectedUrl> detectedUrls_;
 
     std::unique_ptr<InputHandler> inputHandler_;
+    CommandPalette commandPalette_;
 
     int termRows_ = 24;
     int termCols_ = 80;

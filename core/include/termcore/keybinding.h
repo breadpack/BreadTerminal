@@ -55,6 +55,8 @@ enum class Action : uint16_t {
     NewTabProfile4, NewTabProfile5, NewTabProfile6,
     NewTabProfile7, NewTabProfile8, NewTabProfile9,
     ShowProfileDropdown,
+    // Command Palette
+    OpenCommandPalette,
     // Custom (string-based action)
     Custom,
 };

@@ -114,10 +114,51 @@ void TerminalController::tick() {
 // --- Event entry points (delegated to InputHandler) ---
 
 void TerminalController::onKeyEvent(const KeyEvent& e) {
+    // If command palette is open, handle its input first
+    if (commandPalette_.isOpen()) {
+        if (e.keycode == 0xF70A) { // Escape
+            commandPalette_.close();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF700) { // Up
+            commandPalette_.selectPrev();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF701) { // Down
+            commandPalette_.selectNext();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF709) { // Enter
+            Action action = commandPalette_.selectedAction();
+            commandPalette_.close();
+            if (action != Action::None) {
+                handleAction(action);
+            }
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF70B) { // Backspace
+            commandPalette_.onBackspace();
+            needsRender_ = true;
+            return;
+        }
+        return;
+    }
+
     inputHandler_->onKeyEvent(e);
 }
 
 void TerminalController::onCharInput(const std::string& utf8) {
+    if (commandPalette_.isOpen()) {
+        for (char c : utf8) {
+            commandPalette_.onChar(c);
+        }
+        needsRender_ = true;
+        return;
+    }
     inputHandler_->onCharInput(utf8);
 }
 
@@ -493,7 +534,14 @@ void TerminalController::handleAction(Action action) {
         }
 
         case Action::ShowProfileDropdown:
-            // Platform-specific UI will handle this. No-op at controller level for now.
+            break;
+
+        case Action::OpenCommandPalette:
+            if (keybindings_) {
+                commandPalette_.updateShortcuts(*keybindings_);
+            }
+            commandPalette_.open();
+            needsRender_ = true;
             break;
 
         default:
