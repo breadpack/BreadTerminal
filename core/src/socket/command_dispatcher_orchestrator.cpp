@@ -95,23 +95,11 @@ rpc::Response CommandDispatcher::handleAgentReadAll(
 
     nlohmann::json arr = nlohmann::json::array();
     for (const auto& s : statuses) {
-        auto stateStr = [](AgentState st) -> std::string {
-            switch (st) {
-                case AgentState::Inactive:   return "inactive";
-                case AgentState::Starting:   return "starting";
-                case AgentState::Idle:       return "idle";
-                case AgentState::Running:    return "running";
-                case AgentState::NeedsInput: return "needs_input";
-                case AgentState::Exited:     return "exited";
-            }
-            return "unknown";
-        };
-
         arr.push_back({
             {"pane_id", s.pane_id},
             {"last_output", s.last_output},
             {"is_idle", s.is_idle},
-            {"agent_state", stateStr(s.agent_state)}
+            {"agent_state", AgentTracker::stateToString(s.agent_state)}
         });
     }
 

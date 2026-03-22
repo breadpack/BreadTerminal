@@ -121,10 +121,20 @@ void NotificationVisualState::connectToStore(NotificationStore& store) {
 void NotificationVisualState::connectToAgentTracker(AgentTracker& tracker) {
     tracker.setStateCallback(
         [this](uint32_t pane_id, const AgentInfo& info) {
-            if (info.state == AgentState::NeedsInput) {
+            if (info.state == AgentState::NeedsInput ||
+                info.state == AgentState::Waiting) {
                 onAgentNeedsInput(pane_id);
             }
         });
+}
+
+void NotificationVisualState::onAgentRequestAttention(
+    PaneId pane, float intensity, uint32_t color) {
+    auto& s = ensureState(pane);
+    s.needs_attention = true;
+    s.ring_color = color;
+    s.ring_intensity = intensity;
+    s.last_notification_time = std::chrono::steady_clock::now();
 }
 
 void NotificationVisualState::removePane(PaneId pane) {

@@ -53,6 +53,24 @@ struct LogEntry {
 /// Returns the requested lines as a vector of strings, or empty on failure.
 using ScrollbackReadCallback = std::function<std::vector<std::string>(PaneId pane_id, int line_count)>;
 
+/// Callback to get currently selected text from a pane.
+/// Returns the selected text, or empty string if no selection.
+using SelectionReadCallback = std::function<std::string(PaneId pane_id)>;
+
+/// Cursor position info returned by the cursor callback.
+struct CursorPositionInfo {
+    int row = 0;
+    int col = 0;
+    bool visible = true;
+};
+
+/// Callback to get cursor position from a pane.
+using CursorPositionCallback = std::function<CursorPositionInfo(PaneId pane_id)>;
+
+/// Callback to trigger visual attention (border glow) on a pane.
+/// Parameters: pane_id, intensity (0.0-1.0), color (RGB hex)
+using AttentionCallback = std::function<void(PaneId pane_id, float intensity, uint32_t color)>;
+
 /// Routes JSON-RPC requests to the appropriate subsystem handler.
 class CommandDispatcher {
 public:
@@ -68,6 +86,15 @@ public:
 
     /// Set the callback for reading screen content from panes.
     void setPaneReadCallback(PaneReadCallback cb) { read_cb_ = std::move(cb); }
+
+    /// Set the callback for reading selected text from panes.
+    void setSelectionReadCallback(SelectionReadCallback cb) { selection_cb_ = std::move(cb); }
+
+    /// Set the callback for reading cursor position from panes.
+    void setCursorPositionCallback(CursorPositionCallback cb) { cursor_cb_ = std::move(cb); }
+
+    /// Set the callback for triggering visual attention on panes.
+    void setAttentionCallback(AttentionCallback cb) { attention_cb_ = std::move(cb); }
 
     /// Access stored status metadata for a pane.
     std::vector<PaneStatus> getPaneStatuses(PaneId pane_id) const;
@@ -131,6 +158,30 @@ private:
     rpc::Response handleAgentGetIdle(std::optional<int64_t> id, const nlohmann::json& p);
     rpc::Response handleAgentCloseAll(std::optional<int64_t> id, const nlohmann::json& p);
 
+    // terminal.* (terminal control)
+    rpc::Response handleTerminalGetScreenContent(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleTerminalSendInput(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleTerminalGetSelection(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleTerminalGetCursorPosition(std::optional<int64_t> id, const nlohmann::json& p);
+
+    // agent.* (status display)
+    rpc::Response handleAgentSetStatus(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentSetProgress(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentSetStatusPills(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentRequestAttention(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentClearStatus(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentAddStatePattern(std::optional<int64_t> id, const nlohmann::json& p);
+
+    // workspace.* (awareness)
+    rpc::Response handleWorkspaceListPanes(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleWorkspaceGetActivePane(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleWorkspaceGetPaneInfo(std::optional<int64_t> id, const nlohmann::json& p);
+
+    // agent.* (orchestration enhanced)
+    rpc::Response handleAgentBroadcast(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentSendToAgent(std::optional<int64_t> id, const nlohmann::json& p);
+    rpc::Response handleAgentListAgents(std::optional<int64_t> id, const nlohmann::json& p);
+
     Mux& mux_;
     NotificationStore& notifications_;
     AgentTracker& agent_tracker_;
@@ -138,6 +189,9 @@ private:
     PaneReadCallback read_cb_;
     WebViewCallback webview_cb_;
     ScrollbackReadCallback scrollback_cb_;
+    SelectionReadCallback selection_cb_;
+    CursorPositionCallback cursor_cb_;
+    AttentionCallback attention_cb_;
 
     // Agent orchestrator
     AgentOrchestrator orchestrator_;

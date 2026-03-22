@@ -48,6 +48,7 @@ add_executable(termcore_tests
     test_workspace_status.cpp
     test_jsonrpc.cpp
     test_command_dispatcher.cpp
+    test_mcp_agent_commands.cpp
     test_theme_loader.cpp
     test_theme_index.cpp
     test_theme_importer.cpp

@@ -5,11 +5,15 @@ namespace termcore {
 // Agent state priority: higher value = more dominant
 static int agentStatePriority(AgentState state) {
     switch (state) {
-        case AgentState::NeedsInput: return 5;
-        case AgentState::Running:    return 4;
-        case AgentState::Starting:   return 3;
-        case AgentState::Idle:       return 2;
-        case AgentState::Inactive:   return 1;
+        case AgentState::Error:      return 7;
+        case AgentState::NeedsInput: return 6;
+        case AgentState::Waiting:    return 5;
+        case AgentState::ToolUse:    return 4;
+        case AgentState::Thinking:   return 4;
+        case AgentState::Running:    return 3;
+        case AgentState::Starting:   return 2;
+        case AgentState::Idle:       return 1;
+        case AgentState::Inactive:   return 0;
         case AgentState::Exited:     return 0;
     }
     return 0;
