@@ -99,6 +99,8 @@ public:
         auto it = panes.find(pane_id);
         return (it != panes.end()) ? it->second.webview_url : "";
     }
+
+    std::string getProfileId(uint32_t pane_id) const override { return ""; }
 };
 
 }  // namespace

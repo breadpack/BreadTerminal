@@ -29,6 +29,7 @@ struct PaneSessionData {
     std::vector<std::string> scrollback_lines;  // Raw lines (before compression)
     bool is_webview = false;
     std::string webview_url;
+    std::string profile_id;  // NEW
 };
 
 /// Recursive split tree for serialization.
@@ -57,7 +58,7 @@ struct WorkspaceSessionData {
 
 /// Top-level session data.
 struct SessionData {
-    int version = 1;
+    int version = 2;
     WindowGeometry window;
     std::vector<WorkspaceSessionData> workspaces;
     size_t active_workspace_index = 0;
@@ -77,6 +78,7 @@ public:
     virtual std::string getScrollbackLine(uint32_t pane_id, size_t line) const = 0;
     virtual bool isWebView(uint32_t pane_id) const = 0;
     virtual std::string getWebViewUrl(uint32_t pane_id) const = 0;
+    virtual std::string getProfileId(uint32_t pane_id) const = 0;
 };
 
 class Mux;  // Forward declaration

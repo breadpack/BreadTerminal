@@ -124,7 +124,7 @@ SessionData SessionManager::capture(const Mux& mux,
                                      const IPaneStateProvider& provider,
                                      const WindowGeometry& window) {
     SessionData data;
-    data.version = 1;
+    data.version = 2;
     data.window = window;
 
     auto ws_ids = mux.allWorkspaceIds();
@@ -214,6 +214,7 @@ SessionData SessionManager::capture(const Mux& mux,
         pd.cols = provider.getCols(pane_id);
         pd.is_webview = provider.isWebView(pane_id);
         pd.webview_url = provider.getWebViewUrl(pane_id);
+        pd.profile_id = provider.getProfileId(pane_id);
 
         size_t sb_size = provider.getScrollbackSize(pane_id);
         size_t count = std::min(sb_size, kMaxScrollbackLines);
@@ -261,6 +262,7 @@ Result<void> SessionManager::save(const SessionData& data, const std::string& di
         pj["cols"] = p.cols;
         pj["is_webview"] = p.is_webview;
         pj["webview_url"] = p.webview_url;
+        pj["profile_id"] = p.profile_id;
         pj["scrollback"] = compressAndEncode(p.scrollback_lines);
         pj["scrollback_lines"] = p.scrollback_lines.size();
         panes_j.push_back(std::move(pj));

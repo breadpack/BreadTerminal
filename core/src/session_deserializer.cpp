@@ -126,7 +126,7 @@ Result<SessionData> SessionManager::load(const std::string& dir) {
 
         SessionData data;
         data.version = j.value("version", 0);
-        if (data.version != 1) return Error("unsupported session version: " + std::to_string(data.version));
+        if (data.version != 1 && data.version != 2) return Error("unsupported session version: " + std::to_string(data.version));
 
         // Window
         if (j.contains("window")) {
@@ -150,6 +150,7 @@ Result<SessionData> SessionManager::load(const std::string& dir) {
                 pd.cols = pj.value("cols", 80);
                 pd.is_webview = pj.value("is_webview", false);
                 pd.webview_url = pj.value("webview_url", "");
+                pd.profile_id = pj.value("profile_id", "");  // empty for v1
 
                 std::string scrollback_encoded = pj.value("scrollback", "");
                 size_t sb_lines = pj.value("scrollback_lines", size_t(0));
