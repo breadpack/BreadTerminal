@@ -108,6 +108,7 @@ set(TERMCORE_SOURCES
     src/grapheme.cpp
     src/shader_effect.cpp
     src/shader_builtins.cpp
+    src/annotations.cpp
 )
 
 if(UNIX)

@@ -112,6 +112,9 @@ struct Config {
     bool image_preview = false;
     int image_preview_max_height = 10;  // max cell rows for inline preview
 
+    // Tab badge format (e.g., "{hostname}", "{user}@{hostname}")
+    std::string tab_badge_format;
+
     // Session auto-save for crash recovery
     bool session_autosave = true;
     int session_autosave_interval = 30;  // seconds
