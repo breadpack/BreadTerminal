@@ -202,14 +202,15 @@ void ClipboardHistoryPopup::onPaint(HWND hwnd) {
     // Rounded-rect background
     float r = static_cast<float>(kCornerRadius), fw = static_cast<float>(w), fh = static_cast<float>(h);
     Gdiplus::GraphicsPath path;
-    path.AddArc(0, 0, r*2, r*2, 180, 90);
-    path.AddArc(fw-r*2, 0, r*2, r*2, 270, 90);
-    path.AddArc(fw-r*2, fh-r*2, r*2, r*2, 0, 90);
-    path.AddArc(0, fh-r*2, r*2, r*2, 90, 90);
+    path.AddArc(0.0f, 0.0f, r*2, r*2, 180.0f, 90.0f);
+    path.AddArc(fw-r*2, 0.0f, r*2, r*2, 270.0f, 90.0f);
+    path.AddArc(fw-r*2, fh-r*2, r*2, r*2, 0.0f, 90.0f);
+    path.AddArc(0.0f, fh-r*2, r*2, r*2, 90.0f, 90.0f);
     path.CloseFigure();
     Gdiplus::SolidBrush bgBrush(toColor(kBgColor));
     g.FillPath(&bgBrush, &path);
-    g.DrawPath(&Gdiplus::Pen(toColor(kBorderColor), 1.0f), &path);
+    Gdiplus::Pen borderPen(toColor(kBorderColor), 1.0f);
+    g.DrawPath(&borderPen, &path);
     g.SetClip(&path);
 
     // Fonts
@@ -222,7 +223,8 @@ void ClipboardHistoryPopup::onPaint(HWND hwnd) {
     // Filter bar
     float pad = static_cast<float>(kPadding);
     Gdiplus::RectF filterRect(pad, pad, fw - pad*2, static_cast<float>(kFilterBarHeight - kPadding));
-    g.FillRectangle(&Gdiplus::SolidBrush(toColor(kFilterBg)), filterRect);
+    Gdiplus::SolidBrush filterBgBrush(toColor(kFilterBg));
+    g.FillRectangle(&filterBgBrush, filterRect);
 
     Gdiplus::RectF filterTextRect(filterRect.X+8, filterRect.Y+2, filterRect.Width-16, filterRect.Height-4);
     Gdiplus::StringFormat sfLeft;
@@ -253,16 +255,23 @@ void ClipboardHistoryPopup::onPaint(HWND hwnd) {
 
         int idx = scrollOffset_ + vi;
         bool isSel = (idx == selectedIndex_), isHov = (idx == hoverIndex_);
-        if (isSel)       g.FillRectangle(&Gdiplus::SolidBrush(toColor(kItemSelectedBg)), itemRect);
-        else if (isHov)  g.FillRectangle(&Gdiplus::SolidBrush(toColor(kItemHoverBg)), itemRect);
+        if (isSel) {
+            Gdiplus::SolidBrush selBrush(toColor(kItemSelectedBg));
+            g.FillRectangle(&selBrush, itemRect);
+        } else if (isHov) {
+            Gdiplus::SolidBrush hovBrush(toColor(kItemHoverBg));
+            g.FillRectangle(&hovBrush, itemRect);
+        }
 
         const auto& entry = allEntries_[dataIndex];
         float halfH = static_cast<float>(kItemHeight / 2);
 
         // Accent bar for most recent entry
-        if (dataIndex == 0)
-            g.FillRectangle(&Gdiplus::SolidBrush(toColor(kRecentAccent)),
+        if (dataIndex == 0) {
+            Gdiplus::SolidBrush recentBarBrush(toColor(kRecentAccent));
+            g.FillRectangle(&recentBarBrush,
                             Gdiplus::RectF(0, iy, 3.0f, static_cast<float>(kItemHeight)));
+        }
 
         // Preview text
         std::wstring preview = toWide(entry.preview);
@@ -283,7 +292,8 @@ void ClipboardHistoryPopup::onPaint(HWND hwnd) {
         // Separator
         if (vi < maxItemsInView - 1 && idx < visibleCount - 1) {
             float sy = iy + static_cast<float>(kItemHeight) - 0.5f;
-            g.DrawLine(&Gdiplus::Pen(toColor(kBorderColor), 0.5f), pad, sy, fw - pad, sy);
+            Gdiplus::Pen sepPen(toColor(kBorderColor), 0.5f);
+            g.DrawLine(&sepPen, pad, sy, fw - pad, sy);
         }
     }
 
@@ -301,7 +311,8 @@ void ClipboardHistoryPopup::onPaint(HWND hwnd) {
         float listH = fh - kFilterBarHeight;
         float thumbH = (std::max)(listH * maxItemsInView / static_cast<float>(visibleCount), 20.0f);
         float thumbY = kFilterBarHeight + (listH - thumbH) * scrollOffset_ / (visibleCount - maxItemsInView);
-        g.FillRectangle(&Gdiplus::SolidBrush(Gdiplus::Color(80,255,255,255)),
+        Gdiplus::SolidBrush scrollBrush(Gdiplus::Color(80,255,255,255));
+        g.FillRectangle(&scrollBrush,
                         Gdiplus::RectF(fw-4, thumbY, 3, thumbH));
     }
 

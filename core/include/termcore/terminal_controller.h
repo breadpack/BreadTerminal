@@ -89,10 +89,11 @@ public:
     KeybindingManager* keybindings() { return keybindings_.get(); }
     ProfileManager* profileManager() { return profileMgr_.get(); }
 
+    void pasteText(const std::string& text);
+
 private:
     void handleAction(Action action);
     void sendPtyData(const char* data, size_t len);
-    void pasteText(const std::string& text);
 
     IPlatformHost* host_;
     Config config_;
