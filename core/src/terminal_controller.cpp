@@ -25,6 +25,12 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
         keybindings_->loadFromConfig(bindings);
     }
 
+    // ProfileManager
+    profileMgr_ = std::make_unique<ProfileManager>();
+    for (const auto& p : config_.profiles) profileMgr_->setProfile(p);
+    if (!config_.default_profile_id.empty()) profileMgr_->setDefaultProfile(config_.default_profile_id);
+    for (const auto& id : config_.hidden_profile_ids) profileMgr_->hideProfile(id);
+
     initInputHandler();
 }
 
@@ -38,6 +44,24 @@ void TerminalController::initTerminal() {
         fontMgr_->recalcGrid(vpW, vpH, termRows_, termCols_);
     }
 
+    // Detect shells and populate ProfileManager
+    // NOTE: Spec defines detectShells() as a ProfileManager member, but the plan
+    // intentionally separates ShellDetector (detection) from ProfileManager (storage).
+    // This improves testability — ShellDetector can be tested independently.
+    auto detected = ShellDetector::detect();
+    profileMgr_->setDetectedProfiles(std::move(detected));
+
+    // Config::shell backward compatibility
+    if (profileMgr_->allProfiles().empty() && !config_.shell.empty()) {
+        Profile legacy;
+        legacy.id = "__legacy_shell__";
+        legacy.name = "Shell";
+        legacy.command = config_.shell;
+        legacy.icon = "shell";
+        profileMgr_->setProfile(legacy);
+        profileMgr_->setDefaultProfile(legacy.id);
+    }
+
     // Create Mux and TabController
     auto mux = std::make_unique<Mux>();
     auto wsId = mux->createWorkspace("default");
@@ -49,6 +73,7 @@ void TerminalController::initTerminal() {
 
     tabCtrl_ = std::make_unique<TabController>(
         std::move(mux), wsId, std::move(factory), config_);
+    tabCtrl_->setProfileManager(profileMgr_.get());
 
     // Create initial tab
     tabCtrl_->createTab(termRows_, termCols_);
@@ -448,6 +473,24 @@ void TerminalController::handleAction(Action action) {
             onConfigChanged(newCfg);
             break;
         }
+
+        case Action::NewTabProfile1: case Action::NewTabProfile2: case Action::NewTabProfile3:
+        case Action::NewTabProfile4: case Action::NewTabProfile5: case Action::NewTabProfile6:
+        case Action::NewTabProfile7: case Action::NewTabProfile8: case Action::NewTabProfile9: {
+            if (tabCtrl_ && profileMgr_) {
+                int idx = static_cast<int>(action) - static_cast<int>(Action::NewTabProfile1);
+                auto visible = profileMgr_->visibleProfiles();
+                if (idx >= 0 && idx < static_cast<int>(visible.size())) {
+                    tabCtrl_->createTab(termRows_, termCols_, visible[idx]->id);
+                    needsRender_ = true;
+                }
+            }
+            break;
+        }
+
+        case Action::ShowProfileDropdown:
+            // Platform-specific UI will handle this. No-op at controller level for now.
+            break;
 
         default:
             break;

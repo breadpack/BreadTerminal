@@ -4,6 +4,7 @@
 #include "termcore/config.h"
 #include "termcore/platform_host.h"
 #include "termcore/font_manager.h"
+#include "termcore/profile.h"
 #include "termcore/selection_manager.h"
 #include "termcore/search_controller.h"
 #include "termcore/tab_controller.h"
@@ -70,6 +71,7 @@ public:
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
     KeybindingManager* keybindings() { return keybindings_.get(); }
+    ProfileManager* profileManager() { return profileMgr_.get(); }
 
 private:
     void handleAction(Action action);
@@ -80,6 +82,7 @@ private:
     Config config_;
 
     std::unique_ptr<FontManager> fontMgr_;
+    std::unique_ptr<ProfileManager> profileMgr_;
     SelectionManager selMgr_;
     SearchController searchCtrl_;
     std::unique_ptr<TabController> tabCtrl_;
