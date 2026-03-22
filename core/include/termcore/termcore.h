@@ -19,6 +19,8 @@ typedef struct {
     uint32_t bg_color;
     uint16_t attributes;
     uint8_t width;
+    uint32_t extra[7];
+    uint8_t extra_count;
 } TermCellData;
 
 typedef struct {

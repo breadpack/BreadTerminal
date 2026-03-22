@@ -66,7 +66,8 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"close_pane", Action::ClosePane},
         {"focus_up", Action::FocusUp}, {"focus_down", Action::FocusDown},
         {"focus_left", Action::FocusLeft}, {"focus_right", Action::FocusRight},
-        {"copy", Action::Copy}, {"paste", Action::Paste}, {"select_all", Action::SelectAll},
+        {"copy", Action::Copy}, {"paste", Action::Paste},
+        {"paste_from_history", Action::PasteFromHistory}, {"select_all", Action::SelectAll},
         {"scroll_up", Action::ScrollUp}, {"scroll_down", Action::ScrollDown},
         {"scroll_page_up", Action::ScrollPageUp},
         {"scroll_page_down", Action::ScrollPageDown},
@@ -294,6 +295,7 @@ void KeybindingManager::initDefaults() {
     // Clipboard
     b(mk(M, "c"),       Action::Copy);
     b(mk(M, "v"),       Action::Paste);
+    b(mk(MS, "v"),      Action::PasteFromHistory);
     b(mk(M, "a"),       Action::SelectAll);
 
     // Search

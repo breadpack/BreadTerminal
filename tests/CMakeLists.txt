@@ -55,6 +55,7 @@ add_executable(termcore_tests
     test_theme_importer.cpp
     test_theme_repository.cpp
     test_theme_preview.cpp
+    test_clipboard_history.cpp
     test_font_index.cpp
     test_profile.cpp
     test_shell_detector.cpp
@@ -64,7 +65,7 @@ add_executable(termcore_tests
     test_grapheme.cpp
     test_ligature.cpp
     test_url_highlight.cpp
-    test_tab_drag.cpp
+    test_session_autosave.cpp
 )
 
 target_link_libraries(termcore_tests
@@ -88,6 +89,12 @@ if(APPLE)
     set_source_files_properties(
         test_metal_renderer.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++"
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_sources(termcore_tests PRIVATE
+        test_wayland.cpp
     )
 endif()
 

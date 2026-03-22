@@ -66,6 +66,7 @@ set(TERMCORE_SOURCES
     src/session_deserializer.cpp
     src/pane_status.cpp
     src/session_manager.cpp
+    src/session_autosave.cpp
     src/socket/jsonrpc.cpp
     src/socket/command_dispatcher_mux.cpp
     src/socket/command_dispatcher_misc.cpp
@@ -78,6 +79,7 @@ set(TERMCORE_SOURCES
     src/screen_capture.cpp
     src/mcp_server_spec.cpp
     src/quick_terminal.cpp
+    src/clipboard_history.cpp
     src/terminal_controller.cpp
     src/input_handler.cpp
     src/font_manager.cpp

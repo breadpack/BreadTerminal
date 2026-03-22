@@ -1,6 +1,7 @@
 #ifndef TERMCORE_PLATFORM_HOST_H
 #define TERMCORE_PLATFORM_HOST_H
 
+#include "termcore/clipboard_history.h"
 #include "termcore/config.h"
 #include "termcore/keybinding.h"  // KeyMod (ModNone, ModShift, etc.)
 #include "termcore/profile.h"
@@ -8,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace termcore {
 
@@ -65,6 +67,9 @@ public:
     // Notifications
     virtual void showNotification(const std::string& title,
                                   const std::string& body) = 0;
+
+    // Clipboard history popup (platform shows a selection UI)
+    virtual void showClipboardHistory(const std::vector<ClipboardEntry>& entries) = 0;
 
     // Settings window (unified: replaces separate theme/font hub windows)
     virtual void openSettingsWindow(const Config& config) = 0;

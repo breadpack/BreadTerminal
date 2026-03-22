@@ -1,4 +1,5 @@
 #include "termcore/mux.h"
+#include "termcore/ssh_mux.h"
 
 #include <algorithm>
 #include <cmath>
@@ -351,6 +352,37 @@ std::vector<TabId> Mux::allTabIds(WorkspaceId ws_id) const {
 const SplitNode* Mux::splitRoot(WorkspaceId ws_id, TabId tab_id) const {
     const auto* tab = findTab(ws_id, tab_id);
     return tab ? tab->root.get() : nullptr;
+}
+
+// --- SSH mux integration ---
+
+void Mux::addSshPane(PaneId pane_id, int channel_id,
+                      std::shared_ptr<SshMuxSession> session) {
+    if (pane_id == kInvalidPane || !session) return;
+    SshPaneBinding binding;
+    binding.channel_id = channel_id;
+    binding.session = std::move(session);
+    ssh_panes_[pane_id] = std::move(binding);
+}
+
+void Mux::removeSshPane(PaneId pane_id) {
+    ssh_panes_.erase(pane_id);
+}
+
+bool Mux::isSshPane(PaneId pane_id) const {
+    return ssh_panes_.find(pane_id) != ssh_panes_.end();
+}
+
+std::shared_ptr<SshMuxSession> Mux::sshSessionForPane(PaneId pane_id) const {
+    auto it = ssh_panes_.find(pane_id);
+    if (it == ssh_panes_.end()) return nullptr;
+    return it->second.session;
+}
+
+int Mux::sshChannelForPane(PaneId pane_id) const {
+    auto it = ssh_panes_.find(pane_id);
+    if (it == ssh_panes_.end()) return -1;
+    return it->second.channel_id;
 }
 
 // Zoom, layout presets, and equalize are in mux_layout.cpp

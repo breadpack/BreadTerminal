@@ -36,6 +36,9 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
     if (!config_.default_profile_id.empty()) profileMgr_->setDefaultProfile(config_.default_profile_id);
     for (const auto& id : config_.hidden_profile_ids) profileMgr_->hideProfile(id);
 
+    // URL highlight manager
+    urlHighlightMgr_.applyConfig(config_);
+
     initInputHandler();
 
     // Load search history from config directory
@@ -103,6 +106,8 @@ void TerminalController::pollPty() {
         Screen* scr = tabCtrl_->activeScreen();
         if (scr) {
             detectedUrls_ = urlDetector_.detectInScreen(*scr);
+            urlHighlightMgr_.markDirty();
+            urlHighlightMgr_.scanScreen(*scr, scr->rows());
         }
     }
 
@@ -360,8 +365,11 @@ void TerminalController::handleAction(Action action) {
         case Action::Copy:
             if (selMgr_.hasSelection() && scr) {
                 std::string text = selMgr_.getSelectedText(*scr);
-                if (!text.empty() && host_) {
-                    host_->setClipboardText(text);
+                if (!text.empty()) {
+                    clipboardHistory_.addEntry(text);
+                    if (host_) {
+                        host_->setClipboardText(text);
+                    }
                 }
             }
             break;
@@ -372,6 +380,12 @@ void TerminalController::handleAction(Action action) {
                 if (!text.empty()) {
                     pasteText(text);
                 }
+            }
+            break;
+
+        case Action::PasteFromHistory:
+            if (host_) {
+                host_->showClipboardHistory(clipboardHistory_.getEntries());
             }
             break;
 
