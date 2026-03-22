@@ -307,7 +307,9 @@ TEST_F(SearchTest, RegexDotMatchesAny) {
     SearchOptions opts;
     opts.use_regex = true;
     int count = search.search(screen, "file.txt", opts);
-    EXPECT_EQ(count, 2);
+    // "file.txt" needs 8 chars: "file" + any + "txt". "filetxt" is only 7 chars,
+    // so only "file.txt" (literal dot matched by .) on row 0 matches.
+    EXPECT_EQ(count, 1);
 }
 
 // Multiple regex matches on same line

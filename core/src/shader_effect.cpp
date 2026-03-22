@@ -39,8 +39,9 @@ bool validateShaderSource(const std::string& source, std::string& error) {
         return false;
     }
 
-    // Check for a main function entry point
-    if (source.find("main") == std::string::npos) {
+    // Check for an entry point function (GLSL uses "main", HLSL uses "PSMain"/"VSMain")
+    if (source.find("main") == std::string::npos &&
+        source.find("Main") == std::string::npos) {
         error = "Shader source missing 'main' function";
         return false;
     }

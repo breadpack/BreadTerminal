@@ -160,6 +160,7 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void onGridSizeChanged(int rows, int cols) override;
     void showNotification(const std::string& title,
                           const std::string& body) override;
+    void showClipboardHistory(const std::vector<termcore::ClipboardEntry>& entries) override;
     void openSettingsWindow(const termcore::Config& config) override;
     float dpiScale() override;
     void openUrl(const std::string& url) override;

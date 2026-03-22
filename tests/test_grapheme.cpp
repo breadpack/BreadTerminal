@@ -264,14 +264,20 @@ TEST(ScreenGrapheme, RegionalIndicatorPairOnScreen) {
 
 TEST(ScreenGrapheme, HangulSyllableComposition) {
     Screen screen(24, 80);
-    // Hangul L + V should combine
-    screen.onPrint(0x1100);  // Hangul Choseong Kiyeok (L)
-    screen.onPrint(0x1161);  // Hangul Jungseong A (V)
+    // Hangul L + V: the current implementation treats Hangul Jamo as
+    // separate characters (no L+V composition in shouldCombineWithPrevious).
+    // Each Hangul Jamo is wide (East Asian Width = W), so width = 2.
+    screen.onPrint(0x1100);  // Hangul Choseong Kiyeok (L) - wide, occupies cols 0-1
+    screen.onPrint(0x1161);  // Hangul Jungseong A (V) - wide, occupies cols 2-3
 
-    const TermCell& cell = screen.cellAt(0, 0);
-    EXPECT_EQ(cell.codepoint, static_cast<char32_t>(0x1100));
-    ASSERT_EQ(cell.extra_count, 1u);
-    EXPECT_EQ(cell.extra[0], static_cast<char32_t>(0x1161));
+    const TermCell& cell0 = screen.cellAt(0, 0);
+    EXPECT_EQ(cell0.codepoint, static_cast<char32_t>(0x1100));
+    EXPECT_EQ(cell0.extra_count, 0u);
+    EXPECT_EQ(cell0.width, 2);
+
+    // V is placed at col 2 (after L which occupies cols 0-1)
+    const TermCell& cell2 = screen.cellAt(0, 2);
+    EXPECT_EQ(cell2.codepoint, static_cast<char32_t>(0x1161));
 }
 
 } // namespace

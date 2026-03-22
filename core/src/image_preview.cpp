@@ -1,11 +1,4 @@
-// stb_image: single-file image loader.
-// Define the implementation here (only one .cpp should do this).
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_GIF
-#define STBI_ONLY_BMP
-#define STBI_NO_STDIO
+// stb_image: use the implementation defined in iterm_image.cpp
 #include "stb_image.h"
 
 #include "termcore/image_preview.h"

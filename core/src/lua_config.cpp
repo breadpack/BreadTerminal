@@ -55,6 +55,12 @@ int getInt(const sol::table& t, const char* key, int def) {
     return v.valid() ? v.get<int>() : def;
 }
 
+/// Helper: get optional color (hex int or "#RRGGBB" string) from table
+uint32_t getColor(const sol::table& t, const char* key, uint32_t def) {
+    auto v = t[key];
+    return v.valid() ? parseColor(v) : def;
+}
+
 /// Helper: get optional bool from table
 bool getBool(const sol::table& t, const char* key, bool def) {
     auto v = t[key];

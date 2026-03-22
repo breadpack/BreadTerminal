@@ -139,8 +139,8 @@ TEST(ImagePreview, ITermProtocolSmallImage) {
     std::string result = encodeForITermProtocol(pixel, 1, 1);
 
     ASSERT_FALSE(result.empty());
-    // Must start with OSC 1337
-    EXPECT_EQ(result.substr(0, 5), "\033]1337");
+    // Must start with OSC 1337 ("\033]1337" is 6 bytes: ESC ] 1 3 3 7)
+    EXPECT_EQ(result.substr(0, 6), "\033]1337");
     // Must contain inline=1
     EXPECT_NE(result.find("inline=1"), std::string::npos);
     // Must contain width and height

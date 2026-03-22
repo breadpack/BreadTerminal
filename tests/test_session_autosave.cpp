@@ -96,7 +96,7 @@ TEST(SessionAutoSave, SaveLoadRoundtrip) {
     {
         termcore::SessionAutoSave saver;
         saver.start({true, 9999, dir.path()},
-                    [&]() { return original; });
+                    [&]() { return makeTestSession(2, 3); });
         saver.saveNow(original);
         saver.stop();
     }
@@ -147,7 +147,7 @@ TEST(SessionAutoSave, AtomicWriteNoLeftoverTmp) {
     {
         termcore::SessionAutoSave saver;
         saver.start({true, 9999, dir.path()},
-                    [&]() { return data; });
+                    [&]() { return makeTestSession(); });
         saver.saveNow(data);
         saver.stop();
     }
@@ -178,7 +178,7 @@ TEST(SessionAutoSave, RecoveryDetection) {
         termcore::SessionAutoSave saver;
         auto data = makeTestSession();
         saver.start({true, 9999, dir.path()},
-                    [&]() { return data; });
+                    [&]() { return makeTestSession(); });
         saver.saveNow(data);
         saver.stop();
     }
@@ -198,7 +198,7 @@ TEST(SessionAutoSave, ClearOnNormalExit) {
     {
         termcore::SessionAutoSave saver;
         saver.start({true, 9999, dir.path()},
-                    [&]() { return data; });
+                    [&]() { return makeTestSession(); });
         saver.saveNow(data);
         saver.stop();
     }
@@ -223,7 +223,7 @@ TEST(SessionAutoSave, RecoveryInfoExtraction) {
     {
         termcore::SessionAutoSave saver;
         saver.start({true, 9999, dir.path()},
-                    [&]() { return data; });
+                    [&]() { return makeTestSession(); });
         saver.saveNow(data);
         saver.stop();
     }
@@ -300,7 +300,7 @@ TEST(SessionAutoSave, PeriodicTimerSaves) {
         config.interval_seconds = 1;
         config.save_path = dir.path();
 
-        saver.start(config, [&]() { return data; });
+        saver.start(config, [&]() { return makeTestSession(); });
 
         // Wait long enough for at least one tick
         std::this_thread::sleep_for(std::chrono::milliseconds(1500));
@@ -326,7 +326,7 @@ TEST(SessionAutoSave, DisabledConfigNoOp) {
         config.interval_seconds = 1;
         config.save_path = dir.path();
 
-        saver.start(config, [&]() { return data; });
+        saver.start(config, [&]() { return makeTestSession(); });
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         saver.stop();
     }

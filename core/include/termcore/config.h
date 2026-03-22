@@ -105,6 +105,9 @@ struct Config {
     bool check_for_updates = true;
     int update_check_interval = 24;  // hours
 
+    // Font ligatures
+    bool font_ligatures = true;
+
     // Inline image preview (opt-in)
     bool image_preview = false;
     int image_preview_max_height = 10;  // max cell rows for inline preview
