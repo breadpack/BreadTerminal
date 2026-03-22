@@ -96,9 +96,11 @@ void WaylandPlatformHost::setSearchBarText(const std::string& /*text*/) {
 
 // ─── IME ───────────────────────────────────────────────────────────
 
-void WaylandPlatformHost::positionIME(int /*x*/, int /*y*/, int /*height*/) {
-    // Wayland IME positioning via text-input protocol is not yet
-    // implemented; this is a placeholder for future zwp_text_input_v3.
+void WaylandPlatformHost::positionIME(int x, int y, int height) {
+    // Set the cursor rectangle so the compositor can position the IME
+    // candidate window near the text cursor.  Uses zwp_text_input_v3
+    // when available; otherwise a no-op (graceful fallback).
+    window_.setIMECursorRect(x, y, 1, height);
 }
 
 // ─── Font/color notifications ──────────────────────────────────────

@@ -90,6 +90,61 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND XKBCOMMON_FOUND)
     # wayland-protocols; if not pre-generated, use wayland-scanner.
     # For now we assume xdg-shell-client-protocol.h is available in
     # the system include path (standard on most distros).
+
+    # ─── Generate zwp_text_input_v3 protocol glue ────────────────
+    pkg_check_modules(WAYLAND_PROTOCOLS wayland-protocols)
+    find_program(WAYLAND_SCANNER wayland-scanner)
+
+    if(WAYLAND_PROTOCOLS_FOUND AND WAYLAND_SCANNER)
+        # Locate the protocol XML from wayland-protocols package
+        execute_process(
+            COMMAND ${PKG_CONFIG_EXECUTABLE} --variable=pkgdatadir wayland-protocols
+            OUTPUT_VARIABLE WAYLAND_PROTOCOLS_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        set(TEXT_INPUT_V3_XML
+            "${WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml")
+
+        if(EXISTS "${TEXT_INPUT_V3_XML}")
+            set(TEXT_INPUT_V3_HEADER
+                "${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v3-client-protocol.h")
+            set(TEXT_INPUT_V3_CODE
+                "${CMAKE_CURRENT_BINARY_DIR}/text-input-unstable-v3-protocol.c")
+
+            add_custom_command(
+                OUTPUT "${TEXT_INPUT_V3_HEADER}"
+                COMMAND ${WAYLAND_SCANNER} client-header
+                        "${TEXT_INPUT_V3_XML}" "${TEXT_INPUT_V3_HEADER}"
+                DEPENDS "${TEXT_INPUT_V3_XML}"
+                COMMENT "Generating text-input-unstable-v3 client header"
+            )
+            add_custom_command(
+                OUTPUT "${TEXT_INPUT_V3_CODE}"
+                COMMAND ${WAYLAND_SCANNER} private-code
+                        "${TEXT_INPUT_V3_XML}" "${TEXT_INPUT_V3_CODE}"
+                DEPENDS "${TEXT_INPUT_V3_XML}"
+                COMMENT "Generating text-input-unstable-v3 protocol code"
+            )
+
+            target_sources(termcore_wayland PRIVATE
+                "${TEXT_INPUT_V3_HEADER}"
+                "${TEXT_INPUT_V3_CODE}"
+            )
+            target_include_directories(termcore_wayland
+                PRIVATE "${CMAKE_CURRENT_BINARY_DIR}"
+            )
+            target_compile_definitions(termcore_wayland
+                PRIVATE TERMCORE_HAS_TEXT_INPUT_V3=1
+            )
+            message(STATUS "Wayland text-input-v3 IME support: enabled")
+        else()
+            message(STATUS "Wayland text-input-v3 IME support: disabled "
+                           "(protocol XML not found)")
+        endif()
+    else()
+        message(STATUS "Wayland text-input-v3 IME support: disabled "
+                       "(wayland-scanner or wayland-protocols not found)")
+    endif()
 else()
     message(STATUS "Wayland support: disabled (missing dependencies)")
 endif()
