@@ -102,6 +102,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"open_settings", Action::OpenSettings},
         {"open_theme_hub", Action::OpenThemeHub},
         {"open_font_hub", Action::OpenFontHub},
+        {"toggle_inspector", Action::ToggleInspector},
         {"custom", Action::Custom},
     };
     return map;
