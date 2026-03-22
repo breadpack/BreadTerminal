@@ -19,6 +19,7 @@
 #include "ThemeHubWindow.h"
 #include "FontHubWindow.h"
 #include "SettingsWindow.h"
+#include "ClipboardHistoryPopup.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -67,6 +68,7 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     std::unique_ptr<termcore::ThemeHubWindow> themeHub;
     std::unique_ptr<termcore::FontHubWindow> fontHub;
     std::unique_ptr<termcore::SettingsWindow> settingsWin;
+    std::unique_ptr<ClipboardHistoryPopup> clipboardHistoryPopup;
 
     // DPI
     float dpiScale_ = 1.0f;
@@ -149,6 +151,8 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void onGridSizeChanged(int rows, int cols) override;
     void showNotification(const std::string& title,
                           const std::string& body) override;
+    void showClipboardHistory(
+        const std::vector<termcore::ClipboardEntry>& entries) override;
     void openSettingsWindow(const termcore::Config& config) override;
     void openThemeHub(const termcore::Config& config) override;
     void openFontHub(const termcore::Config& config) override;

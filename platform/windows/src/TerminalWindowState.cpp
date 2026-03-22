@@ -623,6 +623,22 @@ void TerminalWindowState::showNotification(const std::string& title,
     (void)body;
 }
 
+void TerminalWindowState::showClipboardHistory(
+        const std::vector<termcore::ClipboardEntry>& entries) {
+    if (entries.empty()) return;
+
+    if (!clipboardHistoryPopup) {
+        clipboardHistoryPopup = std::make_unique<ClipboardHistoryPopup>();
+    }
+
+    clipboardHistoryPopup->show(hwnd, entries,
+        [this](const std::string& text) {
+            if (controller) {
+                controller->pasteText(text);
+            }
+        });
+}
+
 void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
     if (!settingsWin) {
         settingsWin = std::make_unique<termcore::SettingsWindow>();
