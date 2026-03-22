@@ -79,6 +79,7 @@ add_executable(termcore_tests
     test_instant_replay.cpp
     test_annotations.cpp
     test_password_manager.cpp
+    test_tmux_integration.cpp
 )
 
 target_link_libraries(termcore_tests

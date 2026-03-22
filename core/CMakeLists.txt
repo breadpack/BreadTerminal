@@ -116,6 +116,7 @@ set(TERMCORE_SOURCES
     src/annotations.cpp
     src/serial_port.cpp
     src/password_manager.cpp
+    src/tmux_integration.cpp
 )
 
 if(UNIX)
