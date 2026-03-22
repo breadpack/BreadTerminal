@@ -86,6 +86,9 @@ private:
     bool searchBarVisible_ = false;
     bool updatingSearchText_ = false;      // guard against re-entrant signal
 
+    // Notification ID counter for unique notification IDs
+    int notificationSeq_ = 0;
+
     // Unified settings window
     std::unique_ptr<termcore::UnifiedSettingsWindow> settingsWindow_;
 };

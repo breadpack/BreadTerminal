@@ -363,8 +363,29 @@ void GtkPlatformHost::onGridSizeChanged(int rows, int cols) {
 
 void GtkPlatformHost::showNotification(const std::string& title,
                                         const std::string& body) {
-    // TODO: Use GNotification for desktop notifications
-    g_debug("BreadTerminal: notification: %s - %s", title.c_str(), body.c_str());
+    // Resolve a GApplication from the GtkWindow's display
+    GApplication* app = g_application_get_default();
+    if (!app) {
+        g_debug("BreadTerminal: no GApplication, falling back to g_debug for notification");
+        g_debug("BreadTerminal: notification: %s - %s", title.c_str(), body.c_str());
+        return;
+    }
+
+    GNotification* notification = g_notification_new(title.c_str());
+    g_notification_set_body(notification, body.c_str());
+
+    GIcon* icon = g_themed_icon_new("utilities-terminal");
+    g_notification_set_icon(notification, icon);
+    g_object_unref(icon);
+
+    // Set default action to focus the window
+    g_notification_set_default_action(notification, "app.focus-window");
+
+    // Send with a unique ID so it can be withdrawn later
+    std::string notifId = "breadterminal-notify-" + std::to_string(notificationSeq_++);
+    g_application_send_notification(app, notifId.c_str(), notification);
+
+    g_object_unref(notification);
 }
 
 // --- Clipboard history ---

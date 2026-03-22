@@ -8,6 +8,9 @@
 
 namespace termcore {
     void positionImeWindow(HWND hwnd, int x, int y, int height);
+    void initNotificationIcon(HWND hwnd);
+    void showWindowsNotification(HWND hwnd, const std::string& title,
+                                 const std::string& body);
 }
 
 // --- IPlatformHost implementation ---
@@ -263,9 +266,15 @@ void TerminalWindowState::onGridSizeChanged(int rows, int cols) {
 
 void TerminalWindowState::showNotification(const std::string& title,
                                             const std::string& body) {
-    // TODO: Win32 notification toast
-    (void)title;
-    (void)body;
+    if (!hwnd) return;
+
+    // Lazily create the notification tray icon on first use
+    if (!notifyIconAdded) {
+        termcore::initNotificationIcon(hwnd);
+        notifyIconAdded = true;
+    }
+
+    termcore::showWindowsNotification(hwnd, title, body);
 }
 
 void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {

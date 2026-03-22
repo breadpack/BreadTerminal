@@ -100,6 +100,9 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     HWND searchEditHwnd = nullptr;
     static constexpr int kSearchEditId = 100;
 
+    // Notification tray icon state
+    bool notifyIconAdded = false;
+
     // --- D3D / terminal lifecycle ---
     bool initD3D(HWND hWnd);
     void createRenderTarget();
