@@ -48,9 +48,9 @@ set(TERMCORE_WIN_SOURCES
     src/HighContrastDetector.cpp
 )
 
-if(HAS_WEBVIEW2)
-    list(APPEND TERMCORE_WIN_SOURCES src/WebView2Host.cpp)
-endif()
+# WebView2Bridge.cpp has internal #if guards; always compile it.
+# It provides createWebView() for both HAS_WEBVIEW2 and stub paths.
+list(APPEND TERMCORE_WIN_SOURCES src/WebView2Bridge.cpp)
 
 add_library(termcore_windows STATIC ${TERMCORE_WIN_SOURCES})
 
@@ -61,6 +61,10 @@ target_include_directories(termcore_windows PUBLIC
 target_link_libraries(termcore_windows PUBLIC
     termcore dwrite d2d1 d3d11 dxgi d3dcompiler windowsapp imm32 dwmapi shlwapi
 )
+
+# TERMCORE_HAS_WEBVIEW suppresses the core stub (webview_stub.cpp) so
+# createWebView() is provided by WebView2Bridge.cpp on Windows.
+target_compile_definitions(termcore_windows PUBLIC TERMCORE_HAS_WEBVIEW=1)
 
 if(HAS_WEBVIEW2)
     target_link_libraries(termcore_windows PUBLIC webview2_sdk)

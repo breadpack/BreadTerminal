@@ -111,6 +111,7 @@ private:
     std::string comboToDisplayString(const KeyCombo& combo) const;
     std::string actionToDisplayString(Action action) const;
     int findConflict(const KeyCombo& combo, int excludeIdx) const;
+    void syncKeybindingsToConfig();
 
     // --- Search ---
     void onSearchChanged(const char* text);

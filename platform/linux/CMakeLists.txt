@@ -10,6 +10,19 @@ pkg_check_modules(EPOXY REQUIRED epoxy)  # For OpenGL
 pkg_check_modules(FREETYPE REQUIRED freetype2)
 pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
 
+# --- WebKitGTK (optional) ---
+set(HAS_WEBKIT OFF)
+pkg_check_modules(WEBKIT webkit2gtk-4.1)
+if(NOT WEBKIT_FOUND)
+    pkg_check_modules(WEBKIT webkit2gtk-4.0)
+endif()
+if(WEBKIT_FOUND)
+    set(HAS_WEBKIT ON)
+    message(STATUS "WebKitGTK: FOUND (${WEBKIT_VERSION})")
+else()
+    message(STATUS "WebKitGTK: NOT FOUND (WebView will be stub)")
+endif()
+
 add_library(termcore_linux STATIC
     src/FreeTypeRasterizer.cpp
     src/FontconfigDiscovery.cpp
@@ -27,6 +40,7 @@ add_library(termcore_linux STATIC
     src/UnifiedSettingsContent.cpp
     src/UnifiedSettingsThemeCards.cpp
     src/UnifiedSettingsFontCards.cpp
+    src/WebKitWebViewBridge.cpp
 )
 
 target_include_directories(termcore_linux
@@ -38,6 +52,15 @@ target_include_directories(termcore_linux
         ${FONTCONFIG_INCLUDE_DIRS}
 )
 
+# TERMCORE_HAS_WEBVIEW suppresses the core stub (webview_stub.cpp) so
+# createWebView() is provided by WebKitWebViewBridge.cpp on Linux.
+target_compile_definitions(termcore_linux PUBLIC TERMCORE_HAS_WEBVIEW=1)
+
+if(HAS_WEBKIT)
+    target_include_directories(termcore_linux PUBLIC ${WEBKIT_INCLUDE_DIRS})
+    target_compile_definitions(termcore_linux PUBLIC TERMCORE_HAS_WEBKIT=1)
+endif()
+
 target_link_libraries(termcore_linux
     PUBLIC
         termcore
@@ -46,6 +69,10 @@ target_link_libraries(termcore_linux
         ${FREETYPE_LIBRARIES}
         ${FONTCONFIG_LIBRARIES}
 )
+
+if(HAS_WEBKIT)
+    target_link_libraries(termcore_linux PUBLIC ${WEBKIT_LIBRARIES})
+endif()
 
 # ─── Optional Wayland native backend ─────────────────────────────
 pkg_check_modules(WAYLAND_CLIENT wayland-client)
@@ -86,17 +113,11 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND XKBCOMMON_FOUND)
 
     target_compile_definitions(termcore_wayland PUBLIC TERMCORE_HAS_WAYLAND=1)
 
-    # Wayland protocol headers (xdg-shell) are typically provided by
-    # wayland-protocols; if not pre-generated, use wayland-scanner.
-    # For now we assume xdg-shell-client-protocol.h is available in
-    # the system include path (standard on most distros).
-
     # ─── Generate zwp_text_input_v3 protocol glue ────────────────
     pkg_check_modules(WAYLAND_PROTOCOLS wayland-protocols)
     find_program(WAYLAND_SCANNER wayland-scanner)
 
     if(WAYLAND_PROTOCOLS_FOUND AND WAYLAND_SCANNER)
-        # Locate the protocol XML from wayland-protocols package
         execute_process(
             COMMAND ${PKG_CONFIG_EXECUTABLE} --variable=pkgdatadir wayland-protocols
             OUTPUT_VARIABLE WAYLAND_PROTOCOLS_DIR

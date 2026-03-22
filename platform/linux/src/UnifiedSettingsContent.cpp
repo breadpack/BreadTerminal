@@ -72,13 +72,7 @@ void UnifiedSettingsWindow::showCategoryContent(const std::string& categoryId) {
         break;
 
     case SectionType::KeybindingList:
-        // TODO: Implement keybinding list
-        {
-            GtkWidget* placeholder = gtk_label_new("Keybinding editor coming soon.");
-            gtk_label_set_xalign(GTK_LABEL(placeholder), 0.0);
-            gtk_widget_add_css_class(placeholder, "setting-description");
-            gtk_box_append(GTK_BOX(contentBox_), placeholder);
-        }
+        showKeybindingList();
         break;
 
     case SectionType::Settings:
