@@ -81,6 +81,7 @@ add_executable(termcore_tests
     test_annotations.cpp
     test_password_manager.cpp
     test_tmux_integration.cpp
+    test_subpixel.cpp
 )
 
 target_link_libraries(termcore_tests

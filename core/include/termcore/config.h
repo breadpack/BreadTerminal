@@ -22,6 +22,8 @@ struct Config {
     std::string font_family = "Menlo";
     float font_size = 14.0f;
     std::vector<std::string> font_features;  // OpenType features
+    std::string font_subpixel = "auto";  // "none", "rgb", "bgr", "vrgb", "vbgr", "auto"
+    std::string font_hinting = "auto";   // "none", "slight", "medium", "full", "auto"
 
     // Colors
     uint32_t background = 0x1e1e2e;

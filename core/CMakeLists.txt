@@ -29,6 +29,7 @@ set(TERMCORE_SOURCES
     src/font/variable_font.cpp
     src/font/ligature.cpp
     src/font/color_font.cpp
+    src/font/subpixel.cpp
     src/mux.cpp
     src/mux_layout.cpp
     src/notification.cpp
