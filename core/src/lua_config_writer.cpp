@@ -103,6 +103,12 @@ std::string serializeConfigLua(const Config& config) {
     o << "    allow_clipboard_write = " << (config.allow_clipboard_write ? "true" : "false") << ",\n";
     o << "})\n\n";
 
+    // Clickable URLs
+    o << "terminal.config({\n";
+    o << "    clickable_urls = " << (config.clickable_urls ? "true" : "false") << ",\n";
+    o << "    url_color = 0x" << std::hex << config.url_color << std::dec << ",\n";
+    o << "})\n\n";
+
     // Notifications
     o << "terminal.config({\n";
     o << "    notify_on_command_finish = " << (config.notify_on_command_finish ? "true" : "false") << ",\n";

@@ -162,6 +162,8 @@ struct TerminalWindowState : public termcore::IPlatformHost {
                           const std::string& body) override;
     void openSettingsWindow(const termcore::Config& config) override;
     float dpiScale() override;
+    void openUrl(const std::string& url) override;
+    void setMouseCursor(CursorType cursor) override;
     std::unique_ptr<termcore::Pty> createPty(const termcore::Profile& profile,
                                               int rows, int cols) override;
 

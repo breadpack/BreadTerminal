@@ -184,7 +184,125 @@ void TerminalController::onCharInput(const std::string& utf8) {
 }
 
 void TerminalController::onMouseEvent(const InputMouseEvent& e) {
-    inputHandler_->onMouseEvent(e);
+    Screen* scr = activeScreen();
+
+    // Check mouse protocol
+    if (scr && scr->mouseMode() != MouseMode::None) {
+        int gridCol = static_cast<int>(e.x / cellWidth());
+        int gridRow = static_cast<int>(e.y / cellHeight());
+
+        termcore::MouseEvent me;
+        me.col = gridCol;
+        me.row = gridRow;
+        me.shift = (e.modifiers & ModShift) != 0;
+        me.alt = (e.modifiers & ModAlt) != 0;
+        me.ctrl = (e.modifiers & ModCtrl) != 0;
+
+        switch (e.type) {
+            case InputMouseEvent::Press:
+                me.type = MouseEventType::Press;
+                me.button = static_cast<MouseButton>(e.button);
+                break;
+            case InputMouseEvent::Release:
+                me.type = MouseEventType::Release;
+                me.button = MouseButton::Release;
+                break;
+            case InputMouseEvent::Move:
+                me.type = MouseEventType::Move;
+                me.button = static_cast<MouseButton>(e.button);
+                break;
+            case InputMouseEvent::ScrollUp:
+                me.type = MouseEventType::ScrollUp;
+                me.button = MouseButton::ScrollUp;
+                break;
+            case InputMouseEvent::ScrollDown:
+                me.type = MouseEventType::ScrollDown;
+                me.button = MouseButton::ScrollDown;
+                break;
+            default:
+                return;
+        }
+
+        std::string seq = encodeMouseEvent(me, scr->mouseMode(), scr->mouseEncoding());
+        if (!seq.empty()) {
+            sendPtyData(seq.data(), seq.size());
+            return;
+        }
+    }
+
+    // Selection handling
+    float cw = cellWidth();
+    float ch = cellHeight();
+    int offsetX = 0, offsetY = 0;
+
+    // Tab bar offset
+    if (tabCtrl_ && tabCtrl_->tabCount() > 1) {
+        offsetY = static_cast<int>(ch);
+    }
+
+    // Grid coordinates for URL hover/click
+    int gridCol = static_cast<int>((e.x - offsetX) / cw);
+    int gridRow = static_cast<int>((e.y - offsetY) / ch);
+
+    // URL hover tracking on mouse move
+    if (e.type == InputMouseEvent::Move && urlHighlightMgr_.isEnabled()) {
+        bool hoverChanged = urlHighlightMgr_.updateHover(gridRow, gridCol);
+        if (hoverChanged) {
+            needsRender_ = true;
+            if (host_) {
+                auto hovered = urlHighlightMgr_.getHoveredUrl();
+                host_->setMouseCursor(hovered.has_value()
+                    ? IPlatformHost::CursorType::Hand
+                    : IPlatformHost::CursorType::Arrow);
+            }
+        }
+    }
+
+    // Ctrl+Click (Cmd+Click on macOS) to open URL
+    if (e.type == InputMouseEvent::Press && e.button == 0 && urlHighlightMgr_.isEnabled()) {
+        bool ctrlHeld = (e.modifiers & ModCtrl) != 0 || (e.modifiers & ModSuper) != 0;
+        if (ctrlHeld) {
+            urlHighlightMgr_.updateHover(gridRow, gridCol);
+            auto hovered = urlHighlightMgr_.getHoveredUrl();
+            if (hovered.has_value() && host_) {
+                host_->openUrl(hovered->url);
+                return;  // Consume the click — don't start selection
+            }
+        }
+    }
+
+    switch (e.type) {
+        case InputMouseEvent::Press:
+            selMgr_.onMouseDown(e.x, e.y, cw, ch, offsetX, offsetY);
+            needsRender_ = true;
+            break;
+        case InputMouseEvent::Move:
+            selMgr_.onMouseMove(e.x, e.y, cw, ch, offsetX, offsetY);
+            if (selMgr_.isDragging()) needsRender_ = true;
+            break;
+        case InputMouseEvent::Release:
+            selMgr_.onMouseUp(e.x, e.y, cw, ch, offsetX, offsetY);
+            needsRender_ = true;
+            break;
+        case InputMouseEvent::DoubleClick:
+            if (scr) {
+                selMgr_.onDoubleClick(e.x, e.y, cw, ch, offsetX, offsetY, *scr);
+                needsRender_ = true;
+            }
+            break;
+        case InputMouseEvent::ScrollUp:
+            if (scr) {
+                scr->scrollViewportUp(e.scrollLines > 0 ? e.scrollLines : 3);
+                needsRender_ = true;
+            }
+            break;
+        case InputMouseEvent::ScrollDown:
+            if (scr) {
+                scr->scrollViewportDown(e.scrollLines > 0 ? e.scrollLines : 3);
+                needsRender_ = true;
+            }
+            break;
+    }
 }
 
 void TerminalController::onResize(int pixelW, int pixelH) {
@@ -314,6 +432,7 @@ void TerminalController::onConfigChanged(const Config& newConfig) {
         configApplier_.applyFull(config_, newConfig, *tabCtrl_, *fontMgr_, host_);
         configApplier_.persist(config_);
     }
+    urlHighlightMgr_.applyConfig(config_);
     needsRender_ = true;
 }
 

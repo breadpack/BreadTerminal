@@ -52,6 +52,7 @@ set(TERMCORE_SOURCES
     src/workspace_status.cpp
     src/search.cpp
     src/url_detector.cpp
+    src/url_highlight.cpp
     src/kitty_keyboard.cpp
     src/sixel.cpp
     src/kitty_graphics.cpp

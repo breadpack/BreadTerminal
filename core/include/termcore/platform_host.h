@@ -82,6 +82,13 @@ public:
     // DPI
     virtual float dpiScale() = 0;
 
+    // URL opening (platform-specific: ShellExecute on Windows, NSWorkspace on macOS, xdg-open on Linux)
+    virtual void openUrl(const std::string& url) = 0;
+
+    // Mouse cursor style (e.g., switch to pointer hand when hovering a URL)
+    enum class CursorType { Arrow, Hand };
+    virtual void setMouseCursor(CursorType cursor) { (void)cursor; }
+
     // PTY factory - platform creates PTY since it's OS-specific
     virtual std::unique_ptr<Pty> createPty(const Profile& profile,
                                            int rows, int cols) = 0;
