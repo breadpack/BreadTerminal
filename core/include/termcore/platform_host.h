@@ -68,6 +68,11 @@ public:
     // Settings window (unified: replaces separate theme/font hub windows)
     virtual void openSettingsWindow(const Config& config) = 0;
 
+    // Search history persistence path
+    virtual std::string getSearchHistoryPath() {
+        return {};  // Default: empty (use SearchHistory::defaultPath())
+    }
+
     // DPI
     virtual float dpiScale() = 0;
 

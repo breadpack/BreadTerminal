@@ -82,6 +82,7 @@ set(TERMCORE_SOURCES
     src/font_manager.cpp
     src/selection_manager.cpp
     src/search_controller.cpp
+    src/search_history.cpp
     src/tab_controller.cpp
     src/config_applier.cpp
     src/settings_model.cpp

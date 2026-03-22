@@ -93,6 +93,7 @@ void Screen::eraseCell(TermCell& cell) const {
     cell.width = 1;
     cell.underline_style = UnderlineNone;
     cell.underline_color = kColorDefault;
+    cell.extra_count = 0;
 }
 
 void Screen::clampCursor() {
