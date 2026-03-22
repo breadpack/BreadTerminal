@@ -91,6 +91,11 @@ public:
 
     void pasteText(const std::string& text);
 
+    // Broadcast input
+    void broadcastWrite(const std::string& data);
+    void toggleBroadcast();
+    BroadcastMode broadcastMode() const;
+
 private:
     void handleAction(Action action);
     void sendPtyData(const char* data, size_t len);

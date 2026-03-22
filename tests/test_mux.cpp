@@ -232,3 +232,91 @@ TEST_F(MuxTest, DestroyActiveWorkspaceSwitches) {
     mux_.destroyWorkspace(ws1);
     EXPECT_EQ(mux_.activeWorkspaceId(), ws2);
 }
+
+// --- Broadcast input tests ---
+
+TEST_F(MuxTest, BroadcastModeCycling) {
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::Off);
+
+    mux_.toggleBroadcast();
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::All);
+
+    mux_.toggleBroadcast();
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::Selected);
+
+    mux_.toggleBroadcast();
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::Off);
+}
+
+TEST_F(MuxTest, BroadcastSetMode) {
+    mux_.setBroadcastMode(BroadcastMode::Selected);
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::Selected);
+
+    mux_.setBroadcastMode(BroadcastMode::All);
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::All);
+
+    mux_.setBroadcastMode(BroadcastMode::Off);
+    EXPECT_EQ(mux_.broadcastMode(), BroadcastMode::Off);
+}
+
+TEST_F(MuxTest, BroadcastGetPaneIdsAllMode) {
+    auto ws_id = mux_.createWorkspace();
+    auto tab_id = mux_.createTab(ws_id);
+    auto panes = mux_.allPanes(ws_id, tab_id);
+    PaneId p1 = panes[0];
+    PaneId p2 = mux_.splitPane(ws_id, tab_id, p1, SplitDirection::Horizontal);
+
+    // Off mode returns empty
+    EXPECT_TRUE(mux_.getBroadcastPaneIds().empty());
+
+    // All mode returns all panes in active tab
+    mux_.setBroadcastMode(BroadcastMode::All);
+    auto broadcastPanes = mux_.getBroadcastPaneIds();
+    EXPECT_EQ(broadcastPanes.size(), 2u);
+    EXPECT_NE(std::find(broadcastPanes.begin(), broadcastPanes.end(), p1), broadcastPanes.end());
+    EXPECT_NE(std::find(broadcastPanes.begin(), broadcastPanes.end(), p2), broadcastPanes.end());
+}
+
+TEST_F(MuxTest, BroadcastGetPaneIdsSelectedMode) {
+    auto ws_id = mux_.createWorkspace();
+    auto tab_id = mux_.createTab(ws_id);
+    auto panes = mux_.allPanes(ws_id, tab_id);
+    PaneId p1 = panes[0];
+    PaneId p2 = mux_.splitPane(ws_id, tab_id, p1, SplitDirection::Horizontal);
+    PaneId p3 = mux_.splitPane(ws_id, tab_id, p2, SplitDirection::Vertical);
+
+    mux_.setBroadcastMode(BroadcastMode::Selected);
+
+    // No targets yet
+    EXPECT_TRUE(mux_.getBroadcastPaneIds().empty());
+
+    // Add targets
+    mux_.addBroadcastTarget(p1);
+    mux_.addBroadcastTarget(p3);
+
+    auto broadcastPanes = mux_.getBroadcastPaneIds();
+    EXPECT_EQ(broadcastPanes.size(), 2u);
+    EXPECT_NE(std::find(broadcastPanes.begin(), broadcastPanes.end(), p1), broadcastPanes.end());
+    EXPECT_NE(std::find(broadcastPanes.begin(), broadcastPanes.end(), p3), broadcastPanes.end());
+}
+
+TEST_F(MuxTest, BroadcastAddRemoveTargets) {
+    mux_.addBroadcastTarget(1);
+    mux_.addBroadcastTarget(2);
+    mux_.addBroadcastTarget(3);
+
+    mux_.setBroadcastMode(BroadcastMode::Selected);
+    EXPECT_EQ(mux_.getBroadcastPaneIds().size(), 3u);
+
+    mux_.removeBroadcastTarget(2);
+    EXPECT_EQ(mux_.getBroadcastPaneIds().size(), 2u);
+
+    mux_.clearBroadcastTargets();
+    EXPECT_TRUE(mux_.getBroadcastPaneIds().empty());
+}
+
+TEST_F(MuxTest, BroadcastAddInvalidPaneIgnored) {
+    mux_.addBroadcastTarget(kInvalidPane);
+    mux_.setBroadcastMode(BroadcastMode::Selected);
+    EXPECT_TRUE(mux_.getBroadcastPaneIds().empty());
+}

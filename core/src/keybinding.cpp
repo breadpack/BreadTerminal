@@ -114,6 +114,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"new_tab_profile9", Action::NewTabProfile9},
         {"show_profile_dropdown", Action::ShowProfileDropdown},
         {"open_command_palette", Action::OpenCommandPalette},
+        {"toggle_broadcast", Action::ToggleBroadcast},
         {"ssh_connect", Action::SshConnect},
         {"custom", Action::Custom},
     };

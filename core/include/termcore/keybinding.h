@@ -57,6 +57,8 @@ enum class Action : uint16_t {
     ShowProfileDropdown,
     // Command Palette
     OpenCommandPalette,
+    // Broadcast input
+    ToggleBroadcast,
     // SSH
     SshConnect,
     // Custom (string-based action)

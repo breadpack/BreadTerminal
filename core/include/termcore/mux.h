@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -20,6 +21,8 @@ static constexpr TabId kInvalidTab = 0;
 static constexpr WorkspaceId kInvalidWorkspace = 0;
 
 enum class SplitDirection { Horizontal, Vertical };
+
+enum class BroadcastMode { Off, All, Selected };
 
 enum class LayoutPreset {
     EvenHorizontal,   // All panes side by side horizontally
@@ -117,6 +120,32 @@ public:
     /// Set all split ratios to 0.5 (equal spacing).
     void equalizeSplits(WorkspaceId ws_id, TabId tab_id);
 
+    // --- Broadcast input ---
+
+    /// Get the current broadcast mode.
+    BroadcastMode broadcastMode() const;
+
+    /// Set the broadcast mode.
+    void setBroadcastMode(BroadcastMode mode);
+
+    /// Cycle broadcast mode: Off → All → Selected → Off.
+    void toggleBroadcast();
+
+    /// Add a pane to the selected broadcast targets.
+    void addBroadcastTarget(PaneId paneId);
+
+    /// Remove a pane from the selected broadcast targets.
+    void removeBroadcastTarget(PaneId paneId);
+
+    /// Clear all selected broadcast targets.
+    void clearBroadcastTargets();
+
+    /// Get pane IDs that should receive broadcast input.
+    /// All mode: all panes in active workspace's active tab.
+    /// Selected mode: only the selected broadcast targets.
+    /// Off mode: empty.
+    std::vector<PaneId> getBroadcastPaneIds() const;
+
     // --- SSH mux integration ---
 
     /// Register an existing pane as backed by an SSH mux channel.
@@ -165,6 +194,9 @@ private:
         std::shared_ptr<SshMuxSession> session;
     };
     std::unordered_map<PaneId, SshPaneBinding> ssh_panes_;
+
+    BroadcastMode broadcast_mode_ = BroadcastMode::Off;
+    std::set<PaneId> broadcast_targets_;
 };
 
 }  // namespace termcore

@@ -475,6 +475,36 @@ bool TerminalController::inCopyMode() const {
     return copyMode_ && copyMode_->isActive();
 }
 
+// --- Broadcast input ---
+
+void TerminalController::broadcastWrite(const std::string& data) {
+    if (!tabCtrl_) return;
+    Mux* m = tabCtrl_->mux();
+    if (!m) return;
+
+    auto paneIds = m->getBroadcastPaneIds();
+    for (PaneId id : paneIds) {
+        PaneState* ps = tabCtrl_->paneById(id);
+        if (ps && ps->pty && ps->pty->isAlive()) {
+            ps->pty->write(data.data(), data.size());
+        }
+    }
+}
+
+void TerminalController::toggleBroadcast() {
+    if (!tabCtrl_) return;
+    Mux* m = tabCtrl_->mux();
+    if (m) m->toggleBroadcast();
+    needsRender_ = true;
+}
+
+BroadcastMode TerminalController::broadcastMode() const {
+    if (!tabCtrl_) return BroadcastMode::Off;
+    Mux* m = tabCtrl_->mux();
+    if (!m) return BroadcastMode::Off;
+    return m->broadcastMode();
+}
+
 // --- Action dispatch ---
 
 void TerminalController::handleAction(Action action) {
@@ -750,6 +780,10 @@ void TerminalController::handleAction(Action action) {
         }
 
         case Action::ShowProfileDropdown:
+            break;
+
+        case Action::ToggleBroadcast:
+            toggleBroadcast();
             break;
 
         case Action::OpenCommandPalette:

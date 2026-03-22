@@ -354,6 +354,63 @@ const SplitNode* Mux::splitRoot(WorkspaceId ws_id, TabId tab_id) const {
     return tab ? tab->root.get() : nullptr;
 }
 
+// --- Broadcast input ---
+
+BroadcastMode Mux::broadcastMode() const {
+    return broadcast_mode_;
+}
+
+void Mux::setBroadcastMode(BroadcastMode mode) {
+    broadcast_mode_ = mode;
+    fireOnChanged();
+}
+
+void Mux::toggleBroadcast() {
+    switch (broadcast_mode_) {
+        case BroadcastMode::Off:      broadcast_mode_ = BroadcastMode::All; break;
+        case BroadcastMode::All:      broadcast_mode_ = BroadcastMode::Selected; break;
+        case BroadcastMode::Selected: broadcast_mode_ = BroadcastMode::Off; break;
+    }
+    fireOnChanged();
+}
+
+void Mux::addBroadcastTarget(PaneId paneId) {
+    if (paneId != kInvalidPane) {
+        broadcast_targets_.insert(paneId);
+    }
+}
+
+void Mux::removeBroadcastTarget(PaneId paneId) {
+    broadcast_targets_.erase(paneId);
+}
+
+void Mux::clearBroadcastTargets() {
+    broadcast_targets_.clear();
+}
+
+std::vector<PaneId> Mux::getBroadcastPaneIds() const {
+    switch (broadcast_mode_) {
+        case BroadcastMode::All: {
+            // Return all panes in active workspace's active tab
+            const Workspace* ws = nullptr;
+            for (const auto& w : workspaces_) {
+                if (w->id == active_workspace_) { ws = w.get(); break; }
+            }
+            if (!ws || ws->tabs.empty()) return {};
+            if (ws->active_tab_index >= ws->tabs.size()) return {};
+            const auto& tab = ws->tabs[ws->active_tab_index];
+            std::vector<PaneId> result;
+            collectPanes(tab->root.get(), result);
+            return result;
+        }
+        case BroadcastMode::Selected:
+            return {broadcast_targets_.begin(), broadcast_targets_.end()};
+        case BroadcastMode::Off:
+        default:
+            return {};
+    }
+}
+
 // --- SSH mux integration ---
 
 void Mux::addSshPane(PaneId pane_id, int channel_id,
