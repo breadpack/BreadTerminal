@@ -1,17 +1,10 @@
-#include "GLTextRenderer.h"
-#include "GLAtlasUploader.h"
-
-#include <epoxy/gl.h>
-#include <cstring>
-#include <vector>
-#include <algorithm>
+#include "GLTextRendererImpl.h"
 
 namespace termcore {
 
-namespace {
+// --- Shader sources ---
 
-// Inline shader sources (matching the .vert/.frag files)
-const char* kVertexShaderSource = R"(
+const char* kGLVertexShaderSource = R"(
 #version 330 core
 
 layout(location = 0) in vec2 a_position;
@@ -21,15 +14,18 @@ layout(location = 3) in vec2 a_glyph_offset;
 layout(location = 4) in vec4 a_fg_color;
 layout(location = 5) in vec4 a_bg_color;
 layout(location = 6) in uint a_flags;
+layout(location = 7) in uint a_extra_flags;
 
 uniform vec2 u_viewport_size;
 uniform vec2 u_cell_size;
 uniform vec2 u_atlas_size;
 
 out vec2 v_texCoord;
+out vec2 v_localCoord;
 flat out vec4 v_fg_color;
 flat out vec4 v_bg_color;
 flat out uint v_flags;
+flat out uint v_extra_flags;
 
 void main() {
     vec2 corners[6] = vec2[6](
@@ -37,24 +33,45 @@ void main() {
         vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0)
     );
     vec2 corner = corners[gl_VertexID];
-    vec2 pixel_pos = a_position + corner * u_cell_size;
+
+    bool is_bg = (a_flags & 4u) != 0u;
+    bool is_cursor = (a_flags & 8u) != 0u;
+    bool is_underline = (a_flags & 16u) != 0u;
+
+    vec2 quad_size;
+    if (is_bg) {
+        quad_size = u_cell_size;
+    } else if (is_cursor || is_underline) {
+        quad_size = a_atlas_size;
+    } else {
+        quad_size = a_atlas_size;
+    }
+
+    vec2 pixel_pos = a_position + corner * quad_size;
+
     vec2 ndc = (pixel_pos / u_viewport_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;
+
     gl_Position = vec4(ndc, 0.0, 1.0);
+
     v_texCoord = (a_atlas_uv + corner * a_atlas_size) / u_atlas_size;
+    v_localCoord = corner;
     v_fg_color = a_fg_color;
     v_bg_color = a_bg_color;
     v_flags = a_flags;
+    v_extra_flags = a_extra_flags;
 }
 )";
 
-const char* kFragmentShaderSource = R"(
+const char* kGLFragmentShaderSource = R"(
 #version 330 core
 
 in vec2 v_texCoord;
+in vec2 v_localCoord;
 flat in vec4 v_fg_color;
 flat in vec4 v_bg_color;
 flat in uint v_flags;
+flat in uint v_extra_flags;
 
 uniform sampler2D u_atlas_r8;
 uniform sampler2D u_atlas_bgra;
@@ -62,21 +79,58 @@ uniform sampler2D u_atlas_bgra;
 out vec4 fragColor;
 
 void main() {
-    vec4 color = v_bg_color;
-    bool has_glyph = (v_flags & 1u) != 0u;
-    bool is_color  = (v_flags & 2u) != 0u;
+    bool is_bg        = (v_flags & 4u) != 0u;
+    bool has_glyph    = (v_flags & 1u) != 0u;
+    bool is_color     = (v_flags & 2u) != 0u;
+    bool is_cursor    = (v_flags & 8u) != 0u;
+    bool is_underline = (v_flags & 16u) != 0u;
+
+    if (is_bg) {
+        fragColor = v_bg_color;
+        return;
+    }
+
+    if (is_cursor) {
+        fragColor = v_bg_color;
+        return;
+    }
+
+    if (is_underline) {
+        uint ul_style = v_extra_flags & 7u;
+        float local_x = v_localCoord.x;
+        float local_y = v_localCoord.y;
+
+        if (ul_style == 3u) { // curly - sine wave
+            float wave = sin(local_x * 3.14159 * 2.0) * 0.35 + 0.5;
+            float dist = abs(local_y - wave);
+            float alpha = 1.0 - smoothstep(0.0, 0.3, dist);
+            fragColor = vec4(v_bg_color.rgb, alpha);
+        } else if (ul_style == 4u) { // dotted
+            float pattern = step(0.5, fract(local_x * 4.0));
+            fragColor = vec4(v_bg_color.rgb, pattern);
+        } else if (ul_style == 5u) { // dashed
+            float pattern = step(0.33, fract(local_x * 2.0));
+            fragColor = vec4(v_bg_color.rgb, pattern);
+        } else {
+            fragColor = v_bg_color; // single, double = solid
+        }
+        return;
+    }
+
+    vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
     if (has_glyph) {
         if (is_color) {
-            vec4 glyph_color = texture(u_atlas_bgra, v_texCoord);
-            color = mix(color, glyph_color, glyph_color.a);
+            color = texture(u_atlas_bgra, v_texCoord);
         } else {
             float alpha = texture(u_atlas_r8, v_texCoord).r;
-            color = mix(color, v_fg_color, alpha);
+            color = vec4(v_fg_color.rgb, alpha);
         }
     }
     fragColor = color;
 }
 )";
+
+// --- Shader compilation helpers ---
 
 GLuint compileShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
@@ -88,7 +142,6 @@ GLuint compileShader(GLenum type, const char* source) {
     if (!success) {
         char log[512];
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        // In production, log the error
         glDeleteShader(shader);
         return 0;
     }
@@ -112,210 +165,108 @@ GLuint linkProgram(GLuint vert, GLuint frag) {
     return program;
 }
 
-} // namespace
+// --- Impl methods ---
 
-struct GLTextRenderer::Impl {
-    GLuint program = 0;
-    GLuint vao = 0;
-    GLuint instanceVBO = 0;
+bool GLTextRenderer::Impl::buildShaders() {
+    GLuint vert = compileShader(GL_VERTEX_SHADER, kGLVertexShaderSource);
+    if (!vert) return false;
 
-    // Uniform locations
-    GLint uViewportSize = -1;
-    GLint uCellSize = -1;
-    GLint uAtlasSize = -1;
-    GLint uAtlasR8 = -1;
-    GLint uAtlasBGRA = -1;
-
-    // Font stack (not owned)
-    FontCollection* fontCollection = nullptr;
-    GlyphCache* glyphCache = nullptr;
-    GlyphAtlas* glyphAtlas = nullptr;
-    IFontRasterizer* rasterizer = nullptr;
-
-    // Atlas uploader
-    std::unique_ptr<GLAtlasUploader> atlasUploader;
-
-    // Viewport
-    float viewportWidth = 0;
-    float viewportHeight = 0;
-
-    // Reusable buffer
-    std::vector<GLCellInstance> cellInstances;
-
-    bool buildShaders() {
-        GLuint vert = compileShader(GL_VERTEX_SHADER, kVertexShaderSource);
-        if (!vert) return false;
-
-        GLuint frag = compileShader(GL_FRAGMENT_SHADER, kFragmentShaderSource);
-        if (!frag) {
-            glDeleteShader(vert);
-            return false;
-        }
-
-        program = linkProgram(vert, frag);
+    GLuint frag = compileShader(GL_FRAGMENT_SHADER, kGLFragmentShaderSource);
+    if (!frag) {
         glDeleteShader(vert);
-        glDeleteShader(frag);
-
-        if (!program) return false;
-
-        uViewportSize = glGetUniformLocation(program, "u_viewport_size");
-        uCellSize = glGetUniformLocation(program, "u_cell_size");
-        uAtlasSize = glGetUniformLocation(program, "u_atlas_size");
-        uAtlasR8 = glGetUniformLocation(program, "u_atlas_r8");
-        uAtlasBGRA = glGetUniformLocation(program, "u_atlas_bgra");
-
-        return true;
+        return false;
     }
 
-    void setupVAO() {
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &instanceVBO);
+    program = linkProgram(vert, frag);
+    glDeleteShader(vert);
+    glDeleteShader(frag);
 
-        glBindVertexArray(vao);
-        glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    if (!program) return false;
 
-        // Layout matches GLCellInstance struct
-        size_t stride = sizeof(GLCellInstance);
-        size_t offset = 0;
+    uViewportSize = glGetUniformLocation(program, "u_viewport_size");
+    uCellSize = glGetUniformLocation(program, "u_cell_size");
+    uAtlasSize = glGetUniformLocation(program, "u_atlas_size");
+    uAtlasR8 = glGetUniformLocation(program, "u_atlas_r8");
+    uAtlasBGRA = glGetUniformLocation(program, "u_atlas_bgra");
 
-        // location 0: position (vec2)
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(0, 1);
-        offset += sizeof(float) * 2;
+    return true;
+}
 
-        // location 1: atlas_uv (vec2)
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(1, 1);
-        offset += sizeof(float) * 2;
+void GLTextRenderer::Impl::setupVAO() {
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &instanceVBO);
 
-        // location 2: atlas_size (vec2)
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(2, 1);
-        offset += sizeof(float) * 2;
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
 
-        // location 3: glyph_offset (vec2)
-        glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(3, 1);
-        offset += sizeof(float) * 2;
+    size_t stride = sizeof(GLCellInstance);
+    size_t offset = 0;
 
-        // location 4: fg_color (vec4)
-        glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(4, 1);
-        offset += sizeof(float) * 4;
+    // location 0: position (vec2)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(0, 1);
+    offset += sizeof(float) * 2;
 
-        // location 5: bg_color (vec4)
-        glEnableVertexAttribArray(5);
-        glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride,
-                              reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(5, 1);
-        offset += sizeof(float) * 4;
+    // location 1: atlas_uv (vec2)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(1, 1);
+    offset += sizeof(float) * 2;
 
-        // location 6: flags (uint)
-        glEnableVertexAttribArray(6);
-        glVertexAttribIPointer(6, 1, GL_UNSIGNED_INT, stride,
-                               reinterpret_cast<void*>(offset));
-        glVertexAttribDivisor(6, 1);
+    // location 2: atlas_size (vec2)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(2, 1);
+    offset += sizeof(float) * 2;
 
-        glBindVertexArray(0);
-    }
+    // location 3: glyph_offset (vec2)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(3, 1);
+    offset += sizeof(float) * 2;
 
-    static void colorFromRGBA(uint32_t rgba, float out[4]) {
-        out[0] = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
-        out[1] = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
-        out[2] = static_cast<float>(rgba & 0xFF) / 255.0f;
-        out[3] = 1.0f;
-    }
+    // location 4: fg_color (vec4)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(4, 1);
+    offset += sizeof(float) * 4;
 
-    void buildCellBuffer(const Screen& screen) {
-        if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
-            return;
-        }
+    // location 5: bg_color (vec4)
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(5, 1);
+    offset += sizeof(float) * 4;
 
-        FontMetrics metrics = fontCollection->primaryMetrics();
-        float cellW = metrics.cell_width;
-        float cellH = metrics.cell_height;
-        float fontSize = fontCollection->fontSize();
+    // location 6: flags (uint)
+    glEnableVertexAttribArray(6);
+    glVertexAttribIPointer(6, 1, GL_UNSIGNED_INT, stride,
+                           reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(6, 1);
+    offset += sizeof(uint32_t);
 
-        int rows = screen.rows();
-        int cols = screen.cols();
+    // location 7: extra_flags (uint)
+    glEnableVertexAttribArray(7);
+    glVertexAttribIPointer(7, 1, GL_UNSIGNED_INT, stride,
+                           reinterpret_cast<void*>(offset));
+    glVertexAttribDivisor(7, 1);
 
-        cellInstances.clear();
-        cellInstances.reserve(rows * cols);
+    glBindVertexArray(0);
+}
 
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const TermCell& cell = screen.cellAt(row, col);
+void GLTextRenderer::Impl::cleanup() {
+    if (program) { glDeleteProgram(program); program = 0; }
+    if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
+    if (instanceVBO) { glDeleteBuffers(1, &instanceVBO); instanceVBO = 0; }
+}
 
-                GLCellInstance inst = {};
-                inst.position[0] = col * cellW;
-                inst.position[1] = row * cellH;
-
-                colorFromRGBA(cell.fg_color, inst.fg_color);
-                colorFromRGBA(cell.bg_color, inst.bg_color);
-
-                if (cell.attributes & AttrInverse) {
-                    std::swap(inst.fg_color[0], inst.bg_color[0]);
-                    std::swap(inst.fg_color[1], inst.bg_color[1]);
-                    std::swap(inst.fg_color[2], inst.bg_color[2]);
-                    std::swap(inst.fg_color[3], inst.bg_color[3]);
-                }
-
-                inst.flags = 0;
-
-                if (cell.codepoint != ' ' && cell.codepoint != 0) {
-                    CollectionFaceId faceId =
-                        fontCollection->resolveFace(cell.codepoint);
-                    if (faceId != kInvalidCollectionFace) {
-                        FontFaceId rastFace =
-                            fontCollection->rasterizerFaceId(faceId);
-                        uint32_t glyphIdx =
-                            rasterizer->getGlyphIndex(rastFace,
-                                                      cell.codepoint);
-                        if (glyphIdx != 0) {
-                            GlyphKey key{rastFace, glyphIdx, {0, 0}};
-                            auto info = glyphCache->getOrRasterize(
-                                key, fontSize, *rasterizer, *glyphAtlas);
-                            if (info) {
-                                inst.flags |= 1;
-                                if (info->is_color) inst.flags |= 2;
-                                inst.atlas_uv[0] =
-                                    static_cast<float>(info->region.x);
-                                inst.atlas_uv[1] =
-                                    static_cast<float>(info->region.y);
-                                inst.atlas_size[0] =
-                                    static_cast<float>(info->region.width);
-                                inst.atlas_size[1] =
-                                    static_cast<float>(info->region.height);
-                                inst.glyph_offset[0] =
-                                    static_cast<float>(info->region.bearing_x);
-                                inst.glyph_offset[1] =
-                                    static_cast<float>(info->region.bearing_y);
-                            }
-                        }
-                    }
-                }
-
-                cellInstances.push_back(inst);
-            }
-        }
-    }
-
-    void cleanup() {
-        if (program) { glDeleteProgram(program); program = 0; }
-        if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
-        if (instanceVBO) { glDeleteBuffers(1, &instanceVBO); instanceVBO = 0; }
-    }
-};
+// --- Public API ---
 
 GLTextRenderer::GLTextRenderer()
     : impl_(std::make_unique<Impl>()) {}
@@ -345,7 +296,19 @@ void GLTextRenderer::setFontStack(FontCollection* collection,
 void GLTextRenderer::render(const Screen& screen) {
     if (!impl_->program) return;
 
-    impl_->buildCellBuffer(screen);
+    // Determine if only cursor blink changed (no content rebuild needed)
+    bool blinkChanged = (impl_->cursorBlinkVisible != impl_->lastBlinkState);
+
+    if (!impl_->contentDirty && blinkChanged
+        && impl_->cellCountBeforeCursor > 0
+        && !impl_->cellInstances.empty()) {
+        impl_->patchCursorOnly(screen);
+    } else {
+        impl_->buildCellBuffer(screen);
+        impl_->contentDirty = false;
+    }
+    impl_->lastBlinkState = impl_->cursorBlinkVisible;
+
     if (impl_->cellInstances.empty()) return;
 
     // Upload dirty atlas textures
@@ -353,8 +316,15 @@ void GLTextRenderer::render(const Screen& screen) {
         impl_->atlasUploader->upload(*impl_->glyphAtlas);
     }
 
-    // Clear
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    // Clear with terminal background color
+    float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    {
+        uint32_t bg = screen.dynamicColors().background;
+        clearColor[0] = static_cast<float>((bg >> 16) & 0xFF) / 255.0f;
+        clearColor[1] = static_cast<float>((bg >> 8) & 0xFF) / 255.0f;
+        clearColor[2] = static_cast<float>(bg & 0xFF) / 255.0f;
+    }
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Enable blending
@@ -412,12 +382,82 @@ void GLTextRenderer::render(const Screen& screen) {
 void GLTextRenderer::resize(float width, float height) {
     impl_->viewportWidth = width;
     impl_->viewportHeight = height;
+    impl_->contentDirty = true;
     glViewport(0, 0, static_cast<GLsizei>(width),
                static_cast<GLsizei>(height));
 }
 
+void GLTextRenderer::setSelection(const Selection& sel) {
+    impl_->selection = sel;
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setCursorBlink(bool visible) {
+    impl_->cursorBlinkVisible = visible;
+}
+
+void GLTextRenderer::markContentDirty() {
+    impl_->contentDirty = true;
+}
+
 IAtlasUploader* GLTextRenderer::atlasUploader() {
     return impl_->atlasUploader.get();
+}
+
+void GLTextRenderer::setSearchHighlights(
+        const std::vector<SearchHighlight>& highlights, int currentIndex) {
+    impl_->searchHighlights = highlights;
+    impl_->searchCurrentIndex = currentIndex;
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setStatusBar(const StatusBarInfo& info) {
+    impl_->statusBar = info;
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setResizeOverlay(bool visible, int cols, int rows) {
+    impl_->resizeOverlayVisible = visible;
+    impl_->resizeOverlayCols = cols;
+    impl_->resizeOverlayRows = rows;
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setTabBar(const TabBarInfo& info) {
+    impl_->tabBar = info;
+    impl_->contentDirty = true;
+}
+
+GLTextRenderer::TabBarInfo GLTextRenderer::getTabBar() const {
+    return impl_->tabBar;
+}
+
+void GLTextRenderer::setPaneBorders(const PaneBorderInfo& info) {
+    impl_->paneBorders = info;
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setPaneProgress(PaneId pane_id, const PaneProgressInfo& info) {
+    if (info.progress < 0.0f) {
+        impl_->paneProgress.erase(pane_id);
+    } else {
+        impl_->paneProgress[pane_id] = info;
+    }
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setPaneStatusPills(PaneId pane_id,
+                                         const std::vector<StatusPillInfo>& pills) {
+    if (pills.empty()) {
+        impl_->paneStatusPills.erase(pane_id);
+    } else {
+        impl_->paneStatusPills[pane_id] = pills;
+    }
+    impl_->contentDirty = true;
+}
+
+void GLTextRenderer::setCommandPalette(const CommandPaletteInfo& info) {
+    impl_->commandPalette = info;
 }
 
 } // namespace termcore
