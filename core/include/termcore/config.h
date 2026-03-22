@@ -105,6 +105,10 @@ struct Config {
     bool image_preview = false;
     int image_preview_max_height = 10;  // max cell rows for inline preview
 
+    // Session auto-save for crash recovery
+    bool session_autosave = true;
+    int session_autosave_interval = 30;  // seconds
+
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;
 };
