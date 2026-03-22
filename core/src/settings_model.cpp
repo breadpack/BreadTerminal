@@ -33,6 +33,7 @@ std::string SettingsModel::stringValue(const Config& cfg, const std::string& key
     if (key == "clipboard_paste_protection") return cfg.clipboard_paste_protection;
     if (key == "font_family") return cfg.font_family;
     if (key == "theme") return cfg.theme;
+    if (key == "default_profile_id") return cfg.default_profile_id;
     return {};
 }
 
@@ -76,7 +77,7 @@ uint32_t SettingsModel::colorValue(const Config& cfg, const std::string& key) {
 static bool isStringKey(const std::string& key) {
     return key == "shell" || key == "cursor_style" ||
            key == "clipboard_paste_protection" || key == "font_family" ||
-           key == "theme";
+           key == "theme" || key == "default_profile_id";
 }
 
 static bool isFloatKey(const std::string& key) {
@@ -202,6 +203,10 @@ void SettingsModel::buildCategories() {
         {"allow_clipboard_write", "Allow Clipboard Write", "Allow applications to write to the system clipboard via OSC 52.",
          SettingType::Toggle, {}, false},
     }});
+
+    // -- Profiles --
+    categories_.push_back({"profiles", "Profiles", "", SectionType::Settings, {}});
+    categories_.push_back({"profiles.all", "All Profiles", "profiles", SectionType::CardGrid, {}});
 }
 
 // ---------------------------------------------------------------------------
