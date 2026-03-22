@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "TerminalAccessibility.h"
 #include "DirectWriteRasterizer.h"
 #include "DirectWriteDiscovery.h"
 
@@ -199,6 +200,13 @@ void TerminalWindowState::initTerminal() {
         this, std::move(config), fontCollection.get());
     controller->initTerminal();
 
+    // Initialize UI Automation accessibility provider
+    accessibilityProvider = new TerminalAccessibilityProvider(hwnd);
+    accessibilityProvider->setScreen(controller->activeScreen());
+    accessibilityProvider->setSelection(&controller->selection());
+    accessibilityProvider->setCellSize(
+        controller->cellWidth(), controller->cellHeight());
+
     updateTabBar();
     needsRender = true;
 }
@@ -213,6 +221,12 @@ void TerminalWindowState::pollPty() {
         needsRender = true;
         controller->clearNeedsRender();
         if (renderer) renderer->markContentDirty();
+
+        // Notify screen readers of content change
+        if (accessibilityProvider) {
+            accessibilityProvider->setScreen(controller->activeScreen());
+            accessibilityProvider->notifyTextChanged();
+        }
     }
 }
 
