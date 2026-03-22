@@ -92,7 +92,134 @@ static const Theme kBuiltinThemes[] = {
             0x83a598, 0xd3869b, 0x8ec07c, 0xebdbb2,
         },
     },
+    {
+        "Tokyo Night",
+        0x1a1b26, // background
+        0xa9b1d6, // foreground
+        0xc0caf5, // cursor_color
+        0x33467c, // selection_background
+        0xc0caf5, // selection_foreground
+        {
+            0x15161e, 0xf7768e, 0x9ece6a, 0xe0af68,
+            0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xa9b1d6,
+            0x414868, 0xf7768e, 0x9ece6a, 0xe0af68,
+            0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xc0caf5,
+        },
+    },
+    {
+        "Rose Pine",
+        0x191724, // background
+        0xe0def4, // foreground
+        0x56526e, // cursor_color
+        0x2a2837, // selection_background
+        0xe0def4, // selection_foreground
+        {
+            0x26233a, 0xeb6f92, 0x31748f, 0xf6c177,
+            0x9ccfd8, 0xc4a7e7, 0xebbcba, 0xe0def4,
+            0x6e6a86, 0xeb6f92, 0x31748f, 0xf6c177,
+            0x9ccfd8, 0xc4a7e7, 0xebbcba, 0xe0def4,
+        },
+    },
+    {
+        "Everforest Dark",
+        0x2d353b, // background
+        0xd3c6aa, // foreground
+        0xd3c6aa, // cursor_color
+        0x543a48, // selection_background
+        0xd3c6aa, // selection_foreground
+        {
+            0x343f44, 0xe67e80, 0xa7c080, 0xdbbc7f,
+            0x7fbbb3, 0xd699b6, 0x83c092, 0xd3c6aa,
+            0x475258, 0xe67e80, 0xa7c080, 0xdbbc7f,
+            0x7fbbb3, 0xd699b6, 0x83c092, 0xd3c6aa,
+        },
+    },
+    {
+        "Kanagawa",
+        0x1f1f28, // background
+        0xdcd7ba, // foreground
+        0xc8c093, // cursor_color
+        0x2d4f67, // selection_background
+        0xc8c093, // selection_foreground
+        {
+            0x16161d, 0xc34043, 0x76946a, 0xc0a36e,
+            0x7e9cd8, 0x957fb8, 0x6a9589, 0xc8c093,
+            0x727169, 0xe82424, 0x98bb6c, 0xe6c384,
+            0x7fb4ca, 0x938aa9, 0x7aa89f, 0xdcd7ba,
+        },
+    },
+    {
+        "Monokai Pro",
+        0x2d2a2e, // background
+        0xfcfcfa, // foreground
+        0xfcfcfa, // cursor_color
+        0x403e41, // selection_background
+        0xfcfcfa, // selection_foreground
+        {
+            0x403e41, 0xff6188, 0xa9dc76, 0xffd866,
+            0xfc9867, 0xab9df2, 0x78dce8, 0xfcfcfa,
+            0x727072, 0xff6188, 0xa9dc76, 0xffd866,
+            0xfc9867, 0xab9df2, 0x78dce8, 0xfcfcfa,
+        },
+    },
+    // --- High Contrast Accessibility Themes ---
+    {
+        "High Contrast Dark",
+        0x000000, // background
+        0xffffff, // foreground
+        0xffffff, // cursor_color
+        0x264f78, // selection_background
+        0xffffff, // selection_foreground
+        {
+            0x000000, 0xff0000, 0x00ff00, 0xffff00,
+            0x0080ff, 0xff00ff, 0x00ffff, 0xffffff,
+            0x808080, 0xff5555, 0x55ff55, 0xffff55,
+            0x5599ff, 0xff55ff, 0x55ffff, 0xffffff,
+        },
+    },
+    {
+        "High Contrast Yellow on Black",
+        0x000000, // background
+        0xffff00, // foreground
+        0xffff00, // cursor_color
+        0x444400, // selection_background
+        0xffff00, // selection_foreground
+        {
+            0x000000, 0xff0000, 0x00ff00, 0xffff00,
+            0x0080ff, 0xff00ff, 0x00ffff, 0xffff00,
+            0x808000, 0xff5555, 0x55ff55, 0xffff55,
+            0x5599ff, 0xff55ff, 0x55ffff, 0xffffff,
+        },
+    },
+    {
+        "High Contrast Green on Black",
+        0x000000, // background
+        0x00ff00, // foreground
+        0x00ff00, // cursor_color
+        0x004400, // selection_background
+        0x00ff00, // selection_foreground
+        {
+            0x000000, 0xff0000, 0x00ff00, 0xffff00,
+            0x0080ff, 0xff00ff, 0x00ffff, 0x00ff00,
+            0x008000, 0xff5555, 0x55ff55, 0xffff55,
+            0x5599ff, 0xff55ff, 0x55ffff, 0xffffff,
+        },
+    },
     // --- Light themes ---
+    {
+        "High Contrast Light",
+        0xffffff, // background
+        0x000000, // foreground
+        0x000000, // cursor_color
+        0xadd6ff, // selection_background
+        0x000000, // selection_foreground
+        {
+            0x000000, 0xcd0000, 0x00aa00, 0xaa5500,
+            0x0000cd, 0xaa00aa, 0x00aaaa, 0xe5e5e5,
+            0x666666, 0xff0000, 0x00ff00, 0xffaa00,
+            0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
+        },
+    },
     {
         "Solarized Light",
         0xfdf6e3, // background
@@ -147,6 +274,62 @@ static const Theme kBuiltinThemes[] = {
             0x458588, 0xb16286, 0x689d6a, 0x7c6f64,
             0x928374, 0x9d0006, 0x79740e, 0xb57614,
             0x076678, 0x8f3f71, 0x427b58, 0x3c3836,
+        },
+    },
+    {
+        "One Light",
+        0xfafafa, // background
+        0x383a42, // foreground
+        0x526fff, // cursor_color
+        0xe5e5e6, // selection_background
+        0x383a42, // selection_foreground
+        {
+            0x383a42, 0xe45649, 0x50a14f, 0xc18401,
+            0x4078f2, 0xa626a4, 0x0184bc, 0xa0a1a7,
+            0x696c77, 0xe45649, 0x50a14f, 0xc18401,
+            0x4078f2, 0xa626a4, 0x0184bc, 0xfafafa,
+        },
+    },
+    {
+        "Tokyo Night Light",
+        0xd5d6db, // background
+        0x343b59, // foreground
+        0x343b59, // cursor_color
+        0x99a7df, // selection_background
+        0x343b59, // selection_foreground
+        {
+            0x0f0f14, 0x8c4351, 0x33635c, 0x8f5e15,
+            0x34548a, 0x5a4a78, 0x0f4b6e, 0x343b59,
+            0x9699a3, 0x8c4351, 0x33635c, 0x8f5e15,
+            0x34548a, 0x5a4a78, 0x0f4b6e, 0xd5d6db,
+        },
+    },
+    {
+        "Rose Pine Dawn",
+        0xfaf4ed, // background
+        0x575279, // foreground
+        0x56526e, // cursor_color
+        0xdfdad9, // selection_background
+        0x575279, // selection_foreground
+        {
+            0xf2e9e1, 0xb4637a, 0x286983, 0xea9d34,
+            0x56949f, 0x907aa9, 0xd7827e, 0x575279,
+            0x9893a5, 0xb4637a, 0x286983, 0xea9d34,
+            0x56949f, 0x907aa9, 0xd7827e, 0x575279,
+        },
+    },
+    {
+        "Everforest Light",
+        0xfdf6e3, // background
+        0x5c6a72, // foreground
+        0x5c6a72, // cursor_color
+        0xe6e2cc, // selection_background
+        0x5c6a72, // selection_foreground
+        {
+            0x5c6a72, 0xf85552, 0x8da101, 0xdfa000,
+            0x3a94c5, 0xdf69ba, 0x35a77c, 0xdfddc8,
+            0x939f91, 0xf85552, 0x8da101, 0xdfa000,
+            0x3a94c5, 0xdf69ba, 0x35a77c, 0xfdf6e3,
         },
     },
 };
