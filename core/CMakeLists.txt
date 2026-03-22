@@ -115,6 +115,7 @@ set(TERMCORE_SOURCES
     src/instant_replay.cpp
     src/annotations.cpp
     src/serial_port.cpp
+    src/password_manager.cpp
 )
 
 if(UNIX)

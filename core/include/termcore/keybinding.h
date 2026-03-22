@@ -67,6 +67,8 @@ enum class Action : uint16_t {
     EnterInstantReplay, ExitInstantReplay,
     // Annotations
     AddAnnotation,
+    // Password manager
+    OpenPasswordManager,
     // Custom (string-based action)
     Custom,
 };
