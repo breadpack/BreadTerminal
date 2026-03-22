@@ -417,6 +417,10 @@ void D3DTextRenderer::setPaneStatusPills(PaneId pane_id,
     }
 }
 
+void D3DTextRenderer::setCommandPalette(const CommandPaletteInfo& info) {
+    impl_->commandPalette = info;
+}
+
 } // namespace termcore
 
 #endif // _WIN32

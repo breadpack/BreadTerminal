@@ -50,6 +50,8 @@ enum class Action : uint16_t {
     SwitchTab6, SwitchTab7, SwitchTab8, SwitchTab9,
     // Hub / Settings windows
     OpenSettings, OpenThemeHub, OpenFontHub,
+    // Command Palette
+    OpenCommandPalette,
     // Custom (string-based action)
     Custom,
 };

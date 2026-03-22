@@ -102,6 +102,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"open_settings", Action::OpenSettings},
         {"open_theme_hub", Action::OpenThemeHub},
         {"open_font_hub", Action::OpenFontHub},
+        {"open_command_palette", Action::OpenCommandPalette},
         {"custom", Action::Custom},
     };
     return map;
@@ -296,7 +297,8 @@ void KeybindingManager::initDefaults() {
     // Hub / Settings
     b(mk(M, ","),       Action::OpenSettings);
     b(mk(MS, "t"),      Action::OpenThemeHub);
-    b(mk(MS, "p"),      Action::OpenFontHub);
+    b(mk(MS, "p"),      Action::OpenCommandPalette);
+    b(mk(MS, "f"),      Action::OpenFontHub);
 }
 
 } // namespace termcore

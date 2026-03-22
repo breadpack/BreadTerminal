@@ -161,6 +161,8 @@ private:
     void updateTabBar();
     // Helper: update selection on renderer from controller state
     void updateRendererSelection();
+    // Helper: update command palette on renderer from controller state
+    void updateCommandPalette();
 };
 
 #endif // _WIN32

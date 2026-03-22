@@ -228,6 +228,9 @@ void TerminalWindowState::renderFrame() {
     // Update selection on renderer
     updateRendererSelection();
 
+    // Update command palette state on renderer
+    updateCommandPalette();
+
     renderer->render(*screen);
 
     if (swapChain) {
@@ -290,6 +293,31 @@ void TerminalWindowState::updateTabBar() {
     }
 
     renderer->setTabBar(tabInfo);
+}
+
+void TerminalWindowState::updateCommandPalette() {
+    if (!renderer || !controller) return;
+
+    auto& cp = controller->commandPalette();
+    D3DTextRenderer::CommandPaletteInfo info;
+    info.visible = cp.isOpen();
+
+    if (info.visible) {
+        info.query = cp.query();
+        info.selectedIndex = cp.selectedIndex();
+
+        const auto& filtered = cp.filteredCommands();
+        int maxItems = (std::min)(static_cast<int>(filtered.size()),
+                                  termcore::CommandPalette::kMaxVisibleItems);
+        for (int i = 0; i < maxItems; ++i) {
+            D3DTextRenderer::CommandPaletteInfo::Item item;
+            item.name = filtered[i].name;
+            item.shortcut_hint = filtered[i].shortcut_hint;
+            info.items.push_back(std::move(item));
+        }
+    }
+
+    renderer->setCommandPalette(info);
 }
 
 void TerminalWindowState::updateRendererSelection() {

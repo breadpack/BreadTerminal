@@ -83,6 +83,41 @@ void TerminalController::tick() {
 // --- Event entry points ---
 
 void TerminalController::onKeyEvent(const KeyEvent& e) {
+    // 0. If command palette is open, handle its input
+    if (commandPalette_.isOpen()) {
+        if (e.keycode == 0xF70A) { // Escape
+            commandPalette_.close();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF700) { // Up
+            commandPalette_.selectPrev();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF701) { // Down
+            commandPalette_.selectNext();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF709) { // Enter
+            Action action = commandPalette_.selectedAction();
+            commandPalette_.close();
+            if (action != Action::None) {
+                handleAction(action);
+            }
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF70B) { // Backspace
+            commandPalette_.onBackspace();
+            needsRender_ = true;
+            return;
+        }
+        // All other keys are consumed (typed chars come via onCharInput)
+        return;
+    }
+
     // 1. If search active and Escape pressed, close search
     if (searchCtrl_.isActive() && e.keycode == 0xF70A) { // Escape
         searchCtrl_.close();
@@ -135,6 +170,14 @@ void TerminalController::onKeyEvent(const KeyEvent& e) {
 }
 
 void TerminalController::onCharInput(const std::string& utf8) {
+    if (commandPalette_.isOpen()) {
+        // Feed chars into the palette query
+        for (char c : utf8) {
+            commandPalette_.onChar(c);
+        }
+        needsRender_ = true;
+        return;
+    }
     if (searchCtrl_.isActive()) return;
     if (copyMode_ && copyMode_->isActive()) return;
 
@@ -590,6 +633,14 @@ void TerminalController::handleAction(Action action) {
             onConfigChanged(newCfg);
             break;
         }
+
+        case Action::OpenCommandPalette:
+            if (keybindings_) {
+                commandPalette_.updateShortcuts(*keybindings_);
+            }
+            commandPalette_.open();
+            needsRender_ = true;
+            break;
 
         default:
             break;

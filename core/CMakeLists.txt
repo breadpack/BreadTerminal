@@ -74,6 +74,7 @@ set(TERMCORE_SOURCES
     src/search_controller.cpp
     src/tab_controller.cpp
     src/config_applier.cpp
+    src/command_palette.cpp
 )
 
 if(UNIX)
