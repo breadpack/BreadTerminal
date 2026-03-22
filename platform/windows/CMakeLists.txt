@@ -44,6 +44,8 @@ set(TERMCORE_WIN_SOURCES
     src/SettingsPaint.cpp
     src/SettingsTabPanels.cpp
     src/SettingsControls.cpp
+    src/TerminalAccessibility.cpp
+    src/TerminalTextRange.cpp
 )
 
 if(HAS_WEBVIEW2)

@@ -1,12 +1,15 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "TerminalAccessibility.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <windowsx.h>
 #include <imm.h>
+#include <UIAutomationCore.h>
+#include <UIAutomationCoreApi.h>
 
 namespace termcore {
     void handleImeStartComposition(HWND hwnd, int cursor_x, int cursor_y, int cell_height);
@@ -249,9 +252,24 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             }
             return 0;
 
+        case WM_GETOBJECT:
+            if (state && state->accessibilityProvider &&
+                static_cast<long>(lParam) == UiaRootObjectId) {
+                return UiaReturnRawElementProvider(
+                    hWnd, wParam, lParam,
+                    static_cast<IRawElementProviderSimple*>(
+                        state->accessibilityProvider));
+            }
+            break;
+
         case WM_DESTROY:
             KillTimer(hWnd, kRenderTimerId);
             KillTimer(hWnd, kCursorBlinkTimerId);
+            if (state && state->accessibilityProvider) {
+                UiaReturnRawElementProvider(hWnd, 0, 0, nullptr);
+                state->accessibilityProvider->Release();
+                state->accessibilityProvider = nullptr;
+            }
             PostQuitMessage(0);
             return 0;
 

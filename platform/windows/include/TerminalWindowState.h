@@ -34,6 +34,9 @@
 
 using Microsoft::WRL::ComPtr;
 
+// Forward declaration for accessibility
+class TerminalAccessibilityProvider;
+
 /// Terminal window state, stored as GWLP_USERDATA on the HWND.
 /// Implements IPlatformHost to bridge TerminalController with Win32.
 struct TerminalWindowState : public termcore::IPlatformHost {
@@ -67,6 +70,9 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     std::unique_ptr<termcore::ThemeHubWindow> themeHub;
     std::unique_ptr<termcore::FontHubWindow> fontHub;
     std::unique_ptr<termcore::SettingsWindow> settingsWin;
+
+    // Accessibility
+    TerminalAccessibilityProvider* accessibilityProvider = nullptr;
 
     // DPI
     float dpiScale_ = 1.0f;
