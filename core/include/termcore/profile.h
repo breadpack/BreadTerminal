@@ -30,5 +30,31 @@ struct Profile {
 /// Apply profile appearance overrides on top of global Config.
 Config resolveProfileConfig(const Config& global, const Profile& profile);
 
+class ProfileManager {
+public:
+    ProfileManager();
+
+    const std::vector<Profile>& allProfiles() const;
+    std::vector<const Profile*> visibleProfiles() const;
+    const Profile& defaultProfile() const;
+    const Profile* findProfile(const std::string& id) const;
+
+    void setProfile(const Profile& profile);
+    void setDefaultProfile(const std::string& id);
+    void hideProfile(const std::string& id);
+    void setDetectedProfiles(std::vector<Profile> detected);
+
+private:
+    std::vector<Profile> detected_;
+    std::vector<Profile> user_;
+    std::vector<Profile> merged_;
+    std::string default_id_;
+    std::vector<std::string> hidden_ids_;
+    Profile fallback_;
+
+    void rebuildMerged();
+    void ensureFallback();
+};
+
 } // namespace termcore
 #endif

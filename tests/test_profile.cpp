@@ -80,3 +80,144 @@ TEST(ProfileTest, ResolveProfileConfig_AllOverrides) {
     EXPECT_EQ(resolved.theme, "Dracula");
     EXPECT_EQ(resolved.cursor_style, "bar");
 }
+
+class ProfileManagerTest : public ::testing::Test {
+protected:
+    ProfileManager mgr;
+};
+
+TEST_F(ProfileManagerTest, StartsEmpty) {
+    EXPECT_TRUE(mgr.allProfiles().empty());
+}
+
+TEST_F(ProfileManagerTest, DefaultProfileFallback) {
+    const Profile& def = mgr.defaultProfile();
+    EXPECT_FALSE(def.command.empty());
+#if defined(_WIN32)
+    EXPECT_NE(def.command.find("cmd"), std::string::npos);
+#endif
+}
+
+TEST_F(ProfileManagerTest, SetProfileAdds) {
+    Profile p;
+    p.id = "test-shell";
+    p.name = "Test Shell";
+    p.command = "/usr/bin/test";
+    mgr.setProfile(p);
+    EXPECT_EQ(mgr.allProfiles().size(), 1u);
+    auto* found = mgr.findProfile("test-shell");
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->name, "Test Shell");
+}
+
+TEST_F(ProfileManagerTest, SetProfileUpdatesExisting) {
+    Profile p1; p1.id = "my-shell"; p1.name = "v1"; p1.command = "/bin/sh";
+    mgr.setProfile(p1);
+    Profile p2; p2.id = "my-shell"; p2.name = "v2"; p2.command = "/bin/bash";
+    mgr.setProfile(p2);
+    EXPECT_EQ(mgr.allProfiles().size(), 1u);
+    EXPECT_EQ(mgr.findProfile("my-shell")->command, "/bin/bash");
+}
+
+TEST_F(ProfileManagerTest, SetDefaultProfile) {
+    Profile p1; p1.id = "a"; p1.name = "A"; p1.command = "/a"; mgr.setProfile(p1);
+    Profile p2; p2.id = "b"; p2.name = "B"; p2.command = "/b"; mgr.setProfile(p2);
+    mgr.setDefaultProfile("b");
+    EXPECT_EQ(mgr.defaultProfile().id, "b");
+}
+
+TEST_F(ProfileManagerTest, DefaultProfileFirstMerged) {
+    Profile p1; p1.id = "first"; p1.name = "First"; p1.command = "/first"; mgr.setProfile(p1);
+    Profile p2; p2.id = "second"; p2.name = "Second"; p2.command = "/second"; mgr.setProfile(p2);
+    EXPECT_EQ(mgr.defaultProfile().id, "first");
+}
+
+TEST_F(ProfileManagerTest, SetDefaultProfileNonexistent) {
+    mgr.setDefaultProfile("nonexistent");
+    const Profile& def = mgr.defaultProfile();
+    EXPECT_FALSE(def.command.empty());
+}
+
+TEST_F(ProfileManagerTest, FindProfileUnknown) {
+    EXPECT_EQ(mgr.findProfile("nope"), nullptr);
+}
+
+TEST_F(ProfileManagerTest, HideProfile) {
+    Profile p; p.id = "hide-me"; p.name = "Hidden"; p.command = "/hidden";
+    mgr.setProfile(p);
+    mgr.hideProfile("hide-me");
+    for (auto* vp : mgr.visibleProfiles()) {
+        EXPECT_NE(vp->id, "hide-me");
+    }
+}
+
+TEST_F(ProfileManagerTest, VisibleProfilesExcludesHidden) {
+    Profile p1; p1.id = "a"; p1.name = "A"; p1.command = "/a"; mgr.setProfile(p1);
+    Profile p2; p2.id = "b"; p2.name = "B"; p2.command = "/b"; mgr.setProfile(p2);
+    Profile p3; p3.id = "c"; p3.name = "C"; p3.command = "/c"; mgr.setProfile(p3);
+    mgr.hideProfile("b");
+    auto visible = mgr.visibleProfiles();
+    EXPECT_EQ(visible.size(), 2u);
+    EXPECT_EQ(visible[0]->id, "a");
+    EXPECT_EQ(visible[1]->id, "c");
+}
+
+TEST_F(ProfileManagerTest, MergeDetectedAndUser) {
+    std::vector<Profile> detected;
+    Profile d1; d1.id = "cmd"; d1.name = "cmd.exe"; d1.command = "cmd.exe"; d1.auto_detected = true;
+    Profile d2; d2.id = "ps"; d2.name = "PowerShell"; d2.command = "powershell.exe"; d2.auto_detected = true;
+    detected.push_back(d1);
+    detected.push_back(d2);
+    mgr.setDetectedProfiles(std::move(detected));
+
+    Profile user_override; user_override.id = "ps"; user_override.theme = "One Dark";
+    mgr.setProfile(user_override);
+
+    Profile custom; custom.id = "my-ssh"; custom.name = "SSH"; custom.command = "ssh";
+    mgr.setProfile(custom);
+
+    auto all = mgr.allProfiles();
+    EXPECT_EQ(all.size(), 3u);
+    EXPECT_EQ(all[0].id, "cmd");
+    EXPECT_EQ(all[1].id, "ps");
+    EXPECT_EQ(all[2].id, "my-ssh");
+
+    auto* ps = mgr.findProfile("ps");
+    ASSERT_NE(ps, nullptr);
+    EXPECT_EQ(ps->name, "PowerShell");
+    EXPECT_TRUE(ps->theme.has_value());
+    EXPECT_EQ(*ps->theme, "One Dark");
+    EXPECT_FALSE(ps->auto_detected);
+}
+
+TEST_F(ProfileManagerTest, FieldLevelMerge) {
+    std::vector<Profile> detected;
+    Profile d; d.id = "bash"; d.name = "Bash"; d.command = "/bin/bash"; d.icon = "bash"; d.auto_detected = true;
+    detected.push_back(d);
+    mgr.setDetectedProfiles(std::move(detected));
+
+    Profile user; user.id = "bash"; user.font_family = "Fira Code";
+    mgr.setProfile(user);
+
+    auto* merged = mgr.findProfile("bash");
+    ASSERT_NE(merged, nullptr);
+    EXPECT_EQ(merged->name, "Bash");
+    EXPECT_EQ(merged->command, "/bin/bash");
+    EXPECT_EQ(merged->icon, "bash");
+    EXPECT_TRUE(merged->font_family.has_value());
+    EXPECT_EQ(*merged->font_family, "Fira Code");
+}
+
+TEST_F(ProfileManagerTest, FieldLevelMerge_CommandOverride) {
+    std::vector<Profile> detected;
+    Profile d; d.id = "ps"; d.name = "PowerShell"; d.command = "powershell.exe"; d.auto_detected = true;
+    detected.push_back(d);
+    mgr.setDetectedProfiles(std::move(detected));
+
+    Profile user; user.id = "ps"; user.command = "pwsh.exe";
+    mgr.setProfile(user);
+
+    auto* merged = mgr.findProfile("ps");
+    EXPECT_EQ(merged->command, "pwsh.exe");
+    EXPECT_EQ(merged->name, "PowerShell");
+}
