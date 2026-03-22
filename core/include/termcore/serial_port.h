@@ -56,6 +56,9 @@ public:
     bool isOpen() const;
     const SerialConfig& config() const;
 
+    /// Close the serial port
+    void close();
+
     /// Change baud rate on the fly
     bool setBaudRate(uint32_t baud);
 

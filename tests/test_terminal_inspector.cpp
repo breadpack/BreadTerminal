@@ -164,8 +164,8 @@ TEST_F(TerminalInspectorTest, FilterShowsOnlyMatchingTypes) {
     inspector.logText("a");
     inspector.logCSI("\x1b[m", "SGR Reset");
     inspector.logOSC(0, "title", "OSC 0");
-    inspector.logESC("\x1b7", "DECSC");
-    inspector.logDCS("\x1bPq", "Sixel");
+    inspector.logESC("ESC7", "DECSC");
+    inspector.logDCS("DCS_Pq", "Sixel");
     inspector.logControl('\r', "CR");
 
     // Hide everything except CSI
