@@ -1,6 +1,7 @@
 // Config → Lua serializer. No Lua runtime dependency — always compiled.
 
 #include "termcore/lua_config.h"
+#include "termcore/profile.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -129,6 +130,40 @@ std::string serializeConfigLua(const Config& config) {
     o << "    sidebar_visible = " << (config.sidebar_visible ? "true" : "false") << ",\n";
     o << "    sidebar_width = " << config.sidebar_width << ",\n";
     o << "})\n\n";
+
+    // Profiles
+    if (!config.profiles.empty()) {
+        o << "-- Profiles\n";
+        for (const auto& p : config.profiles) {
+            o << "terminal.profile({\n";
+            o << "    id = " << escLua(p.id) << ",\n";
+            if (!p.name.empty())    o << "    name = " << escLua(p.name) << ",\n";
+            if (!p.command.empty()) o << "    command = " << escLua(p.command) << ",\n";
+            if (!p.args.empty()) {
+                o << "    args = { ";
+                for (size_t i = 0; i < p.args.size(); ++i) {
+                    if (i > 0) o << ", ";
+                    o << escLua(p.args[i]);
+                }
+                o << " },\n";
+            }
+            if (!p.working_dir.empty()) o << "    working_dir = " << escLua(p.working_dir) << ",\n";
+            if (!p.icon.empty())        o << "    icon = " << escLua(p.icon) << ",\n";
+            if (p.theme.has_value())       o << "    theme = " << escLua(*p.theme) << ",\n";
+            if (p.font_family.has_value()) o << "    font_family = " << escLua(*p.font_family) << ",\n";
+            if (p.font_size.has_value())   o << "    font_size = " << *p.font_size << ",\n";
+            if (p.cursor_style.has_value()) o << "    cursor_style = " << escLua(*p.cursor_style) << ",\n";
+            o << "})\n";
+        }
+        o << "\n";
+    }
+
+    if (!config.default_profile_id.empty())
+        o << "terminal.default_profile(" << escLua(config.default_profile_id) << ")\n\n";
+
+    for (const auto& id : config.hidden_profile_ids)
+        o << "terminal.hide_profile(" << escLua(id) << ")\n";
+    if (!config.hidden_profile_ids.empty()) o << "\n";
 
     // Keybindings
     if (!config.keybindings.empty()) {
