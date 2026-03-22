@@ -35,3 +35,7 @@ compile_commands.json
 Thumbs.db
 .claude/worktrees/
 .worktrees/
+build-linux/
+*.msi
+*.wixpdb
+package/
