@@ -270,6 +270,10 @@ private:
     // REP (repeat character)
     char32_t last_printed_ = 0;
 
+    // Grapheme cluster tracking (row/col of next position after last printed cell)
+    int grapheme_row_ = 0;
+    int grapheme_col_ = 0;
+
     // Tab stops
     std::vector<bool> tab_stops_;
 
@@ -321,6 +325,11 @@ private:
     void clampCursor();
     void eraseCell(TermCell& cell) const;
     void advanceCursorAfterPrint();
+
+    // Grapheme cluster helpers
+    bool shouldCombineWithPrevious(char32_t codepoint) const;
+    int getPreviousCellCol() const;
+    int graphemeClusterWidth(const TermCell& cell) const;
 
     // CSI handlers (defined in screen_csi.cpp)
     void handleCursorMovement(char32_t final_char,
