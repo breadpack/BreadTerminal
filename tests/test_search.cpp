@@ -236,5 +236,112 @@ TEST_F(SearchTest, EmptyQueryReturnsZero) {
     EXPECT_FALSE(search.isActive());
 }
 
+// --- Regex search tests ---
+
+// Basic regex match
+TEST_F(SearchTest, RegexBasicMatch) {
+    feed("Hello World\r\nfoo 123 bar\r\nHello Again\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "\\d+", opts);
+    EXPECT_EQ(count, 1);
+    ASSERT_EQ(search.matchCount(), 1u);
+    EXPECT_EQ(search.matches()[0].row, 1);
+    EXPECT_EQ(search.matches()[0].start_col, 4);
+    EXPECT_EQ(search.matches()[0].end_col, 7);
+}
+
+// Regex with alternation
+TEST_F(SearchTest, RegexAlternation) {
+    feed("cat\r\ndog\r\nbird\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "cat|dog", opts);
+    EXPECT_EQ(count, 2);
+}
+
+// Case-insensitive regex
+TEST_F(SearchTest, RegexCaseInsensitive) {
+    feed("Hello World\r\nhello world\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    opts.case_sensitive = false;
+    int count = search.search(screen, "hello", opts);
+    EXPECT_EQ(count, 2);
+}
+
+// Case-sensitive regex
+TEST_F(SearchTest, RegexCaseSensitive) {
+    feed("Hello World\r\nhello world\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    opts.case_sensitive = true;
+    int count = search.search(screen, "hello", opts);
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(search.matches()[0].row, 1);
+}
+
+// Invalid regex pattern returns 0 matches without crashing
+TEST_F(SearchTest, RegexInvalidPattern) {
+    feed("Hello World\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "[invalid(", opts);
+    EXPECT_EQ(count, 0);
+    EXPECT_EQ(search.matchCount(), 0u);
+}
+
+// Regex with special characters (literal dot via escape)
+TEST_F(SearchTest, RegexSpecialCharacters) {
+    feed("file.txt\r\nfiletxt\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "file\\.txt", opts);
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(search.matches()[0].row, 0);
+}
+
+// Regex with dot matches any character
+TEST_F(SearchTest, RegexDotMatchesAny) {
+    feed("file.txt\r\nfiletxt\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "file.txt", opts);
+    EXPECT_EQ(count, 2);
+}
+
+// Multiple regex matches on same line
+TEST_F(SearchTest, RegexMultipleMatchesSameLine) {
+    feed("abc 123 def 456\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "\\d+", opts);
+    EXPECT_EQ(count, 2);
+    EXPECT_EQ(search.matches()[0].start_col, 4);
+    EXPECT_EQ(search.matches()[0].end_col, 7);
+    EXPECT_EQ(search.matches()[1].start_col, 12);
+    EXPECT_EQ(search.matches()[1].end_col, 15);
+}
+
+// Regex no matches
+TEST_F(SearchTest, RegexNoMatches) {
+    feed("Hello World\r\n");
+    SearchOptions opts;
+    opts.use_regex = true;
+    int count = search.search(screen, "\\d+", opts);
+    EXPECT_EQ(count, 0);
+}
+
+// Literal search unchanged when use_regex is false
+TEST_F(SearchTest, LiteralSearchUnchangedWithRegexOff) {
+    feed("file.txt\r\nfiletxt\r\n");
+    SearchOptions opts;
+    opts.use_regex = false;
+    // "." is literal, not regex dot
+    int count = search.search(screen, "file.txt", opts);
+    EXPECT_EQ(count, 1);
+    EXPECT_EQ(search.matches()[0].row, 0);
+}
+
 } // namespace
 } // namespace termcore

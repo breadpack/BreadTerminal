@@ -2,6 +2,7 @@
 #define TERMCORE_SEARCH_H
 
 #include <cstdint>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@ struct SearchOptions {
     bool case_sensitive = false;
     bool wrap_around = true;
     bool search_scrollback = true;
+    bool use_regex = false;
 };
 
 /// Terminal text search engine
@@ -73,9 +75,13 @@ private:
     /// Extract text from a screen row for searching
     std::string getRowText(const Screen& screen, int row) const;
 
-    /// Find all occurrences of query in a line
+    /// Find all occurrences of query in a line (literal match)
     void findInLine(const std::string& line, int row,
                     const std::string& query, bool case_sensitive);
+
+    /// Find all regex matches in a line
+    void findRegexInLine(const std::string& line, int row,
+                         const std::regex& pattern);
 };
 
 } // namespace termcore

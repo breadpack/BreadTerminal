@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <regex>
 
 namespace termcore {
 
@@ -20,28 +21,58 @@ int TerminalSearch::search(const Screen& screen, const std::string& query,
     query_ = query;
     options_ = options;
 
-    // Prepare the search query (lowercase if case-insensitive)
-    std::string search_query = query;
-    if (!options.case_sensitive) {
-        std::transform(search_query.begin(), search_query.end(),
-                       search_query.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-    }
-
-    // Search scrollback lines (negative row indices)
-    if (options.search_scrollback) {
-        int sb_size = static_cast<int>(screen.scrollbackSize());
-        for (int i = sb_size; i >= 1; --i) {
-            int row = -i;  // -sb_size .. -1
-            std::string text = getRowText(screen, row);
-            findInLine(text, row, search_query, options.case_sensitive);
+    if (options.use_regex) {
+        // Compile regex pattern; if invalid, return 0 matches
+        std::regex pattern;
+        try {
+            auto flags = std::regex::ECMAScript;
+            if (!options.case_sensitive) {
+                flags |= std::regex::icase;
+            }
+            pattern = std::regex(query, flags);
+        } catch (const std::regex_error&) {
+            return 0;
         }
-    }
 
-    // Search visible screen rows
-    for (int r = 0; r < screen.rows(); ++r) {
-        std::string text = getRowText(screen, r);
-        findInLine(text, r, search_query, options.case_sensitive);
+        // Search scrollback lines (negative row indices)
+        if (options.search_scrollback) {
+            int sb_size = static_cast<int>(screen.scrollbackSize());
+            for (int i = sb_size; i >= 1; --i) {
+                int row = -i;
+                std::string text = getRowText(screen, row);
+                findRegexInLine(text, row, pattern);
+            }
+        }
+
+        // Search visible screen rows
+        for (int r = 0; r < screen.rows(); ++r) {
+            std::string text = getRowText(screen, r);
+            findRegexInLine(text, r, pattern);
+        }
+    } else {
+        // Prepare the search query (lowercase if case-insensitive)
+        std::string search_query = query;
+        if (!options.case_sensitive) {
+            std::transform(search_query.begin(), search_query.end(),
+                           search_query.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+        }
+
+        // Search scrollback lines (negative row indices)
+        if (options.search_scrollback) {
+            int sb_size = static_cast<int>(screen.scrollbackSize());
+            for (int i = sb_size; i >= 1; --i) {
+                int row = -i;
+                std::string text = getRowText(screen, row);
+                findInLine(text, row, search_query, options.case_sensitive);
+            }
+        }
+
+        // Search visible screen rows
+        for (int r = 0; r < screen.rows(); ++r) {
+            std::string text = getRowText(screen, r);
+            findInLine(text, r, search_query, options.case_sensitive);
+        }
     }
 
     if (!matches_.empty()) {
@@ -165,6 +196,30 @@ void TerminalSearch::findInLine(const std::string& line, int row,
         match.end_col = static_cast<int>(pos) + query_len;
         matches_.push_back(match);
         ++pos;  // Advance by 1 to find overlapping matches
+    }
+}
+
+void TerminalSearch::findRegexInLine(const std::string& line, int row,
+                                     const std::regex& pattern) {
+    if (line.empty()) {
+        return;
+    }
+
+    auto it = line.cbegin();
+    std::smatch match;
+    while (std::regex_search(it, line.cend(), match, pattern)) {
+        if (match.length() == 0) {
+            // Skip zero-length matches to avoid infinite loop
+            if (it != line.cend()) {
+                ++it;
+            }
+            continue;
+        }
+        int start_col = static_cast<int>(match.position()) +
+                        static_cast<int>(std::distance(line.cbegin(), it));
+        int end_col = start_col + static_cast<int>(match.length());
+        matches_.push_back({row, start_col, end_col});
+        it = match.suffix().first;
     }
 }
 

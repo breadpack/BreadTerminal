@@ -17,6 +17,9 @@ public:
     void next(Screen& screen);
     void prev(Screen& screen);
 
+    void setUseRegex(bool enabled) { useRegex_ = enabled; }
+    bool useRegex() const { return useRegex_; }
+
     int currentMatch() const;
     int totalMatches() const;
     const TerminalSearch& search() const { return search_; }
@@ -24,6 +27,7 @@ public:
 private:
     TerminalSearch search_;
     bool active_ = false;
+    bool useRegex_ = false;
 };
 
 } // namespace termcore

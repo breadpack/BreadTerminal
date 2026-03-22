@@ -12,7 +12,9 @@ void SearchController::close() {
 }
 
 void SearchController::setQuery(const std::string& query, Screen& screen) {
-    search_.search(screen, query);
+    SearchOptions opts;
+    opts.use_regex = useRegex_;
+    search_.search(screen, query, opts);
 }
 
 void SearchController::next(Screen& screen) {
