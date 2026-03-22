@@ -9,6 +9,7 @@ using termcore::D3DTextRenderer;
 #include <algorithm>
 #include <commctrl.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <thread>
 
 namespace termcore {
@@ -667,6 +668,21 @@ void TerminalWindowState::openFontHub(const termcore::Config& config) {
 
 float TerminalWindowState::dpiScale() {
     return dpiScale_;
+}
+
+void TerminalWindowState::openUrl(const std::string& url) {
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
+    if (wlen > 0) {
+        std::wstring wurl(wlen, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, wurl.data(), wlen);
+        ShellExecuteW(nullptr, L"open", wurl.c_str(), nullptr, nullptr, SW_SHOW);
+    }
+}
+
+void TerminalWindowState::setMouseCursor(CursorType cursor) {
+    HCURSOR hcur = LoadCursor(nullptr,
+        cursor == CursorType::Hand ? IDC_HAND : IDC_ARROW);
+    SetCursor(hcur);
 }
 
 std::unique_ptr<termcore::Pty> TerminalWindowState::createPty(

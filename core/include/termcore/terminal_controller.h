@@ -10,6 +10,7 @@
 #include "termcore/config_applier.h"
 #include "termcore/keybinding.h"
 #include "termcore/url_detector.h"
+#include "termcore/url_highlight.h"
 #include "termcore/paste_guard.h"
 #include "termcore/vi_copy_mode.h"
 #include <memory>
@@ -62,6 +63,10 @@ public:
     // URL detection
     const std::vector<DetectedUrl>& detectedUrls() const { return detectedUrls_; }
 
+    // URL highlighting (clickable URLs with hover state and render hints)
+    const UrlHighlightManager& urlHighlight() const { return urlHighlightMgr_; }
+    UrlHighlightManager& urlHighlight() { return urlHighlightMgr_; }
+
     // Vi copy mode
     bool inCopyMode() const;
 
@@ -89,6 +94,7 @@ private:
 
     UrlDetector urlDetector_;
     std::vector<DetectedUrl> detectedUrls_;
+    UrlHighlightManager urlHighlightMgr_;
 
     int termRows_ = 24;
     int termCols_ = 80;

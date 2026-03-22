@@ -182,6 +182,24 @@ float MacPlatformHost::dpiScale() {
     return win ? static_cast<float>(win.backingScaleFactor) : 2.0f;
 }
 
+// --- URL opening ---
+
+void MacPlatformHost::openUrl(const std::string& url) {
+    NSString* nsUrl = [NSString stringWithUTF8String:url.c_str()];
+    NSURL* nsURL = [NSURL URLWithString:nsUrl];
+    if (nsURL) {
+        [[NSWorkspace sharedWorkspace] openURL:nsURL];
+    }
+}
+
+void MacPlatformHost::setMouseCursor(CursorType cursor) {
+    if (cursor == CursorType::Hand) {
+        [[NSCursor pointingHandCursor] set];
+    } else {
+        [[NSCursor arrowCursor] set];
+    }
+}
+
 // --- PTY factory ---
 
 std::unique_ptr<termcore::Pty> MacPlatformHost::createPty(

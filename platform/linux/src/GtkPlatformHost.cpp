@@ -237,6 +237,21 @@ float GtkPlatformHost::dpiScale() {
     return 1.0f;
 }
 
+// --- URL opening ---
+
+void GtkPlatformHost::openUrl(const std::string& url) {
+    std::string cmd = "xdg-open \"" + url + "\" &";
+    (void)system(cmd.c_str());
+}
+
+void GtkPlatformHost::setMouseCursor(CursorType cursor) {
+    if (!glArea_) return;
+    GdkCursor* gdkCursor = gdk_cursor_new_from_name(
+        cursor == CursorType::Hand ? "pointer" : "default", nullptr);
+    gtk_widget_set_cursor(glArea_, gdkCursor);
+    if (gdkCursor) g_object_unref(gdkCursor);
+}
+
 // --- PTY factory ---
 
 std::unique_ptr<termcore::Pty> GtkPlatformHost::createPty(

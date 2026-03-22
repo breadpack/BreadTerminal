@@ -63,6 +63,10 @@ public:
     // --- DPI ---
     float dpiScale() override;
 
+    // --- URL opening ---
+    void openUrl(const std::string& url) override;
+    void setMouseCursor(CursorType cursor) override;
+
     // --- PTY factory ---
     std::unique_ptr<termcore::Pty> createPty(const std::string& shell,
                                               int rows, int cols) override;

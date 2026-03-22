@@ -24,6 +24,9 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
         }
         keybindings_->loadFromConfig(bindings);
     }
+
+    // URL highlight manager
+    urlHighlightMgr_.applyConfig(config_);
 }
 
 // --- Lifecycle ---
@@ -65,6 +68,8 @@ void TerminalController::pollPty() {
         Screen* scr = tabCtrl_->activeScreen();
         if (scr) {
             detectedUrls_ = urlDetector_.detectInScreen(*scr);
+            urlHighlightMgr_.markDirty();
+            urlHighlightMgr_.scanScreen(*scr, scr->rows());
         }
     }
 
@@ -204,6 +209,37 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
         offsetY = static_cast<int>(ch);
     }
 
+    // Grid coordinates for URL hover/click
+    int gridCol = static_cast<int>((e.x - offsetX) / cw);
+    int gridRow = static_cast<int>((e.y - offsetY) / ch);
+
+    // URL hover tracking on mouse move
+    if (e.type == InputMouseEvent::Move && urlHighlightMgr_.isEnabled()) {
+        bool hoverChanged = urlHighlightMgr_.updateHover(gridRow, gridCol);
+        if (hoverChanged) {
+            needsRender_ = true;
+            if (host_) {
+                auto hovered = urlHighlightMgr_.getHoveredUrl();
+                host_->setMouseCursor(hovered.has_value()
+                    ? IPlatformHost::CursorType::Hand
+                    : IPlatformHost::CursorType::Arrow);
+            }
+        }
+    }
+
+    // Ctrl+Click (Cmd+Click on macOS) to open URL
+    if (e.type == InputMouseEvent::Press && e.button == 0 && urlHighlightMgr_.isEnabled()) {
+        bool ctrlHeld = (e.modifiers & ModCtrl) != 0 || (e.modifiers & ModSuper) != 0;
+        if (ctrlHeld) {
+            urlHighlightMgr_.updateHover(gridRow, gridCol);
+            auto hovered = urlHighlightMgr_.getHoveredUrl();
+            if (hovered.has_value() && host_) {
+                host_->openUrl(hovered->url);
+                return;  // Consume the click — don't start selection
+            }
+        }
+    }
+
     switch (e.type) {
         case InputMouseEvent::Press:
             selMgr_.onMouseDown(e.x, e.y, cw, ch, offsetX, offsetY);
@@ -298,6 +334,7 @@ void TerminalController::onConfigChanged(const Config& newConfig) {
         configApplier_.applyFull(config_, newConfig, *tabCtrl_, *fontMgr_, host_);
         configApplier_.persist(config_);
     }
+    urlHighlightMgr_.applyConfig(config_);
     needsRender_ = true;
 }
 

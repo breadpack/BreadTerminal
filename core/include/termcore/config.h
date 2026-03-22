@@ -60,6 +60,10 @@ struct Config {
     // OSC 52 clipboard write from applications (default: false for security)
     bool allow_clipboard_write = false;
 
+    // Clickable URLs
+    bool clickable_urls = true;            // Underline detected URLs, Ctrl+Click to open
+    uint32_t url_color = 0x89b4fa;         // Link color (Catppuccin blue)
+
     // Command completion notifications
     bool notify_on_command_finish = true;
     float notify_after_seconds = 5.0f;  // only notify if command took > N seconds
