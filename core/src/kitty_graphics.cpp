@@ -391,4 +391,18 @@ void KittyGraphicsManager::touchLru(uint32_t id) {
     lru_order_.push_back(id);
 }
 
+uint32_t KittyGraphicsManager::addImage(KittyImage image) {
+    uint32_t id = image.id;
+    if (id == 0) {
+        id = next_id_++;
+    }
+    image.id = id;
+    images_[id] = std::move(image);
+    return id;
+}
+
+void KittyGraphicsManager::addPlacement(const KittyPlacement& placement) {
+    placements_.push_back(placement);
+}
+
 } // namespace termcore

@@ -382,6 +382,9 @@ void Screen::onOscDispatch(int osc_number,
     case 115: case 116: case 117: case 118: case 119:
         handleOscResetColor(osc_number, osc_string);
         break;
+    case 1337: // iTerm2 inline image protocol
+        handleOscItermImage(osc_string);
+        break;
     default:
         break;
     }
