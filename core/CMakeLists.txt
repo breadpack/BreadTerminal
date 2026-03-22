@@ -49,6 +49,7 @@ set(TERMCORE_SOURCES
     src/kitty_keyboard.cpp
     src/sixel.cpp
     src/kitty_graphics.cpp
+    src/image_preview.cpp
     src/shell_integration.cpp
     src/paste_guard.cpp
     src/vi_copy_mode.cpp

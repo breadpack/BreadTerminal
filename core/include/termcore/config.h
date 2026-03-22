@@ -78,6 +78,10 @@ struct Config {
     // Keybindings
     std::vector<KeyBinding> keybindings;
 
+    // Inline image preview (opt-in)
+    bool image_preview = false;
+    int image_preview_max_height = 10;  // max cell rows for inline preview
+
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;
 };
