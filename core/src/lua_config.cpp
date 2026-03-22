@@ -5,6 +5,7 @@
 
 #include "termcore/lua_config.h"
 #include "termcore/keybinding.h"
+#include "termcore/profile.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -193,6 +194,46 @@ struct LuaConfigState {
         terminal.set_function("on", [](const std::string&, sol::protected_function) {
             // Event handlers are a no-op during config loading.
             // They will be re-registered when the LuaEngine is initialized later.
+        });
+
+        // terminal.profile({...}) — define a shell profile
+        terminal.set_function("profile", [this](sol::table t) {
+            Profile p;
+            p.id = getStr(t, "id", "");
+            if (p.id.empty()) return;
+
+            p.name = getStr(t, "name", "");
+            p.command = getStr(t, "command", "");
+            if (auto a = t["args"]; a.valid() && a.get_type() == sol::type::table) {
+                sol::table args = a;
+                for (auto& [k, v] : args) {
+                    if (v.is<std::string>()) p.args.push_back(v.as<std::string>());
+                }
+            }
+            p.working_dir = getStr(t, "working_dir", "");
+            p.icon = getStr(t, "icon", "");
+
+            // Optional appearance (type-checked)
+            if (auto v = t["theme"]; v.valid() && v.get_type() == sol::type::string)
+                p.theme = v.get<std::string>();
+            if (auto v = t["font_family"]; v.valid() && v.get_type() == sol::type::string)
+                p.font_family = v.get<std::string>();
+            if (auto v = t["font_size"]; v.valid() && v.get_type() == sol::type::number)
+                p.font_size = v.get<float>();
+            if (auto v = t["cursor_style"]; v.valid() && v.get_type() == sol::type::string)
+                p.cursor_style = v.get<std::string>();
+
+            config.profiles.push_back(p);
+        });
+
+        // terminal.default_profile("id") — set the default profile
+        terminal.set_function("default_profile", [this](const std::string& id) {
+            config.default_profile_id = id;
+        });
+
+        // terminal.hide_profile("id") — hide a profile from the UI
+        terminal.set_function("hide_profile", [this](const std::string& id) {
+            config.hidden_profile_ids.push_back(id);
         });
 
         // Utility: terminal.platform

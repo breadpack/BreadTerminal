@@ -221,3 +221,70 @@ TEST_F(ProfileManagerTest, FieldLevelMerge_CommandOverride) {
     EXPECT_EQ(merged->command, "pwsh.exe");
     EXPECT_EQ(merged->name, "PowerShell");
 }
+
+#if TERMCORE_HAS_LUA
+#include "termcore/lua_config.h"
+
+TEST(ProfileLuaTest, LoadProfileFromLua) {
+    std::string code = R"(
+        terminal.profile({
+            id = "test-ssh",
+            name = "Test SSH",
+            command = "ssh",
+            args = { "user@host" },
+            icon = "ssh",
+            theme = "Dracula",
+            font_size = 16,
+        })
+        terminal.default_profile("test-ssh")
+        terminal.hide_profile("cmd")
+    )";
+    auto result = loadConfigLuaString(code);
+    ASSERT_TRUE(result.ok()) << result.errorMessage();
+
+    const Config& cfg = luaConfig();
+    ASSERT_EQ(cfg.profiles.size(), 1u);
+    EXPECT_EQ(cfg.profiles[0].id, "test-ssh");
+    EXPECT_EQ(cfg.profiles[0].name, "Test SSH");
+    EXPECT_EQ(cfg.profiles[0].command, "ssh");
+    ASSERT_EQ(cfg.profiles[0].args.size(), 1u);
+    EXPECT_EQ(cfg.profiles[0].args[0], "user@host");
+    EXPECT_TRUE(cfg.profiles[0].theme.has_value());
+    EXPECT_EQ(*cfg.profiles[0].theme, "Dracula");
+    EXPECT_TRUE(cfg.profiles[0].font_size.has_value());
+    EXPECT_FLOAT_EQ(*cfg.profiles[0].font_size, 16.0f);
+
+    EXPECT_EQ(cfg.default_profile_id, "test-ssh");
+    ASSERT_EQ(cfg.hidden_profile_ids.size(), 1u);
+    EXPECT_EQ(cfg.hidden_profile_ids[0], "cmd");
+}
+
+TEST(ProfileLuaTest, ConfigWriterRoundTrip) {
+    Config cfg;
+    Profile p;
+    p.id = "my-shell";
+    p.name = "My Shell";
+    p.command = "C:\\Program Files\\Git\\bin\\bash.exe";  // backslash test
+    p.args = {"--login"};
+    p.theme = "Dracula";
+    p.font_size = 16.0f;
+    cfg.profiles.push_back(p);
+    cfg.default_profile_id = "my-shell";
+    cfg.hidden_profile_ids.push_back("cmd");
+
+    // Serialize
+    std::string lua = serializeConfigLua(cfg);
+
+    // Re-load
+    auto result = loadConfigLuaString(lua);
+    ASSERT_TRUE(result.ok()) << result.errorMessage();
+
+    const Config& loaded = luaConfig();
+    ASSERT_EQ(loaded.profiles.size(), 1u);
+    EXPECT_EQ(loaded.profiles[0].id, "my-shell");
+    EXPECT_EQ(loaded.profiles[0].command, "C:\\Program Files\\Git\\bin\\bash.exe");
+    EXPECT_EQ(loaded.default_profile_id, "my-shell");
+    ASSERT_EQ(loaded.hidden_profile_ids.size(), 1u);
+    EXPECT_EQ(loaded.hidden_profile_ids[0], "cmd");
+}
+#endif
