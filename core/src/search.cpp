@@ -172,24 +172,27 @@ std::string TerminalSearch::getRowText(const Screen& screen, int row) const {
     return screen.getScrollbackLineText(line);
 }
 
-void TerminalSearch::findInLine(std::string& line, int row,
+void TerminalSearch::findInLine(const std::string& line, int row,
                                 const std::string& query,
                                 bool case_sensitive) {
     if (line.empty() || query.empty()) {
         return;
     }
 
-    // Transform in-place to avoid extra allocation
+    std::string search_line;
     if (!case_sensitive) {
+        search_line.resize(line.size());
         std::transform(line.begin(), line.end(),
-                       line.begin(),
+                       search_line.begin(),
                        [](unsigned char c) { return std::tolower(c); });
+    } else {
+        search_line = line;
     }
 
     size_t pos = 0;
     int query_len = static_cast<int>(query.size());
 
-    while ((pos = line.find(query, pos)) != std::string::npos) {
+    while ((pos = search_line.find(query, pos)) != std::string::npos) {
         SearchMatch match;
         match.row = row;
         match.start_col = static_cast<int>(pos);
