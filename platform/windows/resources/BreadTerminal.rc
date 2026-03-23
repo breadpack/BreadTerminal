@@ -1,0 +1,34 @@
+// BreadTerminal Windows Resource File
+#include <windows.h>
+
+// Application icon (IDI_ICON1 = 1)
+IDI_ICON1 ICON "BreadTerminal.ico"
+
+// Version information
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+FILEFLAGS      0
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "\0"
+            VALUE "FileDescription",  "BreadTerminal - Cross-platform AI coding agent terminal\0"
+            VALUE "FileVersion",      "0.1.0\0"
+            VALUE "InternalName",     "BreadTerminal\0"
+            VALUE "OriginalFilename", "BreadTerminal.exe\0"
+            VALUE "ProductName",      "BreadTerminal\0"
+            VALUE "ProductVersion",   "0.1.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

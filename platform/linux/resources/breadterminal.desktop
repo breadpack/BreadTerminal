@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=BreadTerminal
+Comment=Cross-platform AI coding agent terminal
+Exec=breadterminal
+Icon=breadterminal
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;
+Keywords=terminal;console;shell;
+StartupWMClass=breadterminal

@@ -389,6 +389,7 @@ void TerminalWindowState::updateTabBar() {
     tabInfo.inactive_bg_color = tabInfo.bg_color;
     tabInfo.fg_color = config.foreground;
     tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+    tabInfo.process_icon_map = &config.tab_process_icons;
 
     for (size_t i = 0; i < tabs.size(); ++i) {
         D3DTextRenderer::TabInfo ti;

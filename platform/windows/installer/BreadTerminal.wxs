@@ -66,7 +66,9 @@
     <ComponentGroup Id="Shortcuts" Directory="ApplicationProgramsFolder">
       <Component Id="StartMenuShortcut" Guid="A7B8C9D0-E1F2-3A4B-5C6D-7E8F90011223">
         <Shortcut Id="AppShortcut" Name="BreadTerminal" Target="[INSTALLFOLDER]BreadTerminal.exe"
-                  WorkingDirectory="INSTALLFOLDER" />
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <Shortcut Id="DesktopShortcut" Name="BreadTerminal" Target="[INSTALLFOLDER]BreadTerminal.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" Directory="DesktopFolder" />
         <RemoveFolder Id="CleanUpShortCut" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\BreadTerminal" Name="installed"
                        Type="integer" Value="1" KeyPath="yes" />
@@ -79,6 +81,11 @@
         <File Id="RegisterWTProfile" Source="$(var.PackageDir)\register-wt-profile.ps1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.PackageDir)\BreadTerminal.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
     <Feature Id="ProductFeature" Title="BreadTerminal" Level="1">
       <ComponentGroupRef Id="ProductComponents" />

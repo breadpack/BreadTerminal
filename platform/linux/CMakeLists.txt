@@ -187,3 +187,17 @@ if(TARGET termcore_wayland)
     target_link_libraries(breadterminal PRIVATE termcore_wayland)
     target_compile_definitions(breadterminal PRIVATE TERMCORE_HAS_WAYLAND=1)
 endif()
+
+# Install icon files for hicolor icon theme
+set(ICON_RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+foreach(SIZE 16 24 32 48 64 128 256 512)
+    install(FILES "${ICON_RESOURCE_DIR}/breadterminal_${SIZE}.png"
+        DESTINATION "share/icons/hicolor/${SIZE}x${SIZE}/apps"
+        RENAME "breadterminal.png"
+    )
+endforeach()
+
+# Install .desktop file
+install(FILES "${ICON_RESOURCE_DIR}/breadterminal.desktop"
+    DESTINATION "share/applications"
+)

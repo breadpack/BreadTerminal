@@ -119,6 +119,43 @@ struct Config {
     // Tab badge format (e.g., "{hostname}", "{user}@{hostname}")
     std::string tab_badge_format;
 
+    // Tab process icon map: process_name -> Nerd Font hex codepoint string
+    // Users can override or extend in config.lua via tab_process_icons table.
+    std::unordered_map<std::string, std::string> tab_process_icons = {
+        {"bash",            "F489"},  // nf-oct-terminal
+        {"sh",              "F489"},
+        {"zsh",             "F489"},
+        {"fish",            "F489"},
+        {"cmd",             "E70F"},  // nf-dev-windows
+        {"cmd.exe",         "E70F"},
+        {"powershell",      "EBC7"},  // nf-md-powershell
+        {"pwsh",            "EBC7"},
+        {"powershell.exe",  "EBC7"},
+        {"pwsh.exe",        "EBC7"},
+        {"python",          "E73C"},  // nf-dev-python
+        {"python3",         "E73C"},
+        {"python.exe",      "E73C"},
+        {"python3.exe",     "E73C"},
+        {"node",            "E718"},  // nf-dev-nodejs_small
+        {"node.exe",        "E718"},
+        {"vim",             "E62B"},  // nf-dev-vim
+        {"nvim",            "E62B"},
+        {"git",             "E702"},  // nf-dev-git
+        {"git.exe",         "E702"},
+        {"ssh",             "F489"},  // nf-oct-terminal
+        {"ssh.exe",         "F489"},
+        {"docker",          "F308"},  // nf-linux-docker
+        {"docker.exe",      "F308"},
+        {"cargo",           "E7A8"},  // nf-dev-rust
+        {"rustc",           "E7A8"},
+        {"go",              "E626"},  // nf-dev-go
+        {"go.exe",          "E626"},
+        {"ruby",            "E739"},  // nf-dev-ruby
+        {"irb",             "E739"},
+        {"lua",             "E620"},  // nf-seti-lua
+        {"luajit",          "E620"},
+    };
+
     // Session auto-save for crash recovery
     bool session_autosave = true;
     int session_autosave_interval = 30;  // seconds

@@ -8,6 +8,9 @@ static void on_activate(GtkApplication* app, gpointer /*user_data*/) {
 
     GtkWidget* window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "BreadTerminal");
+
+    // Set window icon: try themed icon first, then fall back to file
+    gtk_window_set_icon_name(GTK_WINDOW(window), "breadterminal");
     gtk_window_set_default_size(GTK_WINDOW(window),
                                 config.window_width, config.window_height);
 

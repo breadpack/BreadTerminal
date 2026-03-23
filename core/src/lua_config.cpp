@@ -163,6 +163,17 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
 
     // Keybinding preset
     cfg.keybinding_preset = getStr(t, "keybinding_preset", cfg.keybinding_preset);
+
+    // Tab process icons: { process_name = "hex_codepoint", ... }
+    if (auto p = t["tab_process_icons"]; p.valid() && p.get_type() == sol::type::table) {
+        sol::table icons = p;
+        icons.for_each([&](const sol::object& key, const sol::object& val) {
+            if (key.get_type() == sol::type::string &&
+                val.get_type() == sol::type::string) {
+                cfg.tab_process_icons[key.as<std::string>()] = val.as<std::string>();
+            }
+        });
+    }
 }
 
 /// Initialize the Lua engine with terminal.config() and terminal.keymap() APIs.

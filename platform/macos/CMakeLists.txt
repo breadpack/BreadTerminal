@@ -183,7 +183,13 @@ set_target_properties(BreadTerminal PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "BreadTerminal"
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1"
+    MACOSX_BUNDLE_ICON_FILE "BreadTerminal.icns"
 )
+
+# Copy .icns into the bundle Resources
+set(ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/BreadTerminal.icns")
+set_source_files_properties(${ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+target_sources(BreadTerminal PRIVATE ${ICON_FILE})
 
 # Copy default.metallib into the bundle Resources if available
 if(METAL_COMPILER_RESULT EQUAL 0)

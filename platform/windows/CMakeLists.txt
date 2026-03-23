@@ -80,6 +80,7 @@ add_executable(BreadTerminal WIN32
     src/TerminalWindowStateEvents.cpp
     src/TerminalWindowInput.cpp
     src/QuickTerminalWindow.cpp
+    resources/BreadTerminal.rc
 )
 target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus)
 
@@ -93,4 +94,10 @@ add_custom_command(TARGET BreadTerminal POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/font_index.json"
         "$<TARGET_FILE_DIR:BreadTerminal>/font_index.json"
+)
+# Copy icon to output directory (for installer packaging)
+add_custom_command(TARGET BreadTerminal POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/BreadTerminal.ico"
+        "$<TARGET_FILE_DIR:BreadTerminal>/BreadTerminal.ico"
 )

@@ -320,8 +320,15 @@ void GLTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             float textMaxX = tabX + tabW - (showClose ? closeW + 4.0f : tabPadX);
             float textCenterY = tabY + (tabH - cellH) * 0.5f;
 
-            // Icon prefix
+            // Icon prefix: use OSC 1 icon_name if set, otherwise look up config map
             char32_t icon = firstCodepoint(tab.icon_name);
+            if (icon == 0 && !tab.process_name.empty() && tabBar.process_icon_map) {
+                auto it = tabBar.process_icon_map->find(tab.process_name);
+                if (it != tabBar.process_icon_map->end()) {
+                    icon = static_cast<char32_t>(
+                        std::stoul(it->second, nullptr, 16));
+                }
+            }
             if (icon != 0) {
                 uint32_t iconColor = tab.active
                     ? tabBar.accent_color

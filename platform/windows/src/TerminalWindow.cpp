@@ -292,6 +292,39 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             PostQuitMessage(0);
             return 0;
 
+        case WM_NCACTIVATE:
+        case WM_NCPAINT: {
+            // Let DWM paint the default frame first
+            LRESULT res = DefWindowProcW(hWnd, msg, wParam, lParam);
+            // Draw the app icon in the title bar caption area
+            {
+                HDC hdc = GetWindowDC(hWnd);
+                if (hdc) {
+                    // Get frame metrics
+                    int frameX = GetSystemMetrics(SM_CXFRAME) +
+                                 GetSystemMetrics(SM_CXPADDEDBORDER);
+                    int frameY = GetSystemMetrics(SM_CYFRAME) +
+                                 GetSystemMetrics(SM_CXPADDEDBORDER);
+                    int captionH = GetSystemMetrics(SM_CYCAPTION);
+                    int iconSize = GetSystemMetrics(SM_CXSMICON);
+                    int iconX = frameX + 4;
+                    int iconY = frameY + (captionH - iconSize) / 2;
+                    HICON hIcon = reinterpret_cast<HICON>(
+                        SendMessageW(hWnd, WM_GETICON, ICON_SMALL, 0));
+                    if (!hIcon) {
+                        hIcon = reinterpret_cast<HICON>(
+                            GetClassLongPtrW(hWnd, GCLP_HICONSM));
+                    }
+                    if (hIcon) {
+                        DrawIconEx(hdc, iconX, iconY, hIcon,
+                                   iconSize, iconSize, 0, nullptr, DI_NORMAL);
+                    }
+                    ReleaseDC(hWnd, hdc);
+                }
+            }
+            return res;
+        }
+
         case WM_THEMECHANGED:
             if (state) {
                 state->checkAccessibilitySettings();
@@ -332,14 +365,26 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     // Enable per-monitor DPI awareness
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
+    // Load icons at proper sizes for DPI-aware display
+    HICON hIconLarge = static_cast<HICON>(LoadImageW(
+        hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+        LR_DEFAULTCOLOR));
+    HICON hIconSmall = static_cast<HICON>(LoadImageW(
+        hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR));
+
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
+    wc.hIcon = hIconLarge;
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32513)); // IDC_IBEAM
     wc.lpszClassName = kWindowClassName;
     wc.hbrBackground = nullptr;
+    wc.hIconSm = hIconSmall;
 
     if (!RegisterClassExW(&wc)) return 1;
 
@@ -360,6 +405,10 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
         nullptr, nullptr, hInstance, state.get());
 
     if (!hwnd) return 1;
+
+    // Explicitly set icons on the window for title bar / taskbar / Alt+Tab
+    SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIconLarge));
+    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIconSmall));
 
     state->applyTitleBarTheme(hwnd);
     state->applyBackgroundBlur(hwnd);

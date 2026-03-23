@@ -374,7 +374,7 @@ void GtkPlatformHost::showNotification(const std::string& title,
     GNotification* notification = g_notification_new(title.c_str());
     g_notification_set_body(notification, body.c_str());
 
-    GIcon* icon = g_themed_icon_new("utilities-terminal");
+    GIcon* icon = g_themed_icon_new("breadterminal");
     g_notification_set_icon(notification, icon);
     g_object_unref(icon);
 

@@ -32,7 +32,10 @@ void initNotificationIcon(HWND hwnd) {
     nid.uID = kNotifyIconId;
     nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
     nid.uCallbackMessage = kNotifyCallbackMsg;
-    nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+    nid.hIcon = static_cast<HICON>(LoadImageW(
+        GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR));
     wcscpy_s(nid.szTip, L"BreadTerminal");
 
     Shell_NotifyIconW(NIM_ADD, &nid);

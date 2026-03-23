@@ -121,6 +121,8 @@ public:
         bool hover_close = false;              // mouse over close button area
         bool hover_plus = false;               // mouse over "+" button
         bool visible = false;
+        // Process name -> icon codepoint hex string (from config)
+        const std::unordered_map<std::string, std::string>* process_icon_map = nullptr;
     };
 
     /// Set tab bar content for rendering.
