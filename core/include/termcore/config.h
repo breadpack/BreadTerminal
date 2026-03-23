@@ -81,7 +81,8 @@ struct Config {
 
     // Background transparency
     float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
-    int background_blur = 0;           // 0=none, 1=low, 2=medium, 3=high
+    float background_blur = 0.5f;       // reserved for future use
+    std::string background_blur_mode = "none";  // "none", "acrylic" (DWM)
 
     // Sidebar
     bool sidebar_visible = true;

@@ -248,6 +248,8 @@ void TerminalWindowState::onFontChanged(float cellW, float cellH) {
 
 void TerminalWindowState::onColorsChanged() {
     applyTitleBarTheme(hwnd);
+    applyOpacity(hwnd);
+    applyBackgroundBlur(hwnd);
     updateTabBar();
     needsRender = true;
     if (renderer) renderer->markContentDirty();

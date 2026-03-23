@@ -35,12 +35,14 @@ std::string SettingsModel::stringValue(const Config& cfg, const std::string& key
     if (key == "theme") return cfg.theme;
     if (key == "default_profile_id") return cfg.default_profile_id;
     if (key == "keybinding_preset") return cfg.keybinding_preset;
+    if (key == "background_blur_mode") return cfg.background_blur_mode;
     return {};
 }
 
 float SettingsModel::floatValue(const Config& cfg, const std::string& key) {
     if (key == "font_size") return cfg.font_size;
     if (key == "background_opacity") return cfg.background_opacity;
+    if (key == "background_blur") return cfg.background_blur;
     if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
     if (key == "minimum_contrast") return cfg.minimum_contrast;
     return 0.0f;
@@ -51,7 +53,6 @@ int SettingsModel::intValue(const Config& cfg, const std::string& key) {
     if (key == "window_height") return cfg.window_height;
     if (key == "window_padding") return cfg.window_padding;
     if (key == "scrollback_limit") return cfg.scrollback_limit;
-    if (key == "background_blur") return cfg.background_blur;
     return 0;
 }
 
@@ -79,18 +80,18 @@ static bool isStringKey(const std::string& key) {
     return key == "shell" || key == "cursor_style" ||
            key == "clipboard_paste_protection" || key == "font_family" ||
            key == "theme" || key == "default_profile_id" ||
-           key == "keybinding_preset";
+           key == "keybinding_preset" || key == "background_blur_mode";
 }
 
 static bool isFloatKey(const std::string& key) {
     return key == "font_size" || key == "background_opacity" ||
-           key == "cursor_blink_interval" || key == "minimum_contrast";
+           key == "background_blur" || key == "cursor_blink_interval" ||
+           key == "minimum_contrast";
 }
 
 static bool isIntKey(const std::string& key) {
     return key == "window_width" || key == "window_height" ||
-           key == "window_padding" || key == "scrollback_limit" ||
-           key == "background_blur";
+           key == "window_padding" || key == "scrollback_limit";
 }
 
 static bool isBoolKey(const std::string& key) {
@@ -154,8 +155,8 @@ void SettingsModel::buildCategories() {
     categories_.push_back({"appearance.opacity", "Opacity & Blur", "appearance", SectionType::Settings, {
         {"background_opacity", "Background Opacity", "Window background opacity (0 = transparent, 1 = opaque).",
          SettingType::Slider, {0.0f, 1.0f, 0.01f, {}}, false},
-        {"background_blur", "Background Blur", "Blur level applied behind the window.",
-         SettingType::Dropdown, {0, 0, 0, {"None", "Low", "Medium", "High"}}, false},
+        {"background_blur_mode", "Blur Mode", "None: no blur. Acrylic: OS-managed desktop blur.",
+         SettingType::Dropdown, {0, 0, 0, {"none", "acrylic"}}, false},
     }});
 
     categories_.push_back({"appearance.cursor", "Cursor", "appearance", SectionType::Settings, {

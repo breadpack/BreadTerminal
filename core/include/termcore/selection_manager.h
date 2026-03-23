@@ -26,6 +26,10 @@ public:
     GridPos start() const { return start_; }
     GridPos end() const { return end_; }
 
+    /// Adjust selection coordinates when viewport scrolls.
+    /// rowDelta > 0 means content moved down (scroll up), selection rows increase.
+    void adjustForScroll(int rowDelta);
+
     std::string getSelectedText(const Screen& screen) const;
 
 private:

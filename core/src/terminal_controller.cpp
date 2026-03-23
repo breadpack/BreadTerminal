@@ -292,13 +292,25 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
             break;
         case InputMouseEvent::ScrollUp:
             if (scr) {
-                scr->scrollViewportUp(e.scrollLines > 0 ? e.scrollLines : 3);
+                int lines = e.scrollLines > 0 ? e.scrollLines : 3;
+                int oldOffset = scr->viewportOffset();
+                scr->scrollViewportUp(lines);
+                int delta = scr->viewportOffset() - oldOffset;
+                if (delta != 0 && (selMgr_.hasSelection() || selMgr_.isDragging())) {
+                    selMgr_.adjustForScroll(delta);
+                }
                 needsRender_ = true;
             }
             break;
         case InputMouseEvent::ScrollDown:
             if (scr) {
-                scr->scrollViewportDown(e.scrollLines > 0 ? e.scrollLines : 3);
+                int lines = e.scrollLines > 0 ? e.scrollLines : 3;
+                int oldOffset = scr->viewportOffset();
+                scr->scrollViewportDown(lines);
+                int delta = scr->viewportOffset() - oldOffset;
+                if (delta != 0 && (selMgr_.hasSelection() || selMgr_.isDragging())) {
+                    selMgr_.adjustForScroll(delta);
+                }
                 needsRender_ = true;
             }
             break;
@@ -519,6 +531,15 @@ void TerminalController::handleAction(Action action) {
                     if (host_) {
                         host_->setClipboardText(text);
                     }
+                }
+                selMgr_.clear();
+                needsRender_ = true;
+            } else {
+                // No selection: send ^C (ETX, 0x03) to PTY as interrupt signal
+                auto* pty = tabCtrl_ ? tabCtrl_->activePty() : nullptr;
+                if (pty) {
+                    const char etx = '\x03';
+                    pty->write(&etx, 1);
                 }
             }
             break;

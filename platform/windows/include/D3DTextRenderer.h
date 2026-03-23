@@ -209,6 +209,22 @@ public:
     /// Set command palette state for rendering.
     void setCommandPalette(const CommandPaletteInfo& info);
 
+    /// URL highlight for a range of cells on a row.
+    struct UrlHighlight {
+        int row;
+        int startCol;
+        int endCol;       // exclusive
+        bool hovered;
+        uint32_t color;   // RGB color for the underline
+    };
+
+    /// Set URL highlights for rendering.
+    void setUrlHighlights(const std::vector<UrlHighlight>& highlights);
+
+    /// Set background opacity (0.0-1.0). Only affects background cells and clear color.
+    /// Text and foreground elements remain fully opaque.
+    void setBackgroundOpacity(float opacity);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

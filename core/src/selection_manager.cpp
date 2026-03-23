@@ -91,6 +91,12 @@ void SelectionManager::selectAll(int rows, int cols) {
     isDragging_ = false;
 }
 
+void SelectionManager::adjustForScroll(int rowDelta) {
+    if (!hasSelection_ && !isDragging_) return;
+    start_.row += rowDelta;
+    end_.row += rowDelta;
+}
+
 void SelectionManager::clear() {
     hasSelection_ = false;
     isDragging_ = false;

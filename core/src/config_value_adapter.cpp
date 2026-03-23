@@ -17,6 +17,7 @@ std::string getConfigString(const Config& cfg, const std::string& key) {
     if (key == "quick_terminal_hotkey") return cfg.quick_terminal_hotkey;
     if (key == "default_profile_id") return cfg.default_profile_id;
     if (key == "keybinding_preset") return cfg.keybinding_preset;
+    if (key == "background_blur_mode") return cfg.background_blur_mode;
     return {};
 }
 
@@ -29,6 +30,7 @@ void setConfigString(Config& cfg, const std::string& key, const std::string& val
     else if (key == "quick_terminal_hotkey") cfg.quick_terminal_hotkey = val;
     else if (key == "default_profile_id") cfg.default_profile_id = val;
     else if (key == "keybinding_preset") cfg.keybinding_preset = val;
+    else if (key == "background_blur_mode") cfg.background_blur_mode = val;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,7 +42,6 @@ int getConfigInt(const Config& cfg, const std::string& key) {
     if (key == "window_height") return cfg.window_height;
     if (key == "window_padding") return cfg.window_padding;
     if (key == "scrollback_limit") return cfg.scrollback_limit;
-    if (key == "background_blur") return cfg.background_blur;
     if (key == "sidebar_width") return cfg.sidebar_width;
     return 0;
 }
@@ -50,7 +51,6 @@ void setConfigInt(Config& cfg, const std::string& key, int val) {
     else if (key == "window_height") cfg.window_height = val;
     else if (key == "window_padding") cfg.window_padding = val;
     else if (key == "scrollback_limit") cfg.scrollback_limit = val;
-    else if (key == "background_blur") cfg.background_blur = val;
     else if (key == "sidebar_width") cfg.sidebar_width = val;
 }
 
@@ -61,6 +61,7 @@ void setConfigInt(Config& cfg, const std::string& key, int val) {
 float getConfigFloat(const Config& cfg, const std::string& key) {
     if (key == "font_size") return cfg.font_size;
     if (key == "background_opacity") return cfg.background_opacity;
+    if (key == "background_blur") return cfg.background_blur;
     if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
     if (key == "minimum_contrast") return cfg.minimum_contrast;
     if (key == "notify_after_seconds") return cfg.notify_after_seconds;
@@ -70,6 +71,7 @@ float getConfigFloat(const Config& cfg, const std::string& key) {
 void setConfigFloat(Config& cfg, const std::string& key, float val) {
     if (key == "font_size") cfg.font_size = val;
     else if (key == "background_opacity") cfg.background_opacity = val;
+    else if (key == "background_blur") cfg.background_blur = val;
     else if (key == "cursor_blink_interval") cfg.cursor_blink_interval = val;
     else if (key == "minimum_contrast") cfg.minimum_contrast = val;
     else if (key == "notify_after_seconds") cfg.notify_after_seconds = val;

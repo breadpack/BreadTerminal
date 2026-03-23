@@ -36,6 +36,15 @@ int D3DTextRenderer::Impl::searchHighlightType(int row, int col) const {
     return 0;
 }
 
+const D3DTextRenderer::UrlHighlight* D3DTextRenderer::Impl::urlHighlightAt(int row, int col) const {
+    for (const auto& h : urlHighlights) {
+        if (h.row == row && col >= h.startCol && col < h.endCol) {
+            return &h;
+        }
+    }
+    return nullptr;
+}
+
 void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
         return;
@@ -78,7 +87,8 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 std::swap(inst.fg_color[3], inst.bg_color[3]);
             }
 
-            if (isCellSelected(row, col)) {
+            bool selected = isCellSelected(row, col);
+            if (selected) {
                 std::swap(inst.fg_color[0], inst.bg_color[0]);
                 std::swap(inst.fg_color[1], inst.bg_color[1]);
                 std::swap(inst.fg_color[2], inst.bg_color[2]);
@@ -98,8 +108,68 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
             }
 
+            // Apply background opacity (premultiplied alpha) for non-highlighted cells
+            if (sht == 0 && !selected) {
+                float a = backgroundOpacity;
+                inst.bg_color[0] *= a;
+                inst.bg_color[1] *= a;
+                inst.bg_color[2] *= a;
+                inst.bg_color[3] *= a;
+            }
+
             inst.flags = 4;  // is_bg_pass
             cellInstances.push_back(inst);
+        }
+    }
+
+    // Pass 1b: Margin quads — fill gaps between cell grid and viewport edges
+    // so margins have the same opacity as the cell background.
+    {
+        float gridRight  = cols * cellW;
+        float gridBottom = rows * cellH + gridOffsetY;
+
+        float defaultBg[4];
+        colorFromRGBA(colors.resolveBg(colors.background), defaultBg);
+        float a = backgroundOpacity;
+        defaultBg[0] *= a;
+        defaultBg[1] *= a;
+        defaultBg[2] *= a;
+        defaultBg[3] *= a;
+
+        // Right margin
+        if (gridRight < viewportWidth) {
+            D3DCellInstance inst = {};
+            inst.position[0] = gridRight;
+            inst.position[1] = 0.0f;
+            inst.atlas_size[0] = viewportWidth - gridRight;
+            inst.atlas_size[1] = viewportHeight;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;  // render as rect (cursor/underline path)
+            cellInstances.push_back(inst);
+        }
+
+        // Bottom margin
+        if (gridBottom < viewportHeight) {
+            D3DCellInstance inst = {};
+            inst.position[0] = 0.0f;
+            inst.position[1] = gridBottom;
+            inst.atlas_size[0] = gridRight;  // only up to grid width (right margin covers rest)
+            inst.atlas_size[1] = viewportHeight - gridBottom;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;  // render as rect
+            cellInstances.push_back(inst);
+        }
+
+        // Top margin (above grid, when no tab bar)
+        if (gridOffsetY > 0.0f) {
+            // Tab bar area is handled by overlay passes; if no tab bar but
+            // there's an offset, fill it.
         }
     }
 
@@ -250,6 +320,37 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 default:
                     break;
             }
+        }
+    }
+
+    // Pass 3b: URL underlines (single underline in URL color)
+    for (const auto& uh : urlHighlights) {
+        float ulColor[4];
+        colorFromRGBA(uh.color, ulColor);
+        // Hovered URLs get brighter alpha
+        if (uh.hovered) {
+            ulColor[3] = 1.0f;
+        } else {
+            ulColor[3] = 0.6f;
+        }
+        for (int col = uh.startCol; col < uh.endCol && col < cols; ++col) {
+            // Skip if cell already has a terminal underline
+            const TermCell& cell = screen.cellAt(uh.row, col);
+            if (cell.underline_style != 0 || (cell.attributes & AttrUnderline)) continue;
+
+            float baseY = uh.row * cellH + gridOffsetY;
+            D3DCellInstance inst = {};
+            inst.position[0] = col * cellW;
+            inst.position[1] = baseY + cellH - 2.0f;
+            inst.atlas_size[0] = cellW;
+            inst.atlas_size[1] = 1.0f;
+            inst.bg_color[0] = ulColor[0];
+            inst.bg_color[1] = ulColor[1];
+            inst.bg_color[2] = ulColor[2];
+            inst.bg_color[3] = ulColor[3];
+            inst.flags = 8;       // is_underline (bit3 for underline rect rendering)
+            inst.extra_flags = 1; // single underline style
+            cellInstances.push_back(inst);
         }
     }
 

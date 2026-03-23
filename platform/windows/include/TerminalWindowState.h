@@ -26,6 +26,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <dcomp.h>
 #include <wrl/client.h>
 
 #include <chrono>
@@ -47,6 +48,12 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     ComPtr<ID3D11DeviceContext> deviceContext;
     ComPtr<IDXGISwapChain1> swapChain;
     ComPtr<ID3D11RenderTargetView> rtv;
+
+    // DirectComposition for per-pixel alpha transparency
+    ComPtr<IDCompositionDevice> dcompDevice;
+    ComPtr<IDCompositionTarget> dcompTarget;
+    ComPtr<IDCompositionVisual> dcompVisual;
+    bool useComposition = false;  // true when opacity < 1 or blur > 0
 
     // Core controller — owns all terminal state
     std::unique_ptr<termcore::TerminalController> controller;
@@ -117,9 +124,10 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // --- Fullscreen ---
     void toggleFullscreen() override;
 
-    // --- DWM title bar / blur ---
+    // --- DWM title bar / blur / opacity ---
     void applyTitleBarTheme(HWND hwnd);
     void applyBackgroundBlur(HWND hwnd);
+    void applyOpacity(HWND hwnd);
 
     // --- DPI ---
     void handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRect);

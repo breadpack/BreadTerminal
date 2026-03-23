@@ -33,6 +33,12 @@ struct D3DTextRenderer::Impl {
     std::vector<D3DTextRenderer::SearchHighlight> searchHighlights;
     int searchCurrentIndex = -1;
 
+    // URL highlight state
+    std::vector<D3DTextRenderer::UrlHighlight> urlHighlights;
+
+    // Background opacity (0.0-1.0), affects only bg cells and clear color
+    float backgroundOpacity = 1.0f;
+
     // Cursor blink state
     bool cursorBlinkVisible = true;
     bool lastBlinkState = true;
@@ -115,6 +121,7 @@ struct D3DTextRenderer::Impl {
     static void colorFromRGBA(uint32_t rgba, float out[4]);
     bool isCellSelected(int row, int col) const;
     int searchHighlightType(int row, int col) const;
+    const D3DTextRenderer::UrlHighlight* urlHighlightAt(int row, int col) const;
     void buildCellBuffer(const Screen& screen);
     void appendCursorInstances(const Screen& screen, float cellW, float cellH,
                                float gridOffsetY);

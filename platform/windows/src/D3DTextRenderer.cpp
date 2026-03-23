@@ -92,27 +92,30 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
         if (ul_style == 3u) { // curly - sine wave
             float wave = sin(local_x * 3.14159 * 2.0) * 0.35 + 0.5;
             float dist = abs(local_y - wave);
-            float alpha = 1.0 - smoothstep(0.0, 0.3, dist);
-            return float4(input.bg_color.rgb, alpha);
+            float a = 1.0 - smoothstep(0.0, 0.3, dist);
+            return float4(input.bg_color.rgb * a, a);
         }
         if (ul_style == 4u) { // dotted
-            float pattern = step(0.5, frac(local_x * 4.0));
-            return float4(input.bg_color.rgb, pattern);
+            float a = step(0.5, frac(local_x * 4.0));
+            return float4(input.bg_color.rgb * a, a);
         }
         if (ul_style == 5u) { // dashed
-            float pattern = step(0.33, frac(local_x * 2.0));
-            return float4(input.bg_color.rgb, pattern);
+            float a = step(0.33, frac(local_x * 2.0));
+            return float4(input.bg_color.rgb * a, a);
         }
-        return input.bg_color; // single, double = solid
+        return input.bg_color; // single, double = solid (already premultiplied)
     }
 
     float4 color = float4(0.0, 0.0, 0.0, 0.0);
     if (has_glyph) {
         if (is_color) {
-            color = atlas_bgra.Sample(atlas_sampler, input.texCoord);
+            // Color emoji: already in BGRA, premultiply
+            float4 tex = atlas_bgra.Sample(atlas_sampler, input.texCoord);
+            color = float4(tex.rgb * tex.a, tex.a);
         } else {
+            // Mono glyph: alpha from R8 atlas, premultiply fg color
             float alpha = atlas_r8.Sample(atlas_sampler, input.texCoord).r;
-            color = float4(input.fg_color.rgb, alpha);
+            color = float4(input.fg_color.rgb * alpha, alpha);
         }
     }
     return color;
@@ -130,7 +133,12 @@ bool D3DTextRenderer::Impl::buildShaders() {
         "VSMain", "vs_5_0",
         D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
         &vsBlob, &errorBlob);
-    if (errorBlob) errorBlob->Release();
+    if (errorBlob) {
+        OutputDebugStringA("[BreadTerminal] VS compile error: ");
+        OutputDebugStringA(static_cast<const char*>(errorBlob->GetBufferPointer()));
+        OutputDebugStringA("\n");
+        errorBlob->Release();
+    }
     if (FAILED(hr)) return false;
 
     hr = device->CreateVertexShader(
@@ -145,7 +153,12 @@ bool D3DTextRenderer::Impl::buildShaders() {
         "PSMain", "ps_5_0",
         D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
         &vsBlob, &errorBlob);
-    if (errorBlob) errorBlob->Release();
+    if (errorBlob) {
+        OutputDebugStringA("[BreadTerminal] PS compile error: ");
+        OutputDebugStringA(static_cast<const char*>(errorBlob->GetBufferPointer()));
+        OutputDebugStringA("\n");
+        errorBlob->Release();
+    }
     if (FAILED(hr)) return false;
 
     hr = device->CreatePixelShader(
@@ -176,13 +189,15 @@ bool D3DTextRenderer::Impl::createResources() {
     hr = device->CreateSamplerState(&sampDesc, &sampler);
     if (FAILED(hr)) return false;
 
+    // Premultiplied alpha blending — required for DirectComposition transparency.
+    // Source colors are pre-multiplied by their alpha, so SrcBlend = ONE.
     D3D11_BLEND_DESC blendDesc = {};
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
-    blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
     blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
     blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
     blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-    blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
     blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
     blendDesc.RenderTarget[0].RenderTargetWriteMask =
         D3D11_COLOR_WRITE_ENABLE_ALL;
@@ -267,7 +282,21 @@ void D3DTextRenderer::setFontStack(FontCollection* collection,
 }
 
 void D3DTextRenderer::render(const Screen& screen) {
-    if (!impl_->vertexShader || !impl_->context || !impl_->rtv) return;
+    if (!impl_->context || !impl_->rtv) return;
+
+    // Always clear to opaque background even if shaders failed,
+    // so the window is never invisible with DirectComposition.
+    if (!impl_->vertexShader) {
+        uint32_t bg = screen.dynamicColors().background;
+        float fallback[4] = {
+            static_cast<float>((bg >> 16) & 0xFF) / 255.0f,
+            static_cast<float>((bg >> 8) & 0xFF) / 255.0f,
+            static_cast<float>(bg & 0xFF) / 255.0f,
+            1.0f
+        };
+        impl_->context->ClearRenderTargetView(impl_->rtv, fallback);
+        return;
+    }
 
     // Determine if only cursor blink changed (no content rebuild needed)
     bool blinkChanged = (impl_->cursorBlinkVisible != impl_->lastBlinkState);
@@ -330,15 +359,8 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->context->Unmap(impl_->constantBuffer, 0);
     }
 
-    // Use the terminal's default background color for clear, so edges
-    // beyond the cell grid still show the correct background.
-    float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    {
-        uint32_t bg = screen.dynamicColors().background;
-        clearColor[0] = static_cast<float>((bg >> 16) & 0xFF) / 255.0f;
-        clearColor[1] = static_cast<float>((bg >> 8) & 0xFF) / 255.0f;
-        clearColor[2] = static_cast<float>(bg & 0xFF) / 255.0f;
-    }
+    // Clear to transparent — bg cells and margin quads provide all opacity.
+    float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     impl_->context->ClearRenderTargetView(impl_->rtv, clearColor);
 
     impl_->context->OMSetRenderTargets(1, &impl_->rtv, nullptr);
@@ -399,6 +421,16 @@ void D3DTextRenderer::setSearchHighlights(
         const std::vector<SearchHighlight>& highlights, int currentIndex) {
     impl_->searchHighlights = highlights;
     impl_->searchCurrentIndex = currentIndex;
+    impl_->contentDirty = true;
+}
+
+void D3DTextRenderer::setUrlHighlights(const std::vector<UrlHighlight>& highlights) {
+    impl_->urlHighlights = highlights;
+    impl_->contentDirty = true;
+}
+
+void D3DTextRenderer::setBackgroundOpacity(float opacity) {
+    impl_->backgroundOpacity = (std::max)(0.0f, (std::min)(1.0f, opacity));
     impl_->contentDirty = true;
 }
 

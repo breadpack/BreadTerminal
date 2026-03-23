@@ -345,29 +345,21 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
 
     auto state = std::make_unique<TerminalWindowState>();
 
-    // Pre-load config for window dimensions and opacity
+    // Pre-load config for window dimensions
     termcore::Config preConfig = termcore::loadConfig();
 
     int winW = preConfig.window_width > 0 ? preConfig.window_width : 800;
     int winH = preConfig.window_height > 0 ? preConfig.window_height : 600;
 
-    DWORD exStyle = 0;
-    if (preConfig.background_opacity < 1.0f) {
-        exStyle |= WS_EX_LAYERED;
-    }
-
+    // WS_EX_NOREDIRECTIONBITMAP: required for DirectComposition per-pixel alpha.
+    // Without it, DWM allocates an opaque redirection surface that hides transparency.
     HWND hwnd = CreateWindowExW(
-        exStyle, kWindowClassName, L"BreadTerminal",
+        WS_EX_NOREDIRECTIONBITMAP, kWindowClassName, L"BreadTerminal",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, winW, winH,
         nullptr, nullptr, hInstance, state.get());
 
     if (!hwnd) return 1;
-
-    if (preConfig.background_opacity < 1.0f) {
-        BYTE alpha = static_cast<BYTE>(preConfig.background_opacity * 255.0f);
-        SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
-    }
 
     state->applyTitleBarTheme(hwnd);
     state->applyBackgroundBlur(hwnd);

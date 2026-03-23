@@ -14,6 +14,8 @@ using termcore::D3DTextRenderer;
 #include <shellapi.h>
 #include <thread>
 
+#pragma comment(lib, "dcomp.lib")
+
 namespace termcore {
     void positionImeWindow(HWND hwnd, int x, int y, int height);
 }
@@ -88,9 +90,9 @@ LRESULT CALLBACK SearchEditSubclassProc(
 bool TerminalWindowState::initD3D(HWND hWnd) {
     hwnd = hWnd;
 
-    // Create D3D11 device
+    // Create D3D11 device with BGRA support (needed for DirectComposition)
     D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-    UINT flags = 0;
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(_DEBUG)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -110,18 +112,62 @@ bool TerminalWindowState::initD3D(HWND hWnd) {
     ComPtr<IDXGIFactory2> factory;
     adapter->GetParent(IID_PPV_ARGS(factory.GetAddressOf()));
 
-    // Create swap chain
+    // Get initial window client size for swap chain
+    RECT clientRect = {};
+    GetClientRect(hWnd, &clientRect);
+    UINT initWidth = (std::max)(1u, static_cast<UINT>(clientRect.right - clientRect.left));
+    UINT initHeight = (std::max)(1u, static_cast<UINT>(clientRect.bottom - clientRect.top));
+
+    // Try composition swap chain (per-pixel alpha for background transparency).
     DXGI_SWAP_CHAIN_DESC1 desc = {};
+    desc.Width = initWidth;
+    desc.Height = initHeight;
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc.BufferCount = 2;
     desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
 
-    hr = factory->CreateSwapChainForHwnd(
-        device.Get(), hWnd, &desc, nullptr, nullptr,
+    hr = factory->CreateSwapChainForComposition(
+        device.Get(), &desc, nullptr,
         swapChain.GetAddressOf());
-    if (FAILED(hr)) return false;
+
+    if (SUCCEEDED(hr)) {
+        // Set up DirectComposition visual tree
+        hr = DCompositionCreateDevice(dxgiDevice.Get(),
+            IID_PPV_ARGS(dcompDevice.GetAddressOf()));
+        if (SUCCEEDED(hr))
+            hr = dcompDevice->CreateTargetForHwnd(hWnd, TRUE,
+                dcompTarget.GetAddressOf());
+        if (SUCCEEDED(hr))
+            hr = dcompDevice->CreateVisual(dcompVisual.GetAddressOf());
+        if (SUCCEEDED(hr))
+            hr = dcompVisual->SetContent(swapChain.Get());
+        if (SUCCEEDED(hr))
+            hr = dcompTarget->SetRoot(dcompVisual.Get());
+        if (SUCCEEDED(hr))
+            hr = dcompDevice->Commit();
+
+        useComposition = SUCCEEDED(hr);
+    }
+
+    if (!useComposition) {
+        // Fallback: standard hwnd swap chain (no per-pixel alpha)
+        OutputDebugStringW(L"[BreadTerminal] DirectComposition failed, falling back to hwnd swap chain\n");
+        desc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+        desc.Width = 0;  // auto-size from hwnd
+        desc.Height = 0;
+        swapChain.Reset();
+        dcompDevice.Reset(); dcompTarget.Reset(); dcompVisual.Reset();
+        hr = factory->CreateSwapChainForHwnd(
+            device.Get(), hWnd, &desc, nullptr, nullptr,
+            swapChain.GetAddressOf());
+        if (FAILED(hr)) return false;
+    } else {
+        OutputDebugStringW(L"[BreadTerminal] DirectComposition active - per-pixel alpha enabled\n");
+        SetWindowTextW(hWnd, L"BreadTerminal");
+    }
 
     createRenderTarget();
     return true;
@@ -270,6 +316,24 @@ void TerminalWindowState::renderFrame() {
         renderer->setSearchHighlights(highlights, currentIdx);
     } else {
         renderer->setSearchHighlights({}, -1);
+    }
+
+    // Update URL highlights on renderer
+    {
+        auto hints = controller->urlHighlight().getRenderHints();
+        uint32_t urlColor = controller->urlHighlight().urlColor();
+        std::vector<termcore::D3DTextRenderer::UrlHighlight> urlHighlights;
+        urlHighlights.reserve(hints.size());
+        for (const auto& h : hints) {
+            urlHighlights.push_back({h.row, h.start_col, h.end_col, h.hovered, urlColor});
+        }
+        renderer->setUrlHighlights(urlHighlights);
+    }
+
+    // Update background opacity on renderer.
+    {
+        const auto& cfg = controller->config();
+        renderer->setBackgroundOpacity(cfg.background_opacity);
     }
 
     renderer->render(*screen);
@@ -436,20 +500,116 @@ void TerminalWindowState::applyTitleBarTheme(HWND hwnd) {
 
 // --- DWM background blur ---
 
+// ---------------------------------------------------------------------------
+// Background blur: DWMWA_SYSTEMBACKDROP_TYPE (Win11) + SetWindowCompositionAttribute fallback
+// ---------------------------------------------------------------------------
+
+// Win11 22621+ documented API (DWMWA_SYSTEMBACKDROP_TYPE = attribute 38)
+// NOTE: Do NOT use DwmExtendFrameIntoClientArea — it creates an opaque DWM
+// surface that blocks our DirectComposition swap chain transparency.
+static bool tryDwmSystemBackdrop(HWND hwnd, bool enable) {
+    // DWMSBT_NONE = 1, DWMSBT_TRANSIENTWINDOW = 3 (Desktop Acrylic)
+    int backdrop = enable ? 3 : 1;
+    HRESULT hr = DwmSetWindowAttribute(hwnd, 38, &backdrop, sizeof(backdrop));
+    if (SUCCEEDED(hr)) {
+        return true;
+    }
+    return false;
+}
+
+// Win10 fallback: undocumented SetWindowCompositionAttribute
+namespace {
+
+enum ACCENT_STATE {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+};
+
+struct ACCENT_POLICY {
+    ACCENT_STATE AccentState;
+    DWORD AccentFlags;
+    DWORD GradientColor;
+    DWORD AnimationId;
+};
+
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    DWORD Attrib;
+    PVOID pvData;
+    SIZE_T cbData;
+};
+
+constexpr DWORD WCA_ACCENT_POLICY = 19;
+
+using SetWindowCompositionAttributeFn = BOOL(WINAPI*)(HWND, WINDOWCOMPOSITIONATTRIBDATA*);
+
+SetWindowCompositionAttributeFn getSetWindowCompositionAttribute() {
+    static auto fn = reinterpret_cast<SetWindowCompositionAttributeFn>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+    return fn;
+}
+
+} // anonymous namespace
+
 void TerminalWindowState::applyBackgroundBlur(HWND hwnd) {
     const auto& config = controller ? controller->config() : termcore::Config{};
-    if (config.background_blur <= 0) return;
+    // DWM blur only applies in "acrylic" mode.
+    bool wantAcrylicBlur = config.background_blur_mode == "acrylic";
 
-    enum { DWMSBT_NONE = 1, DWMSBT_MAINWINDOW = 2, DWMSBT_TRANSIENTWINDOW = 3, DWMSBT_TABBEDWINDOW = 4 };
-    int backdrop = DWMSBT_TRANSIENTWINDOW;
-    HRESULT hr = DwmSetWindowAttribute(hwnd, 38, &backdrop, sizeof(backdrop));
+    // Skip redundant calls — blur on/off state didn't change
+    static bool currentBlurState = false;
+    if (wantAcrylicBlur == currentBlurState) return;
+    currentBlurState = wantAcrylicBlur;
 
-    if (FAILED(hr)) {
-        DWM_BLURBEHIND bb = {};
-        bb.dwFlags = DWM_BB_ENABLE;
-        bb.fEnable = TRUE;
-        DwmEnableBlurBehindWindow(hwnd, &bb);
+    // When disabling, explicitly reset both APIs to clear any prior state
+    if (!wantAcrylicBlur) {
+        tryDwmSystemBackdrop(hwnd, false);
+        auto setWCA = getSetWindowCompositionAttribute();
+        if (setWCA) {
+            ACCENT_POLICY accent = {};
+            accent.AccentState = ACCENT_DISABLED;
+            WINDOWCOMPOSITIONATTRIBDATA data = {};
+            data.Attrib = WCA_ACCENT_POLICY;
+            data.pvData = &accent;
+            data.cbData = sizeof(accent);
+            setWCA(hwnd, &data);
+        }
+        return;
     }
+
+    // Try Win11 documented API first
+    if (tryDwmSystemBackdrop(hwnd, true)) {
+        return;
+    }
+
+    // Fallback: SetWindowCompositionAttribute (Win10)
+    auto setWCA = getSetWindowCompositionAttribute();
+    if (!setWCA) return;
+
+    ACCENT_POLICY accent = {};
+    accent.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+    // Minimal tint alpha (0x01) — swap chain's backgroundOpacity controls visibility
+    uint32_t bg = config.background;
+    BYTE r = static_cast<BYTE>((bg >> 16) & 0xFF);
+    BYTE g = static_cast<BYTE>((bg >> 8) & 0xFF);
+    BYTE b = static_cast<BYTE>(bg & 0xFF);
+    accent.GradientColor = (0x01u << 24)
+                         | (static_cast<DWORD>(b) << 16)
+                         | (static_cast<DWORD>(g) << 8)
+                         | r;
+
+    WINDOWCOMPOSITIONATTRIBDATA data = {};
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &accent;
+    data.cbData = sizeof(accent);
+    setWCA(hwnd, &data);
+}
+
+void TerminalWindowState::applyOpacity(HWND hwnd) {
+    // Opacity is applied via premultiplied alpha in the composition swap chain.
+    // The renderer's backgroundOpacity is set each frame in renderFrame().
+    // Just mark dirty so next frame picks up the new value.
+    needsRender = true;
+    if (renderer) renderer->markContentDirty();
 }
 
 // --- DPI ---
@@ -468,233 +628,9 @@ void TerminalWindowState::handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRe
     needsRender = true;
 }
 
-// --- IPlatformHost implementation ---
-
-void TerminalWindowState::invalidate() {
-    needsRender = true;
-}
-
-void TerminalWindowState::getViewportSize(int& w, int& h) {
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    w = rc.right - rc.left;
-    h = rc.bottom - rc.top;
-}
-
-std::string TerminalWindowState::getClipboardText() {
-    std::string utf8;
-    if (!OpenClipboard(hwnd)) return utf8;
-    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
-    if (hData) {
-        const wchar_t* pData = static_cast<const wchar_t*>(GlobalLock(hData));
-        if (pData) {
-            int wlen = static_cast<int>(wcslen(pData));
-            int utf8Len = WideCharToMultiByte(CP_UTF8, 0, pData, wlen,
-                                               nullptr, 0, nullptr, nullptr);
-            if (utf8Len > 0) {
-                utf8.resize(utf8Len);
-                WideCharToMultiByte(CP_UTF8, 0, pData, wlen,
-                                    &utf8[0], utf8Len, nullptr, nullptr);
-            }
-            GlobalUnlock(hData);
-        }
-    }
-    CloseClipboard();
-    return utf8;
-}
-
-void TerminalWindowState::setClipboardText(const std::string& text) {
-    if (text.empty()) return;
-
-    int wlen = MultiByteToWideChar(CP_UTF8, 0,
-                                    text.c_str(), static_cast<int>(text.size()),
-                                    nullptr, 0);
-    if (wlen <= 0) return;
-
-    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (wlen + 1) * sizeof(wchar_t));
-    if (!hMem) return;
-
-    wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
-    if (pMem) {
-        MultiByteToWideChar(CP_UTF8, 0,
-                            text.c_str(), static_cast<int>(text.size()),
-                            pMem, wlen);
-        pMem[wlen] = L'\0';
-        GlobalUnlock(hMem);
-
-        if (OpenClipboard(hwnd)) {
-            EmptyClipboard();
-            SetClipboardData(CF_UNICODETEXT, hMem);
-            CloseClipboard();
-        } else {
-            GlobalFree(hMem);
-        }
-    } else {
-        GlobalFree(hMem);
-    }
-}
-
-void TerminalWindowState::setWindowTitle(const std::string& title) {
-    int wlen = MultiByteToWideChar(CP_UTF8, 0,
-                                    title.c_str(), static_cast<int>(title.size()),
-                                    nullptr, 0);
-    if (wlen > 0) {
-        std::wstring wtitle(wlen, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0,
-                            title.c_str(), static_cast<int>(title.size()),
-                            &wtitle[0], wlen);
-        SetWindowTextW(hwnd, wtitle.c_str());
-    }
-}
-
-void TerminalWindowState::closeWindow() {
-    PostMessageW(hwnd, WM_CLOSE, 0, 0);
-}
-
-void TerminalWindowState::showConfirmDialog(const std::string& msg,
-                                             std::function<void(bool)> cb) {
-    // Run dialog in a separate thread to avoid blocking the event loop
-    std::string capturedMsg = msg;
-    HWND capturedHwnd = hwnd;
-    std::thread([capturedMsg, capturedHwnd, cb = std::move(cb)]() {
-        int wlen = MultiByteToWideChar(CP_UTF8, 0,
-                                        capturedMsg.c_str(),
-                                        static_cast<int>(capturedMsg.size()),
-                                        nullptr, 0);
-        std::wstring wmsg(wlen, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0,
-                            capturedMsg.c_str(),
-                            static_cast<int>(capturedMsg.size()),
-                            &wmsg[0], wlen);
-
-        int result = MessageBoxW(capturedHwnd, wmsg.c_str(),
-                                 L"BreadTerminal",
-                                 MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
-        if (cb) cb(result == IDYES);
-    }).detach();
-}
-
-void TerminalWindowState::showSearchBar() {
-    if (searchActive && searchEditHwnd) {
-        SetFocus(searchEditHwnd);
-        SendMessageW(searchEditHwnd, EM_SETSEL, 0, -1);
-        return;
-    }
-
-    searchActive = true;
-
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-
-    constexpr int kSearchBarWidth = 300;
-    constexpr int kSearchBarHeight = 24;
-    constexpr int kSearchBarMargin = 8;
-
-    int x = rc.right - kSearchBarWidth - kSearchBarMargin;
-    int y = kSearchBarMargin;
-
-    searchEditHwnd = CreateWindowExW(
-        0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-        x, y, kSearchBarWidth, kSearchBarHeight,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchEditId)),
-        GetModuleHandleW(nullptr),
-        nullptr);
-
-    if (!searchEditHwnd) {
-        searchActive = false;
-        return;
-    }
-
-    // Subclass for Enter/Escape handling
-    SetWindowSubclass(searchEditHwnd, SearchEditSubclassProc,
-                      kSearchEditSubclassId,
-                      reinterpret_cast<DWORD_PTR>(this));
-
-    // Set font to match terminal feel
-    HFONT hFont = CreateFontW(
-        -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-        L"Consolas");
-    if (hFont) {
-        SendMessageW(searchEditHwnd, WM_SETFONT,
-                     reinterpret_cast<WPARAM>(hFont), TRUE);
-    }
-
-    SetFocus(searchEditHwnd);
-}
-
-void TerminalWindowState::hideSearchBar() {
-    if (searchEditHwnd) {
-        HFONT hFont = reinterpret_cast<HFONT>(
-            SendMessageW(searchEditHwnd, WM_GETFONT, 0, 0));
-        DestroyWindow(searchEditHwnd);
-        if (hFont) {
-            DeleteObject(hFont);
-        }
-        searchEditHwnd = nullptr;
-    }
-
-    searchActive = false;
-
-    // Clear search highlights from renderer
-    if (renderer) {
-        renderer->setSearchHighlights({}, -1);
-    }
-
-    SetFocus(hwnd);
-    needsRender = true;
-}
-
-void TerminalWindowState::updateSearchResults(int current, int total) {
-    // For now, we don't display match count in the search bar.
-    // Could add a label next to the edit control in future.
-    (void)current;
-    (void)total;
-    needsRender = true;
-}
-
-void TerminalWindowState::positionIME(int x, int y, int height) {
-    termcore::positionImeWindow(hwnd, x, y, height);
-}
-
-void TerminalWindowState::onFontChanged(float cellW, float cellH) {
-    if (cache) cache->clear();
-    // Recreate atlas to free old font glyphs
-    if (atlas) {
-        atlas = std::make_unique<termcore::GlyphAtlas>();
-        if (renderer) {
-            renderer->setFontStack(fontCollection.get(), cache.get(),
-                                   atlas.get(), rasterizer.get());
-        }
-    }
-    needsRender = true;
-}
-
-void TerminalWindowState::onColorsChanged() {
-    applyTitleBarTheme(hwnd);
-    updateTabBar();
-    needsRender = true;
-}
-
-void TerminalWindowState::onGridSizeChanged(int rows, int cols) {
-    // Resize overlay
-    showResizeOverlay = true;
-    resizeOverlayStart = std::chrono::steady_clock::now();
-    resizeOverlayCols = cols;
-    resizeOverlayRows = rows;
-    updateTabBar();
-    needsRender = true;
-}
-
-void TerminalWindowState::showNotification(const std::string& title,
-                                            const std::string& body) {
-    // TODO: Win32 notification toast
-    (void)title;
-    (void)body;
-}
+// --- IPlatformHost implementation (unique to this file) ---
+// NOTE: Most IPlatformHost methods are in TerminalWindowStateEvents.cpp.
+//       Only methods NOT in that file are defined here.
 
 void TerminalWindowState::showClipboardHistory(
         const std::vector<termcore::ClipboardEntry>& entries) {
@@ -712,23 +648,6 @@ void TerminalWindowState::showClipboardHistory(
         });
 }
 
-void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
-    if (!unifiedSettings) {
-        unifiedSettings = std::make_unique<termcore::UnifiedSettingsWindow>();
-    }
-    unifiedSettings->setConfig(config);
-    unifiedSettings->setSaveCallback([this](const termcore::Config& updated) {
-        if (controller) {
-            controller->onConfigChanged(updated);
-        }
-    });
-    unifiedSettings->show(hwnd);
-}
-
-float TerminalWindowState::dpiScale() {
-    return dpiScale_;
-}
-
 void TerminalWindowState::openUrl(const std::string& url) {
     int wlen = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
     if (wlen > 0) {
@@ -742,33 +661,6 @@ void TerminalWindowState::setMouseCursor(CursorType cursor) {
     HCURSOR hcur = LoadCursor(nullptr,
         cursor == CursorType::Hand ? IDC_HAND : IDC_ARROW);
     SetCursor(hcur);
-}
-
-std::unique_ptr<termcore::Pty> TerminalWindowState::createPty(
-        const termcore::Profile& profile, int rows, int cols) {
-    auto pty = termcore::createPty();
-    if (!pty->spawn(profile.command, profile.args, profile.working_dir, rows, cols)) {
-        OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
-    }
-    return pty;
-}
-
-void TerminalWindowState::repositionSearchBar() {
-    if (!searchEditHwnd) return;
-
-    constexpr int kSearchBarWidth = 300;
-    constexpr int kSearchBarHeight = 24;
-    constexpr int kSearchBarMargin = 8;
-
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-
-    int x = rc.right - kSearchBarWidth - kSearchBarMargin;
-    int y = kSearchBarMargin;
-
-    SetWindowPos(searchEditHwnd, nullptr, x, y,
-                 kSearchBarWidth, kSearchBarHeight,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 // --- Accessibility ---

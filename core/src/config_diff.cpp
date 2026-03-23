@@ -69,7 +69,8 @@ ConfigDirtyFlags diffConfig(const Config& old_cfg, const Config& new_cfg) {
 
     // --- Opacity ---
     if (std::abs(old_cfg.background_opacity - new_cfg.background_opacity) > 0.001f ||
-        old_cfg.background_blur != new_cfg.background_blur) {
+        std::abs(old_cfg.background_blur - new_cfg.background_blur) > 0.001f ||
+        old_cfg.background_blur_mode != new_cfg.background_blur_mode) {
         flags |= ConfigDirtyFlags::Opacity;
     }
 

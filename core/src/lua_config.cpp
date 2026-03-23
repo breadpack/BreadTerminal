@@ -37,22 +37,25 @@ uint32_t parseColor(const sol::object& obj) {
     return 0;
 }
 
-/// Helper: get optional string from table
+/// Helper: get optional string from table (returns default on type mismatch)
 std::string getStr(const sol::table& t, const char* key, const std::string& def) {
     auto v = t[key];
-    return v.valid() ? v.get<std::string>() : def;
+    if (!v.valid() || v.get_type() != sol::type::string) return def;
+    return v.get<std::string>();
 }
 
-/// Helper: get optional float from table
+/// Helper: get optional float from table (accepts number; returns default on type mismatch)
 float getFloat(const sol::table& t, const char* key, float def) {
     auto v = t[key];
-    return v.valid() ? v.get<float>() : def;
+    if (!v.valid() || v.get_type() != sol::type::number) return def;
+    return v.get<float>();
 }
 
-/// Helper: get optional int from table
+/// Helper: get optional int from table (accepts number; returns default on type mismatch)
 int getInt(const sol::table& t, const char* key, int def) {
     auto v = t[key];
-    return v.valid() ? v.get<int>() : def;
+    if (!v.valid() || v.get_type() != sol::type::number) return def;
+    return v.get<int>();
 }
 
 /// Helper: get optional color (hex int or "#RRGGBB" string) from table
@@ -61,10 +64,11 @@ uint32_t getColor(const sol::table& t, const char* key, uint32_t def) {
     return v.valid() ? parseColor(v) : def;
 }
 
-/// Helper: get optional bool from table
+/// Helper: get optional bool from table (returns default on type mismatch)
 bool getBool(const sol::table& t, const char* key, bool def) {
     auto v = t[key];
-    return v.valid() ? v.get<bool>() : def;
+    if (!v.valid() || v.get_type() != sol::type::boolean) return def;
+    return v.get<bool>();
 }
 
 /// Apply a Lua table to Config struct.
@@ -129,7 +133,8 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
 
     // Appearance
     cfg.background_opacity = getFloat(t, "background_opacity", cfg.background_opacity);
-    cfg.background_blur = getInt(t, "background_blur", cfg.background_blur);
+    cfg.background_blur = getFloat(t, "background_blur", cfg.background_blur);
+    cfg.background_blur_mode = getStr(t, "background_blur_mode", cfg.background_blur_mode);
 
     // Sidebar
     cfg.sidebar_visible = getBool(t, "sidebar_visible", cfg.sidebar_visible);
@@ -381,7 +386,7 @@ terminal.config({
 terminal.config({
     theme = "Catppuccin Mocha",
     background_opacity = 1.0,
-    background_blur = 0,  -- 0=none, 1=low, 2=medium, 3=high
+    background_blur = 0.0,  -- 0.0=off, higher=more blur visible
     -- window_padding = 4,
 })
 
