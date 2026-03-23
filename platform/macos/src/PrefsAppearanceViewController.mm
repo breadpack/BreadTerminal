@@ -130,10 +130,11 @@ static uint32_t hexFromColor(NSColor* color) {
     blurLabel.font = [NSFont systemFontOfSize:13];
 
     _blurPopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [_blurPopUp addItemsWithTitles:@[@"None", @"Low", @"Medium", @"High"]];
-    NSInteger blurIdx = _config.background_blur;
-    if (blurIdx < 0) blurIdx = 0;
-    if (blurIdx > 3) blurIdx = 3;
+    [_blurPopUp addItemsWithTitles:@[@"None", @"HUD Window", @"Sheet", @"Under Window"]];
+    NSInteger blurIdx = 0;
+    if (_config.background_blur_material == "hud_window") blurIdx = 1;
+    else if (_config.background_blur_material == "sheet") blurIdx = 2;
+    else if (_config.background_blur_material == "under_window") blurIdx = 3;
     [_blurPopUp selectItemAtIndex:blurIdx];
     _blurPopUp.target = self;
     _blurPopUp.action = @selector(blurChanged:);
@@ -263,7 +264,10 @@ static uint32_t hexFromColor(NSColor* color) {
 
 - (void)blurChanged:(id)sender {
     (void)sender;
-    _config.background_blur = (int)_blurPopUp.indexOfSelectedItem;
+    static const char* materials[] = {"none", "hud_window", "sheet", "under_window"};
+    NSInteger idx = _blurPopUp.indexOfSelectedItem;
+    if (idx >= 0 && idx < 4)
+        _config.background_blur_material = materials[idx];
     if (_saveBlock) _saveBlock(_config);
 }
 

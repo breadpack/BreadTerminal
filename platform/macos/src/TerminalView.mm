@@ -222,8 +222,9 @@
 
 - (void)applyTransparencyConfig:(const termcore::Config&)config {
     float opacity = config.background_opacity;
-    int blur = config.background_blur;
-    bool needsTransparency = (opacity < 1.0f) || (blur > 0);
+    const auto& material = config.background_blur_material;
+    bool wantBlur = (material != "none");
+    bool needsTransparency = (opacity < 1.0f) || wantBlur;
 
     if (needsTransparency) {
         _metalLayer.framebufferOnly = NO;
@@ -235,7 +236,7 @@
 
     _impl->renderer->setBackgroundOpacity(opacity);
 
-    if (blur > 0) {
+    if (wantBlur) {
         if (!_visualEffectView) {
             _visualEffectView = [[NSVisualEffectView alloc] initWithFrame:self.bounds];
             _visualEffectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -244,17 +245,12 @@
             [self addSubview:_visualEffectView positioned:NSWindowBelow relativeTo:nil];
         }
 
-        switch (blur) {
-            case 1:
-                _visualEffectView.material = NSVisualEffectMaterialHUDWindow;
-                break;
-            case 2:
-                _visualEffectView.material = NSVisualEffectMaterialSheet;
-                break;
-            case 3:
-            default:
-                _visualEffectView.material = NSVisualEffectMaterialUnderWindowBackground;
-                break;
+        if (material == "hud_window") {
+            _visualEffectView.material = NSVisualEffectMaterialHUDWindow;
+        } else if (material == "sheet") {
+            _visualEffectView.material = NSVisualEffectMaterialSheet;
+        } else {
+            _visualEffectView.material = NSVisualEffectMaterialUnderWindowBackground;
         }
     } else {
         if (_visualEffectView) {

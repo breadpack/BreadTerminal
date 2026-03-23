@@ -81,6 +81,7 @@ std::string serializeConfigLua(const Config& config) {
     o << "    background_opacity = " << config.background_opacity << ",\n";
     o << "    background_blur = " << config.background_blur << ",\n";
     o << "    background_blur_mode = \"" << config.background_blur_mode << "\",\n";
+    o << "    background_blur_material = \"" << config.background_blur_material << "\",\n";
     if (config.window_padding > 0)
         o << "    window_padding = " << config.window_padding << ",\n";
     if (config.minimum_contrast > 1.0f)

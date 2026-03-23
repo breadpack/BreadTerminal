@@ -1,6 +1,7 @@
 #ifndef TERMCORE_SETTINGS_MODEL_H
 #define TERMCORE_SETTINGS_MODEL_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,27 @@ struct Config;
 
 enum class SettingType { Toggle, Text, Number, Slider, Dropdown, ColorPicker };
 enum class SectionType { Settings, CardGrid, KeybindingList };
+
+/// Platform bitmask for settings visibility.
+enum SettingPlatform : uint8_t {
+    PlatformWindows = 1,
+    PlatformMacOS   = 2,
+    PlatformLinux   = 4,
+    PlatformAll     = 7,
+};
+
+/// Returns the platform flag for the current build target.
+inline uint8_t currentPlatform() {
+#if defined(_WIN32)
+    return PlatformWindows;
+#elif defined(__APPLE__)
+    return PlatformMacOS;
+#elif defined(__linux__)
+    return PlatformLinux;
+#else
+    return PlatformAll;
+#endif
+}
 
 struct SettingMeta {
     float min = 0;
@@ -25,6 +47,7 @@ struct SettingItem {
     SettingType type;
     SettingMeta meta;
     bool modified = false;
+    uint8_t platforms = PlatformAll;  // bitmask of platforms where this setting is visible
 };
 
 struct SettingsCategory {

@@ -58,7 +58,11 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     if (self) {
         _controller = controller;
         _categoryId = category->id;
-        _items = category->items;
+        // Filter items to only include those available on this platform
+        for (const auto& item : category->items) {
+            if (item.platforms & termcore::currentPlatform())
+                _items.push_back(item);
+        }
         _sectionTitle = [NSString stringWithUTF8String:category->label.c_str()];
 
         [self buildItemViews];
@@ -389,7 +393,7 @@ static uint32_t rgbFromNSColor(NSColor* color) {
 
     if (termcore::getConfigInt(ctrl.config, key) != 0 || key == "scrollback_limit" ||
         key == "window_width" || key == "window_height" || key == "window_padding" ||
-        key == "background_blur" || key == "sidebar_width") {
+        key == "sidebar_width") {
         termcore::setConfigInt(ctrl.config, key, (int)val);
     } else {
         termcore::setConfigFloat(ctrl.config, key, val);

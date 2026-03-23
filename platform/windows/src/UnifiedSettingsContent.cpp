@@ -83,6 +83,9 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
     constexpr float controlX = 320.f; // X offset from content left for controls
 
     for (const auto& item : cat->items) {
+        // Skip items not available on this platform
+        if (!(item.platforms & termcore::currentPlatform())) continue;
+
         float itemX = (float)x;
         float rowTop = curY;
 
@@ -220,14 +223,6 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
             const auto& options = item.meta.options;
             std::string current = getConfigString(config_, item.key);
 
-            // For background_blur, map int to string option
-            if (item.key == "background_blur") {
-                int iv = getConfigInt(config_, item.key);
-                if (iv >= 0 && iv < (int)options.size()) {
-                    current = options[iv];
-                }
-            }
-
             constexpr float pillH = 26.f, pillGap = 6.f, pillPadX = 16.f;
             constexpr float pillMinW = 52.f, rowGap = 4.f;
             float maxX = ctrlX + (float)w - 320.f; // available width for pills
@@ -318,6 +313,9 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
     float curY = (float)(contentTop + 40) - scrollY_;
 
     for (const auto& item : cat->items) {
+        // Skip items not available on this platform
+        if (!(item.platforms & termcore::currentPlatform())) continue;
+
         float rowTop = curY;
         float ctrlX = controlX;
         float ctrlY = rowTop;
@@ -453,11 +451,7 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
                 }
                 if ((float)mx >= px && (float)mx < px + pillW &&
                     (float)my >= py && (float)my < py + pillH) {
-                    if (item.key == "background_blur") {
-                        setConfigInt(config_, item.key, i);
-                    } else {
-                        setConfigString(config_, item.key, options[i]);
-                    }
+                    setConfigString(config_, item.key, options[i]);
                     if (model_) model_->refreshModified(config_);
                     notifySave();
                     if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);

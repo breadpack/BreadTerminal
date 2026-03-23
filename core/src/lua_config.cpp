@@ -135,6 +135,17 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
     cfg.background_opacity = getFloat(t, "background_opacity", cfg.background_opacity);
     cfg.background_blur = getFloat(t, "background_blur", cfg.background_blur);
     cfg.background_blur_mode = getStr(t, "background_blur_mode", cfg.background_blur_mode);
+    cfg.background_blur_material = getStr(t, "background_blur_material", cfg.background_blur_material);
+
+    // Migration: convert legacy background_blur int (1-3) to background_blur_material string
+    if (cfg.background_blur_material == "none" && cfg.background_blur >= 1.0f) {
+        int blur = static_cast<int>(cfg.background_blur);
+        switch (blur) {
+            case 1: cfg.background_blur_material = "hud_window"; break;
+            case 2: cfg.background_blur_material = "sheet"; break;
+            case 3: default: cfg.background_blur_material = "under_window"; break;
+        }
+    }
 
     // Sidebar
     cfg.sidebar_visible = getBool(t, "sidebar_visible", cfg.sidebar_visible);

@@ -1,7 +1,9 @@
 #include "termcore/settings_model.h"
 #include "termcore/config.h"
+#include "termcore/config_field_registry.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 
 namespace termcore {
@@ -24,100 +26,51 @@ static size_t findInsensitive(const std::string& haystack, const std::string& ne
 }
 
 // ---------------------------------------------------------------------------
-// Config value accessors by key
+// Config value accessors by key — delegated to field registry
 // ---------------------------------------------------------------------------
 
 std::string SettingsModel::stringValue(const Config& cfg, const std::string& key) {
-    if (key == "shell") return cfg.shell;
-    if (key == "cursor_style") return cfg.cursor_style;
-    if (key == "clipboard_paste_protection") return cfg.clipboard_paste_protection;
-    if (key == "font_family") return cfg.font_family;
-    if (key == "theme") return cfg.theme;
-    if (key == "default_profile_id") return cfg.default_profile_id;
-    if (key == "keybinding_preset") return cfg.keybinding_preset;
-    if (key == "background_blur_mode") return cfg.background_blur_mode;
+    if (auto* f = findStringField(key)) return cfg.*f->member;
     return {};
 }
 
 float SettingsModel::floatValue(const Config& cfg, const std::string& key) {
-    if (key == "font_size") return cfg.font_size;
-    if (key == "background_opacity") return cfg.background_opacity;
-    if (key == "background_blur") return cfg.background_blur;
-    if (key == "cursor_blink_interval") return cfg.cursor_blink_interval;
-    if (key == "minimum_contrast") return cfg.minimum_contrast;
+    if (auto* f = findFloatField(key)) return cfg.*f->member;
     return 0.0f;
 }
 
 int SettingsModel::intValue(const Config& cfg, const std::string& key) {
-    if (key == "window_width") return cfg.window_width;
-    if (key == "window_height") return cfg.window_height;
-    if (key == "window_padding") return cfg.window_padding;
-    if (key == "scrollback_limit") return cfg.scrollback_limit;
+    if (auto* f = findIntField(key)) return cfg.*f->member;
     return 0;
 }
 
 bool SettingsModel::boolValue(const Config& cfg, const std::string& key) {
-    if (key == "cursor_blink") return cfg.cursor_blink;
-    if (key == "clipboard_paste_bracketed_safe") return cfg.clipboard_paste_bracketed_safe;
-    if (key == "allow_clipboard_write") return cfg.allow_clipboard_write;
+    if (auto* f = findBoolField(key)) return cfg.*f->member;
     return false;
 }
 
 uint32_t SettingsModel::colorValue(const Config& cfg, const std::string& key) {
-    if (key == "background") return cfg.background;
-    if (key == "foreground") return cfg.foreground;
-    if (key == "cursor_color") return cfg.cursor_color;
-    if (key == "selection_background") return cfg.selection_background;
-    if (key == "selection_foreground") return cfg.selection_foreground;
+    if (auto* f = findColorField(key)) return cfg.*f->member;
     return 0;
 }
 
 // ---------------------------------------------------------------------------
-// Modified detection
+// Modified detection — uses registry lookup instead of hardcoded key lists
 // ---------------------------------------------------------------------------
-
-static bool isStringKey(const std::string& key) {
-    return key == "shell" || key == "cursor_style" ||
-           key == "clipboard_paste_protection" || key == "font_family" ||
-           key == "theme" || key == "default_profile_id" ||
-           key == "keybinding_preset" || key == "background_blur_mode";
-}
-
-static bool isFloatKey(const std::string& key) {
-    return key == "font_size" || key == "background_opacity" ||
-           key == "background_blur" || key == "cursor_blink_interval" ||
-           key == "minimum_contrast";
-}
-
-static bool isIntKey(const std::string& key) {
-    return key == "window_width" || key == "window_height" ||
-           key == "window_padding" || key == "scrollback_limit";
-}
-
-static bool isBoolKey(const std::string& key) {
-    return key == "cursor_blink" || key == "clipboard_paste_bracketed_safe" ||
-           key == "allow_clipboard_write";
-}
-
-static bool isColorKey(const std::string& key) {
-    return key == "background" || key == "foreground" ||
-           key == "cursor_color" || key == "selection_background" ||
-           key == "selection_foreground";
-}
 
 void SettingsModel::markModified(const Config& current) {
     for (auto& cat : categories_) {
         for (auto& item : cat.items) {
             const auto& k = item.key;
-            if (isStringKey(k))
+            if (findStringField(k))
                 item.modified = stringValue(current, k) != stringValue(defaults_, k);
-            else if (isFloatKey(k))
-                item.modified = floatValue(current, k) != floatValue(defaults_, k);
-            else if (isIntKey(k))
+            else if (findFloatField(k))
+                item.modified = std::abs(floatValue(current, k) - floatValue(defaults_, k)) > 0.001f;
+            else if (findIntField(k))
                 item.modified = intValue(current, k) != intValue(defaults_, k);
-            else if (isBoolKey(k))
+            else if (findBoolField(k))
                 item.modified = boolValue(current, k) != boolValue(defaults_, k);
-            else if (isColorKey(k))
+            else if (findColorField(k))
                 item.modified = colorValue(current, k) != colorValue(defaults_, k);
         }
     }
@@ -154,9 +107,11 @@ void SettingsModel::buildCategories() {
 
     categories_.push_back({"appearance.opacity", "Opacity & Blur", "appearance", SectionType::Settings, {
         {"background_opacity", "Background Opacity", "Window background opacity (0 = transparent, 1 = opaque).",
-         SettingType::Slider, {0.0f, 1.0f, 0.01f, {}}, false},
-        {"background_blur_mode", "Blur Mode", "None: no blur. Acrylic: OS-managed desktop blur.",
-         SettingType::Dropdown, {0, 0, 0, {"none", "acrylic"}}, false},
+         SettingType::Slider, {0.0f, 1.0f, 0.01f, {}}, false, PlatformAll},
+        {"background_blur_mode", "Blur Mode", "None: no blur. Acrylic: DWM-managed desktop blur (Windows).",
+         SettingType::Dropdown, {0, 0, 0, {"none", "acrylic"}}, false, PlatformWindows},
+        {"background_blur_material", "Blur Material", "macOS visual effect material for window background blur.",
+         SettingType::Dropdown, {0, 0, 0, {"none", "hud_window", "sheet", "under_window"}}, false, PlatformMacOS},
     }});
 
     categories_.push_back({"appearance.cursor", "Cursor", "appearance", SectionType::Settings, {

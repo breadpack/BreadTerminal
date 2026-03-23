@@ -81,8 +81,9 @@ struct Config {
 
     // Background transparency
     float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
-    float background_blur = 0.5f;       // reserved for future use
-    std::string background_blur_mode = "none";  // "none", "acrylic" (DWM)
+    float background_blur = 0.5f;       // legacy (macOS used as int 0-3), kept for config compat
+    std::string background_blur_mode = "none";      // Windows: "none", "acrylic" (DWM)
+    std::string background_blur_material = "none";  // macOS: "none", "hud_window", "sheet", "under_window"
 
     // Sidebar
     bool sidebar_visible = true;

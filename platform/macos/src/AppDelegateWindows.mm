@@ -31,7 +31,7 @@
     window.tabbingIdentifier = @"BreadTerminalTabs";
 
     // Background transparency
-    if (config.background_opacity < 1.0f || config.background_blur > 0) {
+    if (config.background_opacity < 1.0f || config.background_blur_material != "none") {
         window.opaque = NO;
         window.backgroundColor = [NSColor clearColor];
     }

@@ -36,6 +36,7 @@ set(TERMCORE_SOURCES
     src/notification_visual.cpp
     src/config.cpp
     src/config_diff.cpp
+    src/config_field_registry.cpp
     src/ghostty_config_import.cpp
     src/config_themes.cpp
     src/theme_loader.cpp

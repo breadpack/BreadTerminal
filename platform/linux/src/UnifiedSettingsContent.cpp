@@ -101,6 +101,9 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
     }
 
     for (const auto& item : cat->items) {
+        // Skip items not available on this platform
+        if (!(item.platforms & termcore::currentPlatform())) continue;
+
         // Item container: horizontal box with optional modified indicator
         GtkWidget* itemBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_set_margin_bottom(itemBox, kUsItemSpacing);
@@ -311,14 +314,7 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
             const auto& options = item.meta.options;
             std::string current;
 
-            if (item.key == "background_blur") {
-                int iv = getConfigInt(config_, item.key);
-                if (iv >= 0 && iv < (int)options.size()) {
-                    current = options[iv];
-                }
-            } else {
-                current = getConfigString(config_, item.key);
-            }
+            current = getConfigString(config_, item.key);
 
             GtkWidget* combo = gtk_combo_box_text_new();
             int activeIdx = 0;
@@ -344,12 +340,8 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
                     if (self) {
                         int idx = gtk_combo_box_get_active(box);
                         if (idx >= 0 && idx < (int)dd->options.size()) {
-                            if (dd->key == "background_blur") {
-                                setConfigInt(self->config_, dd->key, idx);
-                            } else {
-                                setConfigString(self->config_, dd->key,
-                                               dd->options[idx]);
-                            }
+                            setConfigString(self->config_, dd->key,
+                                           dd->options[idx]);
                             self->notifySave();
                         }
                     }
