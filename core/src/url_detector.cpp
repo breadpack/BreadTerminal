@@ -153,4 +153,11 @@ bool UrlDetector::isUrl(const std::string& text) {
     return false;
 }
 
+void UrlDetector::addCustomScheme(const std::string& scheme) {
+    for (const auto& s : customSchemes_) {
+        if (s == scheme) return;  // already registered
+    }
+    customSchemes_.push_back(scheme);
+}
+
 } // namespace termcore
