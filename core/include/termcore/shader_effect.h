@@ -1,6 +1,7 @@
 #ifndef TERMCORE_SHADER_EFFECT_H
 #define TERMCORE_SHADER_EFFECT_H
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 
@@ -63,6 +64,31 @@ ShaderUniforms buildShaderUniforms(const ShaderConfig& config,
                                    float time,
                                    float resolution_x,
                                    float resolution_y);
+
+/// Runtime shader effect manager with Lua-scriptable callbacks.
+class ShaderEffect {
+public:
+    /// Enable a shader by name with given intensity.
+    void setEnabled(const std::string& name, float intensity);
+
+    /// Disable a shader by name.
+    void setDisabled(const std::string& name);
+
+    /// Set a custom parameter on a named shader.
+    void setCustomParam(const std::string& shader, const std::string& key, float value);
+
+    /// Get the current shader configs.
+    const std::unordered_map<std::string, ShaderConfig>& configs() const { return configs_; }
+
+    /// Frame callback slot: called each frame with elapsed time.
+    std::function<void(float time)> onFrameCallback;
+
+    /// Invoke the frame callback if set.
+    void dispatchFrame(float time);
+
+private:
+    std::unordered_map<std::string, ShaderConfig> configs_;
+};
 
 } // namespace termcore
 

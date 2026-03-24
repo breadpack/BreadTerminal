@@ -103,4 +103,30 @@ ShaderUniforms buildShaderUniforms(const ShaderConfig& config,
     return u;
 }
 
+void ShaderEffect::setEnabled(const std::string& name, float intensity) {
+    auto& cfg = configs_[name];
+    cfg.name = name;
+    cfg.enabled = true;
+    cfg.intensity = intensity;
+}
+
+void ShaderEffect::setDisabled(const std::string& name) {
+    auto it = configs_.find(name);
+    if (it != configs_.end()) {
+        it->second.enabled = false;
+    }
+}
+
+void ShaderEffect::setCustomParam(const std::string& shader, const std::string& key, float value) {
+    auto& cfg = configs_[shader];
+    cfg.name = shader;
+    cfg.params[key] = value;
+}
+
+void ShaderEffect::dispatchFrame(float time) {
+    if (onFrameCallback) {
+        onFrameCallback(time);
+    }
+}
+
 } // namespace termcore
