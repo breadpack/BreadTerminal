@@ -339,6 +339,9 @@ void KeybindingManager::initDefaults() {
     b(mk(MS, "p"),      Action::OpenCommandPalette);
     b(mk(MS, "f"),      Action::OpenFontHub);
 
+    // Profile dropdown
+    b(mk(MS, "n"), Action::ShowProfileDropdown);
+
     // Profile shortcuts
     b(mk(MS, "1"), Action::NewTabProfile1);
     b(mk(MS, "2"), Action::NewTabProfile2);

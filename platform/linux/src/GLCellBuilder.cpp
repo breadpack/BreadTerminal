@@ -1,4 +1,5 @@
 #include "GLTextRendererImpl.h"
+#include "termcore/font/box_drawing.h"
 
 namespace termcore {
 
@@ -108,6 +109,68 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             const TermCell& cell = screen.cellAt(row, col);
 
             if (cell.codepoint == ' ' || cell.codepoint == 0) {
+                continue;
+            }
+            if (cell.width == 0) continue;  // Skip continuation cells
+
+            char32_t cp = cell.codepoint;
+
+            // Procedural box drawing / powerline glyphs
+            if (is_box_drawing(cp)) {
+                GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
+                auto boxInfo = glyphCache->get(boxKey);
+                if (!boxInfo) {
+                    BoxGlyphBitmap boxBitmap = render_box_glyph(
+                        cp,
+                        static_cast<int>(cellW),
+                        static_cast<int>(cellH));
+                    if (!boxBitmap.bitmap.empty()) {
+                        RasterizedGlyph rg;
+                        rg.bitmap = std::move(boxBitmap.bitmap);
+                        rg.width = boxBitmap.width;
+                        rg.height = boxBitmap.height;
+                        rg.bearing_x = 0;
+                        rg.bearing_y = static_cast<int32_t>(ascent);
+                        rg.format = PixelFormat::Grayscale;
+                        auto region = glyphAtlas->pack(rg);
+                        if (region) {
+                            GlyphInfo gi;
+                            gi.region = *region;
+                            gi.advance_x = cellW;
+                            gi.advance_y = 0;
+                            gi.is_color = false;
+                            glyphCache->put(boxKey, gi);
+                            boxInfo = gi;
+                        }
+                    }
+                }
+                if (boxInfo) {
+                    GLCellInstance inst = {};
+                    inst.position[0] = col * cellW;
+                    inst.position[1] = row * cellH + gridOffsetY;
+                    inst.atlas_uv[0] = static_cast<float>(boxInfo->region.x);
+                    inst.atlas_uv[1] = static_cast<float>(boxInfo->region.y);
+                    inst.atlas_size[0] = static_cast<float>(boxInfo->region.width);
+                    inst.atlas_size[1] = static_cast<float>(boxInfo->region.height);
+
+                    colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                    colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+                    if (cell.attributes & AttrInverse) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    if (isCellSelected(row, col)) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    inst.flags = 1;  // has_glyph
+                    inst.extra_flags = 0;
+                    cellInstances.push_back(inst);
+                }
                 continue;
             }
 
@@ -262,7 +325,7 @@ void GLTextRenderer::Impl::appendCursorInstances(
     int rows = screen.rows();
     int cols = screen.cols();
 
-    if (screen.cursorVisible() && cursorBlinkVisible) {
+    if (screen.cursorVisible() && cursorBlinkVisible && screen.viewportOffset() == 0) {
         int cRow = screen.cursorRow();
         int cCol = screen.cursorCol();
         if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {

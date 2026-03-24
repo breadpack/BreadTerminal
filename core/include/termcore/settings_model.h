@@ -37,7 +37,8 @@ struct SettingMeta {
     float min = 0;
     float max = 0;
     float step = 1;
-    std::vector<std::string> options;  // Dropdown choices
+    std::vector<std::string> options;       // Dropdown stored values
+    std::vector<std::string> option_labels; // Dropdown display labels (optional, same size as options)
 };
 
 struct SettingItem {

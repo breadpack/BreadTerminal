@@ -65,15 +65,25 @@ void TerminalController::initTerminal() {
     auto detected = ShellDetector::detect();
     profileMgr_->setDetectedProfiles(std::move(detected));
 
-    // Config::shell backward compatibility
-    if (profileMgr_->allProfiles().empty() && !config_.shell.empty()) {
-        Profile legacy;
-        legacy.id = "__legacy_shell__";
-        legacy.name = "Shell";
-        legacy.command = config_.shell;
-        legacy.icon = "shell";
-        profileMgr_->setProfile(legacy);
-        profileMgr_->setDefaultProfile(legacy.id);
+    // Apply Config::shell — find matching profile or create one
+    if (!config_.shell.empty()) {
+        bool matched = false;
+        for (const auto& p : profileMgr_->allProfiles()) {
+            if (p.command == config_.shell) {
+                profileMgr_->setDefaultProfile(p.id);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            Profile custom;
+            custom.id = "__custom_shell__";
+            custom.name = "Custom Shell";
+            custom.command = config_.shell;
+            custom.icon = "shell";
+            profileMgr_->setProfile(custom);
+            profileMgr_->setDefaultProfile(custom.id);
+        }
     }
 
     // Create Mux and TabController
@@ -164,6 +174,49 @@ void TerminalController::onKeyEvent(const KeyEvent& e) {
         if (e.keycode == 0xF70B) { // Backspace
             commandPalette_.onBackspace();
             needsRender_ = true;
+            return;
+        }
+        return;
+    }
+
+    // If profile dropdown is open, handle its input
+    if (profileDropdown_.isOpen()) {
+        if (e.keycode == 0xF70A) { // Escape
+            profileDropdown_.close();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF700) { // Up
+            profileDropdown_.selectPrev();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF701) { // Down
+            profileDropdown_.selectNext();
+            needsRender_ = true;
+            return;
+        }
+        if (e.keycode == 0xF709) { // Enter
+            std::string profileId = profileDropdown_.selectedProfileId();
+            profileDropdown_.close();
+            if (!profileId.empty() && tabCtrl_) {
+                tabCtrl_->createTab(termRows_, termCols_, profileId);
+            }
+            needsRender_ = true;
+            return;
+        }
+        // Number keys 1-9: quick select
+        if (e.keycode >= '1' && e.keycode <= '9') {
+            int idx = static_cast<int>(e.keycode - '1');
+            const auto& items = profileDropdown_.items();
+            if (idx < static_cast<int>(items.size())) {
+                std::string profileId = items[idx].id;
+                profileDropdown_.close();
+                if (!profileId.empty() && tabCtrl_) {
+                    tabCtrl_->createTab(termRows_, termCols_, profileId);
+                }
+                needsRender_ = true;
+            }
             return;
         }
         return;
@@ -801,6 +854,17 @@ void TerminalController::handleAction(Action action) {
         }
 
         case Action::ShowProfileDropdown:
+            if (profileMgr_) {
+                auto visible = profileMgr_->visibleProfiles();
+                std::vector<ProfileDropdownItem> items;
+                for (const auto* p : visible) {
+                    items.push_back({p->id, p->name, p->icon});
+                }
+                if (!items.empty()) {
+                    profileDropdown_.open(std::move(items));
+                    needsRender_ = true;
+                }
+            }
             break;
 
         case Action::ToggleBroadcast:

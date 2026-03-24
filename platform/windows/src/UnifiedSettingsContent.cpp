@@ -221,6 +221,8 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
         case SettingType::Dropdown: {
             // Pill buttons: auto-width based on text, wrapping to next row if needed
             const auto& options = item.meta.options;
+            const auto& labels = item.meta.option_labels;
+            bool hasLabels = !labels.empty() && labels.size() == options.size();
             std::string current = getConfigString(config_, item.key);
 
             constexpr float pillH = 26.f, pillGap = 6.f, pillPadX = 16.f;
@@ -229,9 +231,9 @@ void UnifiedSettingsWindow::paintSettingsItems(Gdiplus::Graphics& g,
             float px = ctrlX;
             float py = ctrlY;
 
-            for (const auto& opt : options) {
-                bool active = (opt == current);
-                std::wstring wopt = toWide(opt);
+            for (int i = 0; i < (int)options.size(); ++i) {
+                bool active = (options[i] == current);
+                std::wstring wopt = toWide(hasLabels ? labels[i] : options[i]);
 
                 // Measure text width for auto-sizing
                 Gdiplus::RectF bounds;
@@ -433,6 +435,8 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
 
         case SettingType::Dropdown: {
             const auto& options = item.meta.options;
+            const auto& labels = item.meta.option_labels;
+            bool hasLabels = !labels.empty() && labels.size() == options.size();
             constexpr float pillH = 26.f, pillGap = 6.f, pillPadX = 16.f;
             constexpr float pillMinW = 52.f, rowGap = 4.f;
             RECT clientRc;
@@ -442,7 +446,8 @@ void UnifiedSettingsWindow::onSettingsItemClick(int mx, int my) {
             float px = ctrlX;
             float py = ctrlY;
             for (int i = 0; i < (int)options.size(); ++i) {
-                float textW = (float)options[i].size() * 7.f;
+                const std::string& display = hasLabels ? labels[i] : options[i];
+                float textW = (float)display.size() * 7.f;
                 float pillW = (std::max)(pillMinW, textW + pillPadX);
                 // Wrap to next row if needed
                 if (px + pillW > maxX && px > ctrlX) {

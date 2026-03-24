@@ -312,15 +312,16 @@ void UnifiedSettingsWindow::showSettingsItems(const SettingsCategory* cat) {
 
         case SettingType::Dropdown: {
             const auto& options = item.meta.options;
-            std::string current;
-
-            current = getConfigString(config_, item.key);
+            const auto& labels = item.meta.option_labels;
+            bool hasLabels = !labels.empty() && labels.size() == options.size();
+            std::string current = getConfigString(config_, item.key);
 
             GtkWidget* combo = gtk_combo_box_text_new();
             int activeIdx = 0;
             for (int i = 0; i < (int)options.size(); ++i) {
+                const std::string& display = hasLabels ? labels[i] : options[i];
                 gtk_combo_box_text_append_text(
-                    GTK_COMBO_BOX_TEXT(combo), options[i].c_str());
+                    GTK_COMBO_BOX_TEXT(combo), display.c_str());
                 if (options[i] == current) activeIdx = i;
             }
             gtk_combo_box_set_active(GTK_COMBO_BOX(combo), activeIdx);

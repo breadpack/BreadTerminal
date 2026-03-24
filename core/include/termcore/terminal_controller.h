@@ -17,6 +17,7 @@
 #include "termcore/input_handler.h"
 #include "termcore/clipboard_history.h"
 #include "termcore/command_palette.h"
+#include "termcore/profile_dropdown.h"
 #include <memory>
 #include <string>
 
@@ -83,6 +84,9 @@ public:
     // Command palette
     CommandPalette& commandPalette() { return commandPalette_; }
 
+    // Profile dropdown
+    ProfileDropdown& profileDropdown() { return profileDropdown_; }
+
     // Direct access for platform-specific needs
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
@@ -119,6 +123,7 @@ private:
     std::unique_ptr<InputHandler> inputHandler_;
     ClipboardHistory clipboardHistory_;
     CommandPalette commandPalette_;
+    ProfileDropdown profileDropdown_;
 
     int termRows_ = 24;
     int termCols_ = 80;

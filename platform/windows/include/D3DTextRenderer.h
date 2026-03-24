@@ -211,6 +211,25 @@ public:
     /// Set command palette state for rendering.
     void setCommandPalette(const CommandPaletteInfo& info);
 
+    /// Profile dropdown overlay.
+    struct ProfileDropdownInfo {
+        bool visible = false;
+        int selectedIndex = 0;
+        struct Item {
+            std::string name;
+            std::string icon;
+        };
+        std::vector<Item> items;
+        uint32_t bg_color = 0x252526;
+        uint32_t fg_color = 0xcccccc;
+        uint32_t selected_bg = 0x094771;
+        uint32_t selected_fg = 0xffffff;
+        uint32_t hint_fg = 0x808080;
+    };
+
+    /// Set profile dropdown state for rendering.
+    void setProfileDropdown(const ProfileDropdownInfo& info);
+
     /// URL highlight for a range of cells on a row.
     struct UrlHighlight {
         int row;

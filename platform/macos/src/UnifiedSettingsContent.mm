@@ -271,13 +271,19 @@ static uint32_t rgbFromNSColor(NSColor* color) {
 
         case termcore::SettingType::Dropdown: {
             NSPopUpButton* popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, y, 200, 24) pullsDown:NO];
-            NSString* currentValue = configNSStringValue(ctrl.config, key);
+            const auto& options = item.meta.options;
+            const auto& labels = item.meta.option_labels;
+            bool hasLabels = !labels.empty() && labels.size() == options.size();
+            std::string currentValue = termcore::getConfigString(ctrl.config, key);
 
-            for (const auto& opt : item.meta.options) {
-                NSString* nsOpt = [NSString stringWithUTF8String:opt.c_str()];
-                [popup addItemWithTitle:nsOpt];
+            int activeIdx = 0;
+            for (int i = 0; i < (int)options.size(); ++i) {
+                const std::string& display = hasLabels ? labels[i] : options[i];
+                NSString* nsDisplay = [NSString stringWithUTF8String:display.c_str()];
+                [popup addItemWithTitle:nsDisplay];
+                if (options[i] == currentValue) activeIdx = i;
             }
-            [popup selectItemWithTitle:currentValue];
+            [popup selectItemAtIndex:activeIdx];
             popup.tag = [self tagForKey:key];
             popup.target = self;
             popup.action = @selector(dropdownChanged:);
@@ -433,7 +439,16 @@ static uint32_t rgbFromNSColor(NSColor* color) {
     UnifiedSettingsWindowController* ctrl = _controller;
     if (!ctrl) return;
 
-    setConfigNSStringValue(ctrl.config, key, sender.titleOfSelectedItem);
+    // Find the SettingItem to get options (stored values)
+    for (const auto& item : _items) {
+        if ([self tagForKey:item.key] == sender.tag && item.type == termcore::SettingType::Dropdown) {
+            NSInteger idx = [sender indexOfSelectedItem];
+            if (idx >= 0 && idx < (NSInteger)item.meta.options.size()) {
+                termcore::setConfigString(ctrl.config, key, item.meta.options[idx]);
+            }
+            break;
+        }
+    }
     [ctrl configDidChange];
 }
 

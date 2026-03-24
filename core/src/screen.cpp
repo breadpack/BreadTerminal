@@ -28,6 +28,7 @@ Screen::Row Screen::makeRow() const {
 
 const TermCell& Screen::cellAt(int row, int col) const {
     static const TermCell empty{};
+    int gridSize = static_cast<int>(grid_.size());
     if (row < 0 || row >= rows_ || col < 0 || col >= cols_)
         return empty;
 
@@ -48,17 +49,26 @@ const TermCell& Screen::cellAt(int row, int col) const {
         } else {
             // This row comes from the grid
             int grid_row = row - scrollback_rows_visible;
-            if (grid_row >= 0 && grid_row < rows_)
+            if (grid_row >= 0 && grid_row < gridSize)
                 return grid_[grid_row][col];
             return empty;
         }
     }
 
+    if (row >= gridSize) return empty;
     return grid_[row][col];
 }
 
 TermCell& Screen::mutableCellAt(int row, int col) {
     assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
+    // Defensive: clamp to actual grid bounds to prevent deque out-of-range
+    int gridRows = static_cast<int>(grid_.size());
+    if (row >= gridRows) {
+        // Ensure grid has enough rows (recover from size mismatch)
+        while (static_cast<int>(grid_.size()) <= row) {
+            grid_.push_back(Row(cols_));
+        }
+    }
     return grid_[row][col];
 }
 
@@ -574,12 +584,13 @@ void Screen::resize(int rows, int cols) {
         row.resize(cols);
     }
 
-    // Adjust row count
-    if (rows > rows_) {
-        for (int i = rows_; i < rows; ++i) {
+    // Adjust row count — use actual grid size to avoid mismatch with rows_
+    int currentGridRows = static_cast<int>(grid_.size());
+    if (rows > currentGridRows) {
+        for (int i = currentGridRows; i < rows; ++i) {
             grid_.push_back(Row(cols));
         }
-    } else if (rows < rows_) {
+    } else if (rows < currentGridRows) {
         grid_.resize(rows);
     }
 
@@ -592,6 +603,28 @@ void Screen::resize(int rows, int cols) {
     initTabStops();
     clampCursor();
     wrap_pending_ = false;
+
+    // Clamp viewport offset to valid range after resize
+    if (viewport_offset_ > 0) {
+        int max_offset = static_cast<int>(scrollback_.size());
+        viewport_offset_ = std::min(viewport_offset_, max_offset);
+    }
+
+    // If in alt screen, also resize the saved primary grid so that
+    // switching back won't cause a size mismatch with rows_/cols_.
+    if (alt_screen_active_) {
+        for (auto& row : saved_primary_.grid) {
+            row.resize(cols);
+        }
+        int savedRows = static_cast<int>(saved_primary_.grid.size());
+        if (rows > savedRows) {
+            for (int i = savedRows; i < rows; ++i) {
+                saved_primary_.grid.push_back(Row(cols));
+            }
+        } else if (rows < savedRows) {
+            saved_primary_.grid.resize(rows);
+        }
+    }
 }
 
 // --- getLineText ---

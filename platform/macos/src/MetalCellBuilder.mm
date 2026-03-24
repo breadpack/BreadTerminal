@@ -301,7 +301,7 @@ void MetalTextRenderer::Impl::appendCursorInstances(const Screen& screen,
 
     int rows = screen.rows();
     int cols = screen.cols();
-    bool showCursor = screen.cursorVisible() && cursorBlinkOn && !imeActive;
+    bool showCursor = screen.cursorVisible() && cursorBlinkOn && !imeActive && screen.viewportOffset() == 0;
     if (showCursor) {
         int cRow = screen.cursorRow();
         int cCol = screen.cursorCol();

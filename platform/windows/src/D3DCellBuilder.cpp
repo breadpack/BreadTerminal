@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRendererImpl.h"
+#include "termcore/font/box_drawing.h"
 
 namespace termcore {
 
@@ -108,8 +109,12 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
             }
 
-            // Apply background opacity (premultiplied alpha) for non-highlighted cells
-            if (sht == 0 && !selected) {
+            // Apply background opacity (premultiplied alpha) only to cells
+            // with the default background color. Cells with explicit ANSI
+            // background colors (e.g. prompt segments) stay fully opaque.
+            bool hasDefaultBg = (cell.bg_color == kColorDefault);
+            if (cell.attributes & AttrInverse) hasDefaultBg = (cell.fg_color == kColorDefault);
+            if (sht == 0 && !selected && hasDefaultBg) {
                 float a = backgroundOpacity;
                 inst.bg_color[0] *= a;
                 inst.bg_color[1] *= a;
@@ -181,26 +186,152 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             if (cell.codepoint == ' ' || cell.codepoint == 0) {
                 continue;
             }
+            if (cell.width == 0) continue;  // Skip continuation cells
+
+            char32_t cp = cell.codepoint;
+
+            // Powerline glyphs (E0B0-E0B3): try font first, procedural fallback
+            bool isPowerline = (cp >= 0xE0B0 && cp <= 0xE0B3);
+            // Non-powerline box drawing: always procedural
+            bool isBoxDrawing = !isPowerline && is_box_drawing(cp);
+
+            if (isBoxDrawing) {
+                GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
+                auto boxInfo = glyphCache->get(boxKey);
+                if (!boxInfo) {
+                    BoxGlyphBitmap boxBitmap = render_box_glyph(
+                        cp,
+                        static_cast<int>(cellW),
+                        static_cast<int>(cellH));
+                    if (!boxBitmap.bitmap.empty()) {
+                        RasterizedGlyph rg;
+                        rg.bitmap = std::move(boxBitmap.bitmap);
+                        rg.width = boxBitmap.width;
+                        rg.height = boxBitmap.height;
+                        rg.bearing_x = 0;
+                        rg.bearing_y = static_cast<int32_t>(ascent);
+                        rg.format = PixelFormat::Grayscale;
+                        auto region = glyphAtlas->pack(rg);
+                        if (region) {
+                            GlyphInfo gi;
+                            gi.region = *region;
+                            gi.advance_x = cellW;
+                            gi.advance_y = 0;
+                            gi.is_color = false;
+                            glyphCache->put(boxKey, gi);
+                            boxInfo = gi;
+                        }
+                    }
+                }
+                if (boxInfo) {
+                    D3DCellInstance inst = {};
+                    inst.position[0] = col * cellW;
+                    inst.position[1] = row * cellH + gridOffsetY;
+                    inst.atlas_uv[0] = static_cast<float>(boxInfo->region.x);
+                    inst.atlas_uv[1] = static_cast<float>(boxInfo->region.y);
+                    inst.atlas_size[0] = static_cast<float>(boxInfo->region.width);
+                    inst.atlas_size[1] = static_cast<float>(boxInfo->region.height);
+
+                    colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                    colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+                    if (cell.attributes & AttrInverse) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    if (isCellSelected(row, col)) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    inst.flags = 1;  // has_glyph
+                    cellInstances.push_back(inst);
+                }
+                continue;
+            }
 
             CollectionFaceId faceId;
             FontFaceId rastFace;
             uint32_t glyphIdx;
+            bool fontHasGlyph = false;
 
             if (cell.extra_count > 0) {
                 // Multi-codepoint grapheme cluster: shape via HarfBuzz
                 auto shaped = fontCollection->shapeCluster(cell.allCodepoints());
                 faceId = shaped.face;
-                if (faceId == kInvalidCollectionFace) continue;
-                rastFace = fontCollection->rasterizerFaceId(faceId);
-                glyphIdx = shaped.glyph_index;
+                if (faceId != kInvalidCollectionFace) {
+                    rastFace = fontCollection->rasterizerFaceId(faceId);
+                    glyphIdx = shaped.glyph_index;
+                    fontHasGlyph = (glyphIdx != 0);
+                }
             } else {
                 // Single codepoint: use fast cmap lookup
                 faceId = fontCollection->resolveFace(cell.codepoint);
-                if (faceId == kInvalidCollectionFace) continue;
-                rastFace = fontCollection->rasterizerFaceId(faceId);
-                glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+                if (faceId != kInvalidCollectionFace) {
+                    rastFace = fontCollection->rasterizerFaceId(faceId);
+                    glyphIdx = rasterizer->getGlyphIndex(rastFace, cell.codepoint);
+                    fontHasGlyph = (glyphIdx != 0);
+                }
             }
-            if (glyphIdx == 0) continue;
+
+            // Powerline fallback: if font doesn't have glyph, use procedural
+            if (!fontHasGlyph && isPowerline) {
+                GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
+                auto boxInfo = glyphCache->get(boxKey);
+                if (!boxInfo) {
+                    BoxGlyphBitmap boxBitmap = render_box_glyph(
+                        cp, static_cast<int>(cellW), static_cast<int>(cellH));
+                    if (!boxBitmap.bitmap.empty()) {
+                        RasterizedGlyph rg;
+                        rg.bitmap = std::move(boxBitmap.bitmap);
+                        rg.width = boxBitmap.width;
+                        rg.height = boxBitmap.height;
+                        rg.bearing_x = 0;
+                        rg.bearing_y = static_cast<int32_t>(ascent);
+                        rg.format = PixelFormat::Grayscale;
+                        auto region = glyphAtlas->pack(rg);
+                        if (region) {
+                            GlyphInfo gi;
+                            gi.region = *region;
+                            gi.advance_x = cellW;
+                            gi.advance_y = 0;
+                            gi.is_color = false;
+                            glyphCache->put(boxKey, gi);
+                            boxInfo = gi;
+                        }
+                    }
+                }
+                if (boxInfo) {
+                    D3DCellInstance inst = {};
+                    inst.position[0] = col * cellW;
+                    inst.position[1] = row * cellH + gridOffsetY;
+                    inst.atlas_uv[0] = static_cast<float>(boxInfo->region.x);
+                    inst.atlas_uv[1] = static_cast<float>(boxInfo->region.y);
+                    inst.atlas_size[0] = static_cast<float>(boxInfo->region.width);
+                    inst.atlas_size[1] = static_cast<float>(boxInfo->region.height);
+                    colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                    colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+                    if (cell.attributes & AttrInverse) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    if (isCellSelected(row, col)) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    inst.flags = 1;  // has_glyph
+                    cellInstances.push_back(inst);
+                }
+                continue;
+            }
+
+            if (!fontHasGlyph) continue;
 
             GlyphKey key{rastFace, glyphIdx, {0, 0}};
             auto info = glyphCache->getOrRasterize(
@@ -212,9 +343,16 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
             D3DCellInstance inst = {};
 
-            float offsetX = static_cast<float>(info->region.bearing_x);
-            float offsetY = ascent -
-                static_cast<float>(info->region.bearing_y);
+            float offsetX, offsetY;
+            if (isPowerline) {
+                // Powerline glyphs fill the entire cell — anchor at cell origin
+                offsetX = 0.0f;
+                offsetY = 0.0f;
+            } else {
+                offsetX = static_cast<float>(info->region.bearing_x);
+                offsetY = ascent -
+                    static_cast<float>(info->region.bearing_y);
+            }
 
             inst.position[0] = col * cellW + offsetX;
             inst.position[1] = row * cellH + offsetY + gridOffsetY;
@@ -370,7 +508,7 @@ void D3DTextRenderer::Impl::appendCursorInstances(
     int rows = screen.rows();
     int cols = screen.cols();
 
-    if (screen.cursorVisible() && cursorBlinkVisible) {
+    if (screen.cursorVisible() && cursorBlinkVisible && screen.viewportOffset() == 0) {
         int cRow = screen.cursorRow();
         int cCol = screen.cursorCol();
         if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {

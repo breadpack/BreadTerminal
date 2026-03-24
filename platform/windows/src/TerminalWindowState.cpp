@@ -304,6 +304,9 @@ void TerminalWindowState::renderFrame() {
     // Update command palette state on renderer
     updateCommandPalette();
 
+    // Update profile dropdown state on renderer
+    updateProfileDropdown();
+
     // Update search highlights on renderer
     if (controller->search().isActive()) {
         const auto& matches = controller->search().search().matches();
@@ -428,6 +431,30 @@ void TerminalWindowState::updateCommandPalette() {
     }
 
     renderer->setCommandPalette(info);
+}
+
+void TerminalWindowState::updateProfileDropdown() {
+    if (!renderer || !controller) return;
+
+    auto& pd = controller->profileDropdown();
+    D3DTextRenderer::ProfileDropdownInfo info;
+    info.visible = pd.isOpen();
+
+    if (info.visible) {
+        info.selectedIndex = pd.selectedIndex();
+
+        const auto& items = pd.items();
+        int maxItems = (std::min)(static_cast<int>(items.size()),
+                                  termcore::ProfileDropdown::kMaxVisibleItems);
+        for (int i = 0; i < maxItems; ++i) {
+            D3DTextRenderer::ProfileDropdownInfo::Item item;
+            item.name = items[i].name;
+            item.icon = items[i].icon;
+            info.items.push_back(std::move(item));
+        }
+    }
+
+    renderer->setProfileDropdown(info);
 }
 
 void TerminalWindowState::updateRendererSelection() {

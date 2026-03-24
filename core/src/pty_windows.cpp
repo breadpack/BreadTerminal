@@ -110,8 +110,14 @@ public:
             create_flags |= CREATE_UNICODE_ENVIRONMENT;
         }
 
-        // 6. Create process
-        std::wstring wdir = working_dir.empty() ? L"" : toWide(working_dir);
+        // 6. Create process — default to home directory if no working_dir specified
+        std::wstring wdir;
+        if (working_dir.empty()) {
+            const wchar_t* home = _wgetenv(L"USERPROFILE");
+            if (home) wdir = home;
+        } else {
+            wdir = toWide(working_dir);
+        }
 
         PROCESS_INFORMATION pi = {};
         BOOL ok = CreateProcessW(

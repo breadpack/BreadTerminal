@@ -483,6 +483,10 @@ void D3DTextRenderer::setCommandPalette(const CommandPaletteInfo& info) {
     impl_->commandPalette = info;
 }
 
+void D3DTextRenderer::setProfileDropdown(const ProfileDropdownInfo& info) {
+    impl_->profileDropdown = info;
+}
+
 } // namespace termcore
 
 #endif // _WIN32

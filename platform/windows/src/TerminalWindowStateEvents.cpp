@@ -303,7 +303,15 @@ float TerminalWindowState::dpiScale() {
 std::unique_ptr<termcore::Pty> TerminalWindowState::createPty(
         const termcore::Profile& profile, int rows, int cols) {
     auto pty = termcore::createPty();
-    if (!pty->spawn(profile.command, profile.args, profile.working_dir, rows, cols)) {
+    std::vector<std::pair<std::string, std::string>> env_vars = {
+        {"TERM_PROGRAM", "BreadTerminal"},
+        {"COLORTERM", "truecolor"},
+        {"TERM", "xterm-256color"},
+        // Signal Windows Terminal compatibility so prompt tools (oh-my-posh,
+        // starship) enable full powerline / Nerd Font rendering.
+        {"WT_SESSION", "BreadTerminal"},
+    };
+    if (!pty->spawn(profile.command, profile.args, profile.working_dir, rows, cols, env_vars)) {
         OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
     }
     return pty;

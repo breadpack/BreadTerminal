@@ -28,6 +28,7 @@ set(TERMCORE_WIN_SOURCES
     src/D3DCellBuilderOverlays.cpp
     src/D3DCellBuilderPaneStatus.cpp
     src/D3DCellBuilderCommandPalette.cpp
+    src/D3DCellBuilderProfileDropdown.cpp
     src/ConfigWatcherWin.cpp
     src/TerminalWindowIME.cpp
     src/TerminalWindowNotify.cpp

@@ -1,6 +1,7 @@
 #include "termcore/settings_model.h"
 #include "termcore/config.h"
 #include "termcore/config_field_registry.h"
+#include "termcore/profile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -86,9 +87,19 @@ void SettingsModel::buildCategories() {
     // -- General --
     categories_.push_back({"general", "General", "", SectionType::Settings, {}});
 
-    categories_.push_back({"general.shell", "Shell", "general", SectionType::Settings, {
-        {"shell", "Shell", "Path to shell executable. Empty uses $SHELL.", SettingType::Text, {}, false},
-    }});
+    {
+        auto detected = ShellDetector::detect();
+        std::vector<std::string> shellValues = {""};
+        std::vector<std::string> shellLabels = {"Default"};
+        for (const auto& p : detected) {
+            shellValues.push_back(p.command);
+            shellLabels.push_back(p.name);
+        }
+        categories_.push_back({"general.shell", "Shell", "general", SectionType::Settings, {
+            {"shell", "Shell", "Shell program to use. Default uses system shell.",
+             SettingType::Dropdown, {0, 0, 0, std::move(shellValues), std::move(shellLabels)}, false},
+        }});
+    }
 
     categories_.push_back({"general.window", "Window", "general", SectionType::Settings, {
         {"window_width", "Window Width", "Default window width in pixels.", SettingType::Number, {}, false},

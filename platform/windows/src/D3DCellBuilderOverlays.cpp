@@ -521,6 +521,9 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
     // Command palette overlay (delegated to D3DCellBuilderCommandPalette.cpp)
     buildCommandPaletteOverlay(cellW, cellH, ascent, fontSize);
 
+    // Profile dropdown overlay (delegated to D3DCellBuilderProfileDropdown.cpp)
+    buildProfileDropdownOverlay(cellW, cellH, ascent, fontSize);
+
     // Pass 9: Pane Borders (with notification glow and unread dots)
     const auto& paneBorders = this->paneBorders;
     if (paneBorders.visible && !paneBorders.segments.empty()) {

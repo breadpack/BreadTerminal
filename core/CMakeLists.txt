@@ -101,6 +101,7 @@ set(TERMCORE_SOURCES
     src/settings_model.cpp
     src/config_value_adapter.cpp
     src/profile_manager.cpp
+    src/profile_dropdown.cpp
     src/shell_detector.cpp
     src/update_checker.cpp
     src/command_palette.cpp

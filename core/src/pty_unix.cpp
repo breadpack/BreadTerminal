@@ -212,11 +212,10 @@ private:
                             const std::string& working_dir,
                             const TerminfoInstallResult& terminfo,
                             const std::vector<std::pair<std::string, std::string>>& env_vars = {}) {
-        // Change working directory if specified
-        if (!working_dir.empty()) {
-            if (chdir(working_dir.c_str()) != 0) {
-                // Ignore error; stay in current directory
-            }
+        // Change working directory (default to home directory)
+        const char* dir = working_dir.empty() ? std::getenv("HOME") : working_dir.c_str();
+        if (dir && dir[0]) {
+            chdir(dir);  // ignore error; stay in current directory
         }
 
         // Set TERM environment variable (uses custom terminfo or fallback)

@@ -66,6 +66,9 @@ struct D3DTextRenderer::Impl {
     // Command palette state
     D3DTextRenderer::CommandPaletteInfo commandPalette;
 
+    // Profile dropdown state
+    D3DTextRenderer::ProfileDropdownInfo profileDropdown;
+
     // Resize overlay state
     bool resizeOverlayVisible = false;
     int resizeOverlayCols = 0;
@@ -138,6 +141,10 @@ struct D3DTextRenderer::Impl {
     // Command palette overlay (implemented in D3DCellBuilderCommandPalette.cpp)
     void buildCommandPaletteOverlay(float cellW, float cellH,
                                     float ascent, float fontSize);
+
+    // Profile dropdown overlay (implemented in D3DCellBuilderProfileDropdown.cpp)
+    void buildProfileDropdownOverlay(float cellW, float cellH,
+                                     float ascent, float fontSize);
 };
 
 } // namespace termcore

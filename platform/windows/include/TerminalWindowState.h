@@ -188,6 +188,8 @@ private:
     void updateRendererSelection();
     // Helper: update command palette on renderer from controller state
     void updateCommandPalette();
+    // Helper: update profile dropdown on renderer from controller state
+    void updateProfileDropdown();
 };
 
 #endif // _WIN32
