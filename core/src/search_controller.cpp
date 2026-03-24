@@ -62,7 +62,7 @@ bool SearchController::flushIncremental(Screen& screen) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - last_input_time_);
 
-    if (elapsed.count() < kDebounceMs) return false;
+    if (elapsed.count() < debounce_ms_) return false;
 
     SearchOptions opts;
     opts.use_regex = useRegex_;

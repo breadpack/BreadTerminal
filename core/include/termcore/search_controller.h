@@ -5,14 +5,16 @@
 #include "termcore/search_history.h"
 #include "termcore/screen.h"
 #include <chrono>
+#include <functional>
 #include <string>
+#include <vector>
 
 namespace termcore {
 
 class SearchController {
 public:
     /// Debounce delay for incremental search (milliseconds)
-    static constexpr int kDebounceMs = 50;
+    static constexpr int kDefaultDebounceMs = 50;
 
     void open();
     void close();
@@ -56,11 +58,21 @@ public:
     SearchHistory& history() { return history_; }
     const SearchHistory& history() const { return history_; }
 
+    /// Set debounce delay in milliseconds (Lua-configurable).
+    void setDebounceMs(int ms) { debounce_ms_ = ms; }
+
+    /// Get current debounce delay in milliseconds.
+    int debounceMs() const { return debounce_ms_; }
+
+    /// Result callback: called after each search with the list of matches.
+    std::function<void(const std::vector<SearchMatch>&)> onResultCallback;
+
 private:
     TerminalSearch search_;
     SearchHistory history_;
     bool active_ = false;
     bool useRegex_ = false;
+    int debounce_ms_ = kDefaultDebounceMs;
 
     std::string pending_query_;
     bool incremental_dirty_ = false;
