@@ -91,6 +91,12 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
             }
             return result;
         });
+
+    // terminal.tab.set_process_icon(process, icon)
+    tab.set_function("set_process_icon",
+        [this](const std::string& process, const std::string& icon) {
+            if (tabCtrl_) tabCtrl_->setProcessIcon(process, icon);
+        });
 }
 
 void LuaTabModule::clearCallbacks() {

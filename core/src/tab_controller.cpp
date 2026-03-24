@@ -391,4 +391,13 @@ std::string TabController::customTitle(int tab_index) const {
     return (it != customTitles_.end()) ? it->second : std::string{};
 }
 
+void TabController::setProcessIcon(const std::string& process, const std::string& icon) {
+    processIcons_[process] = icon;
+}
+
+std::string TabController::getProcessIcon(const std::string& process) const {
+    auto it = processIcons_.find(process);
+    return it != processIcons_.end() ? it->second : "";
+}
+
 } // namespace termcore

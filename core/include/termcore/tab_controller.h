@@ -102,6 +102,10 @@ public:
     // Retrieve per-tab custom title (empty string = no override).
     std::string customTitle(int tab_index) const;
 
+    // Process icon mapping for Lua defaults/icons.lua
+    void setProcessIcon(const std::string& process, const std::string& icon);
+    std::string getProcessIcon(const std::string& process) const;
+
 private:
     std::unique_ptr<Mux> mux_;
     WorkspaceId wsId_;
@@ -120,6 +124,7 @@ private:
     mutable TitleFormatFn titleFormatFn_;
     mutable bool inTitleFormat_ = false;  // reentrancy guard
     std::unordered_map<int, std::string> customTitles_;  // tab_index -> override title
+    std::unordered_map<std::string, std::string> processIcons_;
 };
 
 } // namespace termcore
