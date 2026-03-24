@@ -382,4 +382,13 @@ void TabController::resizeAllPanes(int rows, int cols) {
     }
 }
 
+void TabController::setCustomTitle(int tab_index, const std::string& title) {
+    customTitles_[tab_index] = title;
+}
+
+std::string TabController::customTitle(int tab_index) const {
+    auto it = customTitles_.find(tab_index);
+    return (it != customTitles_.end()) ? it->second : std::string{};
+}
+
 } // namespace termcore

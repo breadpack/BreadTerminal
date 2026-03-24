@@ -15,6 +15,7 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
     auto& terminal = *static_cast<sol::table*>(terminalTable);
 
     // Store lua state pointer for creating tables in callbacks
+    luaPtr_ = luaState;
     sol::state* luaPtr = &lua;
 
     auto tab = terminal.create_named("tab");
@@ -42,18 +43,59 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
             };
         });
 
-    // terminal.tab.set_title(tab_id, title) -- stub, full impl in Phase 2
-    tab.set_function("set_title", [](int, std::string) {});
+    // terminal.tab.set_title(tab_id, title)
+    tab.set_function("set_title",
+        [this](int tab_id, const std::string& title) {
+            tabCtrl_->setCustomTitle(tab_id, title);
+        });
 
-    // terminal.tab.get_info(tab_id) -- stub, full impl in Phase 2
-    tab.set_function("get_info", [](int) -> sol::object { return sol::nil; });
+    // terminal.tab.get_info(tab_id) -- returns a table with tab info
+    tab.set_function("get_info",
+        [this, luaPtr](int tab_id) -> sol::object {
+            auto tabs = tabCtrl_->tabBarInfo();
+            if (tab_id < 0 || tab_id >= static_cast<int>(tabs.size())) {
+                return sol::nil;
+            }
+            const auto& info = tabs[static_cast<size_t>(tab_id)];
+            sol::table tbl = luaPtr->create_table();
+            tbl["tab_index"]    = tab_id;
+            tbl["title"]        = info.title;
+            tbl["process"]      = info.process_name;
+            tbl["icon"]         = info.icon_name;
+            tbl["is_active"]    = info.active;
+            tbl["has_unread"]   = info.has_unread;
+            tbl["needs_attention"] = info.needs_attention;
+            std::string ct = tabCtrl_->customTitle(tab_id);
+            if (!ct.empty()) tbl["custom_title"] = ct;
+            return sol::object(tbl);
+        });
 
-    // terminal.tab.list() -- stub, full impl in Phase 2
-    tab.set_function("list", []() -> sol::object { return sol::nil; });
+    // terminal.tab.list() -- returns array of tab info tables
+    tab.set_function("list",
+        [this, luaPtr]() -> sol::table {
+            auto tabs = tabCtrl_->tabBarInfo();
+            sol::table result = luaPtr->create_table();
+            for (int i = 0; i < static_cast<int>(tabs.size()); ++i) {
+                const auto& info = tabs[static_cast<size_t>(i)];
+                sol::table tbl = luaPtr->create_table();
+                tbl["tab_index"]    = i;
+                tbl["title"]        = info.title;
+                tbl["process"]      = info.process_name;
+                tbl["icon"]         = info.icon_name;
+                tbl["is_active"]    = info.active;
+                tbl["has_unread"]   = info.has_unread;
+                tbl["needs_attention"] = info.needs_attention;
+                std::string ct = tabCtrl_->customTitle(i);
+                if (!ct.empty()) tbl["custom_title"] = ct;
+                result[i + 1] = tbl;
+            }
+            return result;
+        });
 }
 
 void LuaTabModule::clearCallbacks() {
     titleFormatFn_ = nullptr;
+    luaPtr_ = nullptr;
 }
 
 } // namespace termcore

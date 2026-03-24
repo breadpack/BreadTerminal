@@ -36,6 +36,7 @@ public:
 private:
     TabController* tabCtrl_;
     TitleFormatFn titleFormatFn_;
+    void* luaPtr_ = nullptr;  // sol::state* — stored as void* to avoid sol.hpp in header
 };
 
 } // namespace termcore

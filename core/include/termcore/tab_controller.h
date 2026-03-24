@@ -95,6 +95,13 @@ public:
     using TitleFormatFn = std::function<std::string(const TabTitleInfo&)>;
     void setTitleFormatCallback(TitleFormatFn fn) { titleFormatFn_ = std::move(fn); }
 
+    // Per-tab title override set by Lua terminal.tab.set_title(tab_id, title).
+    // tab_id is 0-based index into tabBarInfo().
+    void setCustomTitle(int tab_index, const std::string& title);
+
+    // Retrieve per-tab custom title (empty string = no override).
+    std::string customTitle(int tab_index) const;
+
 private:
     std::unique_ptr<Mux> mux_;
     WorkspaceId wsId_;
@@ -112,6 +119,7 @@ private:
     Config config_;
     mutable TitleFormatFn titleFormatFn_;
     mutable bool inTitleFormat_ = false;  // reentrancy guard
+    std::unordered_map<int, std::string> customTitles_;  // tab_index -> override title
 };
 
 } // namespace termcore
