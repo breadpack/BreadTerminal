@@ -39,6 +39,10 @@ struct PaneStatusData {
     void clearStatus(const std::string& key);
     void addLog(LogEntry::Level level, const std::string& message,
                 const std::string& source = "");
+
+    // Lua-accessible: set a status pill with a custom color (0 = default)
+    void setStatusPillFromLua(const std::string& key, const std::string& value,
+                               uint32_t color);
 };
 
 class PaneStatusStore {
