@@ -84,6 +84,7 @@ add_executable(termcore_tests
     test_subpixel.cpp
     test_screen_export.cpp
     test_lua_plugin_integration.cpp
+    test_lua_defaults.cpp
 )
 
 target_link_libraries(termcore_tests
