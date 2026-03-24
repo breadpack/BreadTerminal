@@ -91,6 +91,11 @@ target_link_libraries(termcore_tests
         GTest::gtest_main
 )
 
+target_include_directories(termcore_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/src
+)
+
 if(WIN32)
     target_link_libraries(termcore_tests PRIVATE termcore_windows)
 endif()

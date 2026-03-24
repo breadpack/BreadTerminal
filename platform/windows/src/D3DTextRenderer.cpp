@@ -24,8 +24,8 @@ struct CellInstance {
     float2 glyph_offset;
     float4 fg_color;
     float4 bg_color;
-    uint   flags;        // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor, bit4=is_underline
-    uint   extra_flags;  // bits 0-2: underline_style
+    uint   flags;        // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor, bit4=is_underline, bit5=is_rounded_rect_top
+    uint   extra_flags;  // bits 0-2: underline_style; bits 16-31: corner_radius * 16 (fixed-point)
 };
 
 StructuredBuffer<CellInstance> cells : register(t2);
@@ -35,6 +35,8 @@ struct VS_OUTPUT {
     float2 texCoord : TEXCOORD0;
     float4 fg_color : COLOR0;
     float4 bg_color : COLOR1;
+    nointerpolation float2 quad_size_px : TEXCOORD1;
+    nointerpolation float  corner_radius : TEXCOORD2;
     uint   flags       : BLENDINDICES0;
     uint   extra_flags : BLENDINDICES1;
 };
@@ -51,6 +53,7 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
     CellInstance cell = cells[instance_id];
 
     bool is_bg = (cell.flags & 4u) != 0u;
+    bool is_rounded = (cell.flags & 32u) != 0u;
 
     float2 quad_size = is_bg ? cell_size : cell.atlas_size_px;
     float2 pixel_pos = cell.position + corner * quad_size;
@@ -59,7 +62,21 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
     ndc.y = -ndc.y;
 
     output.position = float4(ndc, 0.0, 1.0);
-    output.texCoord = (cell.atlas_uv + corner * cell.atlas_size_px) / atlas_size;
+
+    // Decode corner radius from upper 16 bits of extra_flags (fixed-point * 16)
+    float radius = float(cell.extra_flags >> 16u) / 16.0;
+
+    if (is_rounded) {
+        // For rounded rects, pass normalized quad UV and pixel size
+        output.texCoord = corner;
+        output.quad_size_px = quad_size;
+        output.corner_radius = radius;
+    } else {
+        output.texCoord = (cell.atlas_uv + corner * cell.atlas_size_px) / atlas_size;
+        output.quad_size_px = float2(0.0, 0.0);
+        output.corner_radius = 0.0;
+    }
+
     bool is_underline = (cell.flags & 16u) != 0u;
     output.fg_color = is_underline ? float4(corner.x, corner.y, 0.0, 0.0) : cell.fg_color;
     output.bg_color = cell.bg_color;
@@ -74,6 +91,31 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
     bool has_glyph = (input.flags & 1u) != 0u;
     bool is_color  = (input.flags & 2u) != 0u;
     bool is_cursor = (input.flags & 8u) != 0u;
+    bool is_rounded = (input.flags & 32u) != 0u;
+
+    if (is_rounded) {
+        // SDF-based rounded rectangle with top corners only
+        float2 size = input.quad_size_px;
+        float radius = input.corner_radius;
+        // UV is 0..1 across the quad
+        float2 px = input.texCoord * size;
+
+        // Distance from each edge
+        float2 halfSize = size * 0.5;
+        float2 p = abs(px - halfSize);
+
+        // Only round top corners: apply radius when in top half, 0 for bottom
+        float r = (input.texCoord.y < 0.5) ? radius : 0.0;
+        float2 q = p - halfSize + float2(r, r);
+        float d = length(max(q, float2(0.0, 0.0))) - r;
+
+        // Anti-aliased edge (1px smooth transition)
+        float alpha = 1.0 - smoothstep(-0.5, 0.5, d);
+
+        // Apply alpha to premultiplied color
+        float4 col = input.bg_color;
+        return float4(col.rgb * alpha, col.a * alpha);
+    }
 
     if (is_bg) {
         return input.bg_color;
@@ -409,6 +451,13 @@ void D3DTextRenderer::setCursorBlink(bool visible) {
     impl_->cursorBlinkVisible = visible;
 }
 
+void D3DTextRenderer::setIMEActive(bool active) {
+    if (impl_->imeActive != active) {
+        impl_->imeActive = active;
+        impl_->contentDirty = true;
+    }
+}
+
 void D3DTextRenderer::markContentDirty() {
     impl_->contentDirty = true;
 }
@@ -421,11 +470,13 @@ void D3DTextRenderer::setSearchHighlights(
         const std::vector<SearchHighlight>& highlights, int currentIndex) {
     impl_->searchHighlights = highlights;
     impl_->searchCurrentIndex = currentIndex;
+    impl_->rebuildSearchIndex();
     impl_->contentDirty = true;
 }
 
 void D3DTextRenderer::setUrlHighlights(const std::vector<UrlHighlight>& highlights) {
     impl_->urlHighlights = highlights;
+    impl_->rebuildUrlIndex();
     impl_->contentDirty = true;
 }
 

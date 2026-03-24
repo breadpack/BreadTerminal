@@ -18,6 +18,7 @@ void ConfigApplier::applyFull(Config& config, const Config& newConfig,
     }
 
     // Update font
+    fontMgr.setFallbackFonts(config.font_fallback);
     fontMgr.setFont(config.font_family, config.font_size);
     if (host) {
         host->onFontChanged(fontMgr.cellWidth(), fontMgr.cellHeight());

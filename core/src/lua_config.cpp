@@ -88,6 +88,16 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
         }
     }
 
+    if (auto fb = t["font_fallback"]; fb.valid() && fb.get_type() == sol::type::table) {
+        cfg.font_fallback.clear();
+        sol::table fallbacks = fb;
+        for (auto& [k, v] : fallbacks) {
+            if (v.is<std::string>()) {
+                cfg.font_fallback.push_back(v.as<std::string>());
+            }
+        }
+    }
+
     // Colors
     if (auto v = t["background"]; v.valid()) cfg.background = parseColor(v);
     if (auto v = t["foreground"]; v.valid()) cfg.foreground = parseColor(v);

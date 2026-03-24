@@ -55,7 +55,25 @@ vertex VertexOut cell_vertex(
     float2 pixel_pos;
     float2 tex_coord;
 
-    if (is_bg) {
+    bool is_overlay = (cell.flags & 8) != 0;
+    bool has_glyph = (cell.flags & 1) != 0;
+
+    if (is_overlay && has_glyph) {
+        // Overlay glyph: absolute pixel positioning with atlas texture
+        // grid_pos encodes pixel position (x, y), glyph_size encodes glyph dimensions
+        float2 pos = float2(cell.grid_pos);
+        float2 glyph_size = float2(cell.glyph_size);
+        pixel_pos = pos + corner * glyph_size;
+        tex_coord = float2(cell.glyph_uv) + corner * glyph_size;
+    } else if (is_overlay) {
+        // Overlay solid rect: absolute pixel positioning, arbitrary size
+        // grid_pos encodes pixel position (x, y), glyph_size encodes rect size
+        float2 pos = float2(cell.grid_pos);
+        float2 size = float2(cell.glyph_size);
+        float2 bearing = float2(cell.offset);
+        pixel_pos = pos + bearing + corner * size;
+        tex_coord = float2(0);
+    } else if (is_bg) {
         // Background: full cell quad
         pixel_pos = cell_origin + corner * u.cell_size;
         tex_coord = float2(0);
@@ -88,6 +106,19 @@ fragment float4 cell_fragment(
     texture2d<float> atlas_gray [[texture(0)]],
     texture2d<float> atlas_color [[texture(1)]]
 ) {
+    if ((in.flags & 8) != 0 && (in.flags & 1) != 0) {
+        // Overlay glyph -- use atlas texture with foreground color
+        constexpr sampler textSampler(coord::pixel, address::clamp_to_edge, filter::nearest);
+        float alpha = atlas_gray.sample(textSampler, in.texCoord).r;
+        return float4(in.fg_color.rgb * alpha, alpha);
+    }
+
+    if ((in.flags & 8) != 0) {
+        // Overlay pass -- solid color rect, pre-multiply alpha
+        float a = in.bg_color.a;
+        return float4(in.bg_color.rgb * a, a);
+    }
+
     if ((in.flags & 4) != 0) {
         // Background pass -- pre-multiply alpha for transparency compositing
         float a = in.bg_color.a;

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <unistd.h>
+#include <fontconfig/fontconfig.h>
 
 namespace termcore {
 
@@ -55,7 +56,44 @@ void UnifiedSettingsWindow::setConfig(const Config& config) {
     }
 
     if (fontIndexReady_) {
+        // Set up installed predicate using fontconfig
+        fontIndex_.setInstalledPredicate([](const std::string& name) -> bool {
+            if (name.empty()) return false;
+            FcPattern* pat = FcPatternCreate();
+            FcPatternAddString(pat, FC_FAMILY, (const FcChar8*)name.c_str());
+            FcConfigSubstitute(nullptr, pat, FcMatchPattern);
+            FcDefaultSubstitute(pat);
+            FcResult result;
+            FcPattern* match = FcFontMatch(nullptr, pat, &result);
+            bool found = false;
+            if (match) {
+                FcChar8* matchFamily = nullptr;
+                if (FcPatternGetString(match, FC_FAMILY, 0, &matchFamily) == FcResultMatch) {
+                    found = (strcasecmp((const char*)matchFamily, name.c_str()) == 0);
+                }
+                FcPatternDestroy(match);
+            }
+            FcPatternDestroy(pat);
+            return found;
+        });
         fontIndex_.refreshInstallStatus();
+
+        // Enumerate system fonts and add any not already in the index
+        FcPattern* pat = FcPatternCreate();
+        FcObjectSet* os = FcObjectSetBuild(FC_FAMILY, (char*)nullptr);
+        FcFontSet* fs = FcFontList(nullptr, pat, os);
+        if (fs) {
+            for (int i = 0; i < fs->nfont; ++i) {
+                FcChar8* family = nullptr;
+                if (FcPatternGetString(fs->fonts[i], FC_FAMILY, 0, &family) == FcResultMatch) {
+                    fontIndex_.addSystemFont(std::string((const char*)family));
+                }
+            }
+            FcFontSetDestroy(fs);
+        }
+        FcObjectSetDestroy(os);
+        FcPatternDestroy(pat);
+
         rebuildFontFilteredList();
     }
 

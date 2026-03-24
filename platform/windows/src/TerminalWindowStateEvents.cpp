@@ -233,17 +233,22 @@ void TerminalWindowState::positionIME(int x, int y, int height) {
 }
 
 void TerminalWindowState::onFontChanged(float cellW, float cellH) {
+    // Detach renderer from old font resources before clearing
+    if (renderer) {
+        renderer->setFontStack(nullptr, nullptr, nullptr, nullptr);
+    }
     if (cache) cache->clear();
     // Recreate atlas to free old font glyphs
     if (atlas) {
         atlas = std::make_unique<termcore::GlyphAtlas>();
-        if (renderer) {
-            renderer->setFontStack(fontCollection.get(), cache.get(),
-                                   atlas.get(), rasterizer.get());
-        }
+    }
+    // Re-attach renderer to new resources
+    if (renderer) {
+        renderer->setFontStack(fontCollection.get(), cache.get(),
+                               atlas.get(), rasterizer.get());
+        renderer->markContentDirty();
     }
     needsRender = true;
-    if (renderer) renderer->markContentDirty();
 }
 
 void TerminalWindowState::onColorsChanged() {

@@ -32,9 +32,15 @@ struct D3DTextRenderer::Impl {
     // Search highlight state
     std::vector<D3DTextRenderer::SearchHighlight> searchHighlights;
     int searchCurrentIndex = -1;
+    // Row-indexed search highlights for O(1) row lookup
+    std::unordered_map<int, std::vector<std::pair<int,int>>> searchByRow; // row -> [(index, index)]
+    void rebuildSearchIndex();
 
     // URL highlight state
     std::vector<D3DTextRenderer::UrlHighlight> urlHighlights;
+    // Row-indexed URL highlights for O(1) row lookup
+    std::unordered_map<int, std::vector<size_t>> urlByRow; // row -> [index into urlHighlights]
+    void rebuildUrlIndex();
 
     // Background opacity (0.0-1.0), affects only bg cells and clear color
     float backgroundOpacity = 1.0f;
@@ -43,6 +49,7 @@ struct D3DTextRenderer::Impl {
     bool cursorBlinkVisible = true;
     bool lastBlinkState = true;
     bool contentDirty = true;  // forces full rebuild on first frame
+    bool imeActive = false;    // hide cursor during IME composition
 
     // Index in cellInstances where cursor instances begin
     // (everything from this index onward is cursor + overlays)

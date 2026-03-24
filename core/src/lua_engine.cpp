@@ -73,7 +73,9 @@ struct LuaEngine::Impl {
 
 LuaEngine::LuaEngine() : impl_(std::make_unique<Impl>()) {}
 
-LuaEngine::~LuaEngine() = default;
+LuaEngine::~LuaEngine() {
+    clearAllModules();
+}
 
 bool LuaEngine::isValid() const {
     return impl_ != nullptr;
@@ -119,6 +121,40 @@ void LuaEngine::registerFunction(
     const std::string& name,
     std::function<std::string(const std::string&)> fn) {
     impl_->terminal_table.set_function(name, std::move(fn));
+}
+
+void LuaEngine::registerModule(std::shared_ptr<ILuaModule> module) {
+    modules_.push_back(std::move(module));
+}
+
+void LuaEngine::initializeModules() {
+    for (auto& mod : modules_) {
+        mod->registerBindings(
+            static_cast<void*>(&impl_->lua),
+            static_cast<void*>(&impl_->terminal_table));
+    }
+}
+
+void LuaEngine::initializeModules(const std::vector<PluginCapability>& capabilities) {
+    for (auto& mod : modules_) {
+        auto required = mod->requiredCapability();
+        bool allowed = false;
+        for (auto cap : capabilities) {
+            if (cap == required) { allowed = true; break; }
+        }
+        if (allowed) {
+            mod->registerBindings(
+                static_cast<void*>(&impl_->lua),
+                static_cast<void*>(&impl_->terminal_table));
+        }
+    }
+}
+
+void LuaEngine::clearAllModules() {
+    for (auto& mod : modules_) {
+        mod->clearCallbacks();
+    }
+    modules_.clear();
 }
 
 } // namespace termcore

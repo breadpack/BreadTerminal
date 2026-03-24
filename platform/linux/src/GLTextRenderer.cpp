@@ -408,6 +408,7 @@ void GLTextRenderer::setSearchHighlights(
         const std::vector<SearchHighlight>& highlights, int currentIndex) {
     impl_->searchHighlights = highlights;
     impl_->searchCurrentIndex = currentIndex;
+    impl_->rebuildSearchIndex();
     impl_->contentDirty = true;
 }
 
@@ -458,6 +459,11 @@ void GLTextRenderer::setPaneStatusPills(PaneId pane_id,
 
 void GLTextRenderer::setCommandPalette(const CommandPaletteInfo& info) {
     impl_->commandPalette = info;
+}
+
+void GLTextRenderer::setBackgroundOpacity(float opacity) {
+    impl_->backgroundOpacity = opacity;
+    impl_->contentDirty = true;
 }
 
 } // namespace termcore

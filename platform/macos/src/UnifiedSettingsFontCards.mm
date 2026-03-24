@@ -208,6 +208,12 @@ enum FontFilterType : NSInteger {
     if (meta->has_ligatures) {
         NSView* badge = [self createBadge:@"Ligatures" frame:NSMakeRect(badgeX, badgeY, 70, 18)];
         [card addSubview:badge];
+        badgeX += 76;
+    }
+
+    if (meta->category == "system") {
+        NSView* badge = [self createBadge:@"System" frame:NSMakeRect(badgeX, badgeY, 60, 18)];
+        [card addSubview:badge];
     }
 
     // Action button

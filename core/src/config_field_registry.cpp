@@ -145,6 +145,10 @@ ConfigDirtyFlags diffRegistryFields(const Config& old_cfg, const Config& new_cfg
             flags |= kColorFields[i].dirty;
     }
 
+    // Vector fields not in the registry tables
+    if (old_cfg.font_fallback != new_cfg.font_fallback)
+        flags |= ConfigDirtyFlags::Font;
+
     return flags;
 }
 

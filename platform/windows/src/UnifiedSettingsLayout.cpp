@@ -76,6 +76,7 @@ void UnifiedSettingsWindow::onSidebarClick(int mx, int my) {
     if (idx >= 0 && idx < (int)visibleCategoryIds_.size()) {
         selectedCategoryId_ = visibleCategoryIds_[idx];
         scrollY_ = 0.f;
+        repositionFontSearchEdit();
         InvalidateRect(hwnd_, nullptr, FALSE);
     }
 }

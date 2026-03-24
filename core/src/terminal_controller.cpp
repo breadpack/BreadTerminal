@@ -15,6 +15,9 @@ TerminalController::TerminalController(IPlatformHost* host, Config config,
     std::string family = config_.font_family.empty() ? "Consolas" : config_.font_family;
     float size = config_.font_size > 0 ? config_.font_size : 14.0f;
     fontMgr_ = std::make_unique<FontManager>(fontCollection, family, size);
+    if (!config_.font_fallback.empty()) {
+        fontMgr_->setFallbackFonts(config_.font_fallback);
+    }
 
     // Keybindings
     keybindings_ = std::make_unique<KeybindingManager>();
@@ -111,20 +114,25 @@ void TerminalController::pollPty() {
     bool dataRead = tabCtrl_->pollAllPtys();
     if (dataRead) {
         needsRender_ = true;
-
-        // Update URL detection on active screen
-        Screen* scr = tabCtrl_->activeScreen();
-        if (scr) {
-            detectedUrls_ = urlDetector_.detectInScreen(*scr);
-            urlHighlightMgr_.markDirty();
-            urlHighlightMgr_.scanScreen(*scr, scr->rows());
-        }
+        urlScanPending_ = true;
     }
 
     // Cleanup dead panes
     if (tabCtrl_->cleanupDeadPanes()) {
         if (host_) host_->closeWindow();
         return;
+    }
+}
+
+void TerminalController::flushPendingUrlScan() {
+    if (!urlScanPending_ || !tabCtrl_) return;
+    urlScanPending_ = false;
+
+    Screen* scr = tabCtrl_->activeScreen();
+    if (scr) {
+        detectedUrls_ = urlDetector_.detectInScreen(*scr);
+        urlHighlightMgr_.markDirty();
+        urlHighlightMgr_.scanScreen(*scr, scr->rows());
     }
 }
 
@@ -523,6 +531,17 @@ void TerminalController::onFontChanged(const std::string& family) {
 }
 
 // --- Accessors ---
+
+bool TerminalController::needsRender() const {
+    if (!needsRender_) return false;
+    const Screen* scr = tabCtrl_ ? tabCtrl_->activeScreen() : nullptr;
+    if (scr && scr->syncUpdate()) {
+        // Safety timeout: if sync has been active too long, render anyway
+        auto elapsed = std::chrono::steady_clock::now() - scr->syncStartTime();
+        if (elapsed < std::chrono::seconds(1)) return false;
+    }
+    return true;
+}
 
 Screen* TerminalController::activeScreen() {
     return tabCtrl_ ? tabCtrl_->activeScreen() : nullptr;

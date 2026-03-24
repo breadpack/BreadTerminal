@@ -9,6 +9,9 @@
 #include "termcore/font/font_collection.h"
 #include <algorithm>
 #include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #ifdef __OBJC__
 #import <Metal/Metal.h>
@@ -132,6 +135,67 @@ public:
     /// Set the URL highlight range for Cmd+hover underline rendering.
     /// row=-1 means no highlight.
     void setUrlHighlight(int row, int startCol, int endCol);
+
+    /// Search highlight for a range of cells on a row.
+    struct SearchHighlight {
+        int row;
+        int startCol;
+        int endCol;       // exclusive
+    };
+
+    /// Set search highlights for rendering. currentIndex is the index into
+    /// the highlights vector for the "current" match (rendered differently).
+    void setSearchHighlights(const std::vector<SearchHighlight>& highlights,
+                             int currentIndex);
+
+    /// URL highlight for a range of cells on a row.
+    struct UrlHighlight {
+        int row;
+        int startCol;
+        int endCol;       // exclusive
+        bool hovered;
+        uint32_t color;   // RGB color for the underline
+    };
+
+    /// Set URL highlights for rendering.
+    void setUrlHighlights(const std::vector<UrlHighlight>& highlights);
+
+    /// Tab information for the tab bar.
+    struct TabInfo {
+        std::string title;
+        std::string icon_name;         // OSC 1 icon name
+        std::string process_name;      // foreground process (for icon selection)
+        bool active = false;
+        bool has_unread = false;       // show dot indicator
+        bool needs_attention = false;  // highlight tab background
+    };
+
+    /// Tab bar height multiplier relative to cell height.
+    static constexpr float kTabBarHeightScale = 1.4f;
+
+    /// Tab bar displayed at the top of the viewport.
+    struct TabBarInfo {
+        std::vector<TabInfo> tabs;
+        uint32_t bg_color = 0x1e1e1e;         // tab bar background (darker)
+        uint32_t active_bg_color = 0x2d2d2d;   // active tab = terminal bg
+        uint32_t inactive_bg_color = 0x1e1e1e; // inactive tab background
+        uint32_t fg_color = 0xcccccc;          // text color
+        uint32_t accent_color = 0x007acc;      // accent for indicator
+        int hovered_tab = -1;                  // tab under mouse (-1 = none)
+        bool hover_close = false;              // mouse over close button area
+        bool hover_plus = false;               // mouse over "+" button
+        bool visible = false;
+        // Process name -> icon codepoint hex string (from config)
+        const std::unordered_map<std::string, std::string>* process_icon_map = nullptr;
+    };
+
+    /// Set tab bar content for rendering.
+    void setTabBar(const TabBarInfo& info);
+    /// Get current tab bar state (for hover updates).
+    TabBarInfo getTabBar() const;
+
+    /// Mark content as dirty so next render does a full rebuild.
+    void markContentDirty() override;
 
     /// Return the atlas uploader for GPU texture management.
     IAtlasUploader* atlasUploader() override;

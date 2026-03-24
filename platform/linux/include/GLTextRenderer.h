@@ -198,6 +198,9 @@ public:
     /// Set command palette state for rendering.
     void setCommandPalette(const CommandPaletteInfo& info);
 
+    /// Set background opacity (1.0 = fully opaque, <1.0 for transparency).
+    void setBackgroundOpacity(float opacity);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

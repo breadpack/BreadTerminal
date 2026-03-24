@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <thread>
+#include <commctrl.h>
 
 namespace termcore {
 
@@ -24,6 +25,10 @@ static constexpr int kFcPreviewH    = 80;
 static constexpr int kFcBadgeStripH = 22;
 
 static const wchar_t* kFontFilterLabels[] = { L"All", L"Installed", L"NerdFonts", L"Ligatures" };
+static constexpr int kFcSearchW     = 180;
+static constexpr int kFcSearchH     = 26;
+static constexpr int kFcFallbackBtnW = 18;
+static constexpr int kFcFallbackBtnH = 18;
 
 // ---------------------------------------------------------------------------
 // rebuildFontFilteredList
@@ -36,7 +41,13 @@ void UnifiedSettingsWindow::rebuildFontFilteredList() {
     bool nerd      = (activeFontFilter_ == FontFilter::NerdFonts);
     bool liga      = (activeFontFilter_ == FontFilter::Ligatures);
 
-    if (installed || nerd || liga) {
+    if (!fontSearchText_.empty()) {
+        // Convert search text to narrow for FontIndex::search
+        int len = WideCharToMultiByte(CP_UTF8, 0, fontSearchText_.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string query(len - 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, fontSearchText_.c_str(), -1, query.data(), len, nullptr, nullptr);
+        filteredFonts_ = fontIndex_.search(query);
+    } else if (installed || nerd || liga) {
         filteredFonts_ = fontIndex_.filter(installed, nerd, liga);
     } else {
         for (auto& f : fontIndex_.all())
@@ -118,8 +129,12 @@ void UnifiedSettingsWindow::paintFontCards(Gdiplus::Graphics& g,
         card.cardRect = { cx, cy, cx + kFcCardW, cy + kFcCardH };
         card.buttonRect = { cx + kFcCardW - 72, cy + kFcCardH - 28,
                             cx + kFcCardW - 4,  cy + kFcCardH - 6 };
+        // Fallback star button: left of the action button
+        card.fallbackRect = { cx + kFcCardW - 94, cy + kFcCardH - 25,
+                              cx + kFcCardW - 76, cy + kFcCardH - 7 };
         card.uninstallRect = { cx + kFcCardW - 22, cy + 4, cx + kFcCardW - 4, cy + 22 };
         card.isActive = false;
+        card.isFallback = (card.meta && card.meta->installed && isFontFallback(card.meta->name));
         card.isInstalling = ((int)i == fontInstallingCard_);
         card.isFailed = ((int)i == fontFailedCard_);
 
@@ -218,6 +233,31 @@ void UnifiedSettingsWindow::paintFontSingleCard(Gdiplus::Graphics& g,
         sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
         Gdiplus::RectF xRect(ux, uy, uw, uh);
         g.DrawString(L"\x00D7", -1, &xFont, xRect, &sf, &xBr);
+    }
+
+    // Fallback star button (installed fonts only, not the active primary font)
+    if (card.meta->installed && !card.isActive) {
+        float fx = (float)card.fallbackRect.left;
+        float fy = (float)card.fallbackRect.top;
+        float fw = (float)(card.fallbackRect.right - card.fallbackRect.left);
+        float fh = (float)(card.fallbackRect.bottom - card.fallbackRect.top);
+
+        Gdiplus::FontFamily ff(L"Segoe UI");
+        Gdiplus::Font starFont(&ff, 10.f, Gdiplus::FontStyleRegular);
+        Gdiplus::StringFormat sf;
+        sf.SetAlignment(Gdiplus::StringAlignmentCenter);
+        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        Gdiplus::RectF starRect(fx, fy, fw, fh);
+
+        if (card.isFallback) {
+            // Filled star — accent color
+            Gdiplus::SolidBrush starBr(toGdipColorCR(chrome_.accent));
+            g.DrawString(L"\x2605", -1, &starFont, starRect, &sf, &starBr);
+        } else {
+            // Outline star — dim
+            Gdiplus::SolidBrush starBr(toGdipColorCR(chrome_.dimText));
+            g.DrawString(L"\x2606", -1, &starFont, starRect, &sf, &starBr);
+        }
     }
 }
 
@@ -327,6 +367,9 @@ void UnifiedSettingsWindow::paintFontBadges(Gdiplus::Graphics& g,
     if (meta.installed) {
         drawBadge(L"\x2713 Installed", chrome_.activeGreen);
     }
+    if (meta.category == "system") {
+        drawBadge(L"System", chrome_.dimText);
+    }
     if (meta.has_ligatures) {
         drawBadge(L"Ligatures", chrome_.accent);
     }
@@ -369,6 +412,11 @@ void UnifiedSettingsWindow::paintFontCardButton(Gdiplus::Graphics& g,
         fillColor = toGdipColorCR(chrome_.accent);
         textColor = Gdiplus::Color(255, 255, 255, 255);
         label = L"Apply";
+    } else if (card.meta && card.meta->download_url.empty()) {
+        // System-bundled font without download URL — no install possible
+        fillColor = toGdipColorCR(darkenCR(chrome_.btnInactive, 0.6f));
+        textColor = toGdipColorCR(chrome_.dimText);
+        label = L"System";
     } else {
         fillColor = toGdipColorCR(chrome_.btnInactive);
         textColor = toGdipColorCR(chrome_.textColor);
@@ -441,6 +489,8 @@ void UnifiedSettingsWindow::onFontCardClick(int idx) {
     if (!meta) return;
 
     if (meta->installed) {
+        // Debounce: skip if already applying this font
+        if (meta->name == config_.font_family) return;
         config_.font_family = meta->name;
         notifySave();
         if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -490,6 +540,73 @@ void UnifiedSettingsWindow::onFontCardUninstall(int idx) {
 
     // Refresh after a short delay to let the uninstall thread finish
     if (hwnd_) SetTimer(hwnd_, 301, 500, nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Font search edit
+// ---------------------------------------------------------------------------
+
+void UnifiedSettingsWindow::createFontSearchEdit() {
+    if (fontSearchEdit_) return;
+    fontSearchEdit_ = CreateWindowExW(0, L"EDIT", L"",
+        WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
+        0, 0, kFcSearchW, kFcSearchH,
+        hwnd_, (HMENU)1003, nullptr, nullptr);
+
+    // Set font
+    HFONT hFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    SendMessageW(fontSearchEdit_, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // Placeholder via cue banner
+    SendMessageW(fontSearchEdit_, EM_SETCUEBANNER, TRUE, (LPARAM)L"Search fonts...");
+}
+
+void UnifiedSettingsWindow::repositionFontSearchEdit() {
+    if (!fontSearchEdit_) return;
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    int contentX = sidebarWidth_ + kUsContentPad;
+    int filterBarRight = contentX + 4 * (kFcFilterBtnW + kFcFilterGap);
+    int searchX = filterBarRight + 12;
+    int searchY = kUsTopBarH + kUsContentPad + 40; // same Y as filter bar
+    SetWindowPos(fontSearchEdit_, nullptr, searchX, searchY,
+                 kFcSearchW, kFcSearchH, SWP_NOZORDER);
+
+    bool isFontPage = (selectedCategoryId_.find("font.family") != std::string::npos);
+    ShowWindow(fontSearchEdit_, isFontPage ? SW_SHOW : SW_HIDE);
+}
+
+void UnifiedSettingsWindow::onFontSearchChanged() {
+    if (!fontSearchEdit_) return;
+    wchar_t buf[256] = {};
+    GetWindowTextW(fontSearchEdit_, buf, 255);
+    fontSearchText_ = buf;
+    scrollY_ = 0.f;
+    rebuildFontFilteredList();
+    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+// ---------------------------------------------------------------------------
+// Fallback font helpers
+// ---------------------------------------------------------------------------
+
+bool UnifiedSettingsWindow::isFontFallback(const std::string& name) const {
+    for (const auto& fb : config_.font_fallback) {
+        if (fb == name) return true;
+    }
+    return false;
+}
+
+void UnifiedSettingsWindow::toggleFontFallback(const std::string& name) {
+    auto it = std::find(config_.font_fallback.begin(), config_.font_fallback.end(), name);
+    if (it != config_.font_fallback.end()) {
+        config_.font_fallback.erase(it);
+    } else {
+        config_.font_fallback.push_back(name);
+    }
+    notifySave();
+    if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 } // namespace termcore

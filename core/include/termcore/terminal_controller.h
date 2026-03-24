@@ -18,6 +18,7 @@
 #include "termcore/clipboard_history.h"
 #include "termcore/command_palette.h"
 #include "termcore/profile_dropdown.h"
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -60,8 +61,9 @@ public:
     float cellHeight() const { return fontMgr_ ? fontMgr_->cellHeight() : 16.0f; }
     int termRows() const { return termRows_; }
     int termCols() const { return termCols_; }
-    bool needsRender() const { return needsRender_; }
+    bool needsRender() const;
     void clearNeedsRender() { needsRender_ = false; }
+    void flushPendingUrlScan();
 
     // Tab info
     std::vector<TabController::TabInfo> tabBarInfo() const;
@@ -128,6 +130,7 @@ private:
     int termRows_ = 24;
     int termCols_ = 80;
     bool needsRender_ = false;
+    bool urlScanPending_ = false;
 
     void initInputHandler();
     void saveSearchHistory();

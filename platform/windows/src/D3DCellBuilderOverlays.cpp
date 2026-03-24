@@ -190,15 +190,15 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
         }
     }
 
-    // Pass 8: Tab Bar (polished, modern design inspired by VS Code / Windows Terminal)
+    // Pass 8: Tab Bar (Windows Terminal-style with rounded top corners)
     const auto& tabBar = this->tabBar;
     if (tabBar.visible && !tabBar.tabs.empty()) {
         float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
         int tabCount = static_cast<int>(tabBar.tabs.size());
 
         // Layout constants
-        float tabPadX = cellW * 1.0f;         // generous horizontal padding
-        float tabGap = 4.0f;                   // visible gap between tabs
+        float tabPadX = cellW * 1.0f;         // horizontal padding inside tab
+        float tabGap = 4.0f;                   // gap between tabs
         float tabMinW = cellW * 12.0f;
         float tabMaxW = cellW * 24.0f;
         float closeW = cellW * 1.5f;           // close button hit area
@@ -206,10 +206,20 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
         float tabTopPad = 6.0f;                // tabs float below bar top
         float bottomBorderH = 1.0f;            // thin bottom separator
         float plusBtnW = cellW * 2.0f;          // "+" button width
+        float activeCornerR = 6.0f;             // active tab corner radius
+        float inactiveCornerR = 4.0f;           // inactive tab corner radius
+        float accentBarH = 2.0f;               // accent bar at top of active tab
+        float closeBtnCornerR = 3.0f;          // close button hover bg radius
 
         float availW = viewportWidth - leftMargin - plusBtnW - 8.0f;
         float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
         tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
+
+        // Helper: encode corner radius into extra_flags upper 16 bits
+        auto encodeRadius = [](float radius) -> uint32_t {
+            uint32_t encoded = static_cast<uint32_t>(radius * 16.0f);
+            return encoded << 16u;
+        };
 
         // Helper to blend two colors
         auto blendColor = [](uint32_t base, uint32_t target, float t) -> uint32_t {
@@ -220,27 +230,90 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                     (uint32_t)(bB + (tB - bB) * t);
         };
 
-        // Full-width tab bar background
-        D3DCellInstance tabBarBg = {};
-        tabBarBg.position[0] = 0;
-        tabBarBg.position[1] = 0;
-        tabBarBg.atlas_size[0] = viewportWidth;
-        tabBarBg.atlas_size[1] = tabBarH;
-        colorFromRGBA(tabBar.bg_color | 0xFF000000, tabBarBg.bg_color);
-        tabBarBg.flags = 4;
-        cellInstances.push_back(tabBarBg);
+        // Helper to set premultiplied bg color from RGBA
+        auto setPremultBg = [](D3DCellInstance& inst, uint32_t rgb, float alpha) {
+            float r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
+            float g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
+            float b = static_cast<float>(rgb & 0xFF) / 255.0f;
+            inst.bg_color[0] = r * alpha;
+            inst.bg_color[1] = g * alpha;
+            inst.bg_color[2] = b * alpha;
+            inst.bg_color[3] = alpha;
+        };
 
-        // Bottom border line (full width, will be covered by active tab)
+        // Tab bar tint overlay — visually distinct from terminal content area.
         {
-            uint32_t borderColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.12f);
-            D3DCellInstance border = {};
-            border.position[0] = 0;
-            border.position[1] = tabBarH - bottomBorderH;
-            border.atlas_size[0] = viewportWidth;
-            border.atlas_size[1] = bottomBorderH;
-            colorFromRGBA(borderColor | 0xFF000000, border.bg_color);
-            border.flags = 8;
-            cellInstances.push_back(border);
+            D3DCellInstance tint = {};
+            tint.position[0] = 0;
+            tint.position[1] = 0;
+            tint.atlas_size[0] = viewportWidth;
+            tint.atlas_size[1] = tabBarH;
+            uint32_t bgR = (tabBar.bg_color >> 16) & 0xFF;
+            uint32_t bgG = (tabBar.bg_color >> 8) & 0xFF;
+            uint32_t bgB = tabBar.bg_color & 0xFF;
+            int lum = bgR * 299 + bgG * 587 + bgB * 114;
+            bool isDark = lum < 128000;
+            if (isDark) {
+                tint.bg_color[0] = 0.0f;
+                tint.bg_color[1] = 0.0f;
+                tint.bg_color[2] = 0.0f;
+                tint.bg_color[3] = 0.25f;
+            } else {
+                tint.bg_color[0] = 0.0f;
+                tint.bg_color[1] = 0.0f;
+                tint.bg_color[2] = 0.0f;
+                tint.bg_color[3] = 0.12f;
+            }
+            tint.flags = 8;
+            cellInstances.push_back(tint);
+        }
+
+        // Find active tab index for bottom border interruption
+        int activeTabIdx = -1;
+        for (int t = 0; t < tabCount; ++t) {
+            if (tabBar.tabs[t].active) { activeTabIdx = t; break; }
+        }
+
+        // Bottom border line — full width, interrupted where active tab sits
+        {
+            uint32_t borderColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.25f);
+            float activeTabX = leftMargin + activeTabIdx * (tabW + tabGap);
+
+            if (activeTabIdx >= 0) {
+                // Left segment (before active tab)
+                if (activeTabX > 0) {
+                    D3DCellInstance borderL = {};
+                    borderL.position[0] = 0;
+                    borderL.position[1] = tabBarH - bottomBorderH;
+                    borderL.atlas_size[0] = activeTabX;
+                    borderL.atlas_size[1] = bottomBorderH;
+                    colorFromRGBA(borderColor | 0xFF000000, borderL.bg_color);
+                    borderL.flags = 8;
+                    cellInstances.push_back(borderL);
+                }
+                // Right segment (after active tab)
+                float activeTabEnd = activeTabX + tabW;
+                if (activeTabEnd < viewportWidth) {
+                    D3DCellInstance borderR = {};
+                    borderR.position[0] = activeTabEnd;
+                    borderR.position[1] = tabBarH - bottomBorderH;
+                    borderR.atlas_size[0] = viewportWidth - activeTabEnd;
+                    borderR.atlas_size[1] = bottomBorderH;
+                    colorFromRGBA(borderColor | 0xFF000000, borderR.bg_color);
+                    borderR.flags = 8;
+                    cellInstances.push_back(borderR);
+                }
+            } else {
+                // No active tab — full border
+                D3DCellInstance border = {};
+                border.position[0] = 0;
+                border.position[1] = tabBarH - bottomBorderH;
+                border.atlas_size[0] = viewportWidth;
+                border.atlas_size[1] = bottomBorderH;
+                colorFromRGBA(borderColor | 0xFF000000, border.bg_color);
+                border.flags = 8;
+                cellInstances.push_back(border);
+            }
         }
 
         for (int t = 0; t < tabCount; ++t) {
@@ -249,49 +322,54 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             if (tabX >= viewportWidth) break;
             bool isHovered = (t == tabBar.hovered_tab);
 
-            // Tab dimensions: active tabs are taller (touch bottom), inactive float
+            // Tab dimensions: active tabs extend to bottom (cover border), inactive float above
             float tabY, tabH;
+            float cornerR;
             if (tab.active) {
                 tabY = tabTopPad;
-                tabH = tabBarH - tabTopPad;  // extends to bottom, covers border
+                tabH = tabBarH - tabTopPad;  // extends to bottom, seamless with content
+                cornerR = activeCornerR;
             } else {
                 tabY = tabTopPad + 2.0f;
-                tabH = tabBarH - tabTopPad - 2.0f - bottomBorderH; // doesn't touch bottom
+                tabH = tabBarH - tabTopPad - 2.0f - bottomBorderH;
+                cornerR = inactiveCornerR;
             }
 
             // Tab background color
             uint32_t tabBgColor;
             if (tab.active) {
-                tabBgColor = tabBar.active_bg_color;  // = terminal bg (seamless)
+                tabBgColor = tabBar.active_bg_color;
             } else if (tab.needs_attention) {
-                tabBgColor = blendColor(tabBar.bg_color, tabBar.accent_color, 0.25f);
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.accent_color, 0.3f);
             } else if (isHovered) {
-                tabBgColor = blendColor(tabBar.bg_color, tabBar.active_bg_color, 0.35f);
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.15f);
             } else {
-                tabBgColor = tabBar.bg_color;  // blend into bar (no separate bg)
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.07f);
             }
 
-            // Tab background rect (only draw if different from bar bg or active/hovered)
-            if (tab.active || isHovered || tab.needs_attention) {
+            // Tab background: rounded top corners via SDF shader
+            {
                 D3DCellInstance tabBg = {};
                 tabBg.position[0] = tabX;
                 tabBg.position[1] = tabY;
                 tabBg.atlas_size[0] = tabW;
                 tabBg.atlas_size[1] = tabH;
                 colorFromRGBA(tabBgColor | 0xFF000000, tabBg.bg_color);
-                tabBg.flags = 4;
+                tabBg.flags = 32;  // is_rounded_rect_top
+                tabBg.extra_flags = encodeRadius(cornerR);
                 cellInstances.push_back(tabBg);
             }
 
-            // Active tab: accent indicator at top edge
+            // Active tab: thin accent color bar at very top of tab
             if (tab.active) {
                 D3DCellInstance indicator = {};
                 indicator.position[0] = tabX;
                 indicator.position[1] = tabY;
                 indicator.atlas_size[0] = tabW;
-                indicator.atlas_size[1] = 2.0f;
+                indicator.atlas_size[1] = accentBarH;
                 colorFromRGBA(tabBar.accent_color | 0xFF000000, indicator.bg_color);
-                indicator.flags = 8;
+                indicator.flags = 32;
+                indicator.extra_flags = encodeRadius(cornerR);
                 cellInstances.push_back(indicator);
             }
 
@@ -309,14 +387,14 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 cellInstances.push_back(sep);
             }
 
-            // Text color with proper contrast
+            // Text color: active = full, hovered = slight dim, inactive = more dim
             uint32_t textColor;
             if (tab.active) {
                 textColor = tabBar.fg_color;
             } else if (isHovered) {
                 textColor = blendColor(tabBar.fg_color, tabBar.bg_color, 0.1f);
             } else {
-                textColor = blendColor(tabBar.fg_color, tabBar.bg_color, 0.4f);
+                textColor = blendColor(tabBar.fg_color, tabBar.bg_color, 0.35f);
             }
 
             // Tab title text (vertically centered in tab)
@@ -331,7 +409,6 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             if (icon == 0 && !tab.process_name.empty() && tabBar.process_icon_map) {
                 auto it = tabBar.process_icon_map->find(tab.process_name);
                 if (it != tabBar.process_icon_map->end()) {
-                    // Parse hex codepoint string (e.g., "F489" -> 0xF489)
                     icon = static_cast<char32_t>(
                         std::stoul(it->second, nullptr, 16));
                 }
@@ -401,7 +478,7 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 float closeCenterY = tabY + tabH * 0.5f;
                 float closeBtnSize = cellH * 0.55f;
 
-                // Close hover highlight (rounded-look square bg)
+                // Close hover highlight (rounded bg using SDF)
                 if (isHovered && tabBar.hover_close) {
                     D3DCellInstance cBg = {};
                     cBg.position[0] = closeCenterX - closeBtnSize * 0.5f;
@@ -414,7 +491,7 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                     cellInstances.push_back(cBg);
                 }
 
-                // "×" glyph
+                // "x" glyph
                 char32_t xCp = U'\u00D7';
                 CollectionFaceId xFace = fontCollection->resolveFace(xCp);
                 if (xFace == kInvalidCollectionFace) {
@@ -464,13 +541,13 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             }
         }
 
-        // "+" new tab button (with hover effect)
+        // "+" new tab button (with hover effect, rounded top corners)
         {
             float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
             float plusY = tabTopPad + 2.0f;
             float plusH = tabBarH - tabTopPad - 2.0f - bottomBorderH;
             if (plusX + plusBtnW < viewportWidth) {
-                // Hover background for "+" button
+                // Hover background for "+" button (rounded top)
                 if (tabBar.hover_plus) {
                     D3DCellInstance plusBg = {};
                     plusBg.position[0] = plusX;
@@ -479,7 +556,8 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                     plusBg.atlas_size[1] = plusH;
                     uint32_t hoverBg = blendColor(tabBar.bg_color, tabBar.fg_color, 0.1f);
                     colorFromRGBA(hoverBg | 0xFF000000, plusBg.bg_color);
-                    plusBg.flags = 8;
+                    plusBg.flags = 32;  // rounded top corners
+                    plusBg.extra_flags = encodeRadius(inactiveCornerR);
                     cellInstances.push_back(plusBg);
                 }
 

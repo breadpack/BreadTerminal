@@ -27,19 +27,38 @@ bool D3DTextRenderer::Impl::isCellSelected(int row, int col) const {
     return true;
 }
 
-int D3DTextRenderer::Impl::searchHighlightType(int row, int col) const {
+void D3DTextRenderer::Impl::rebuildSearchIndex() {
+    searchByRow.clear();
     for (int i = 0; i < static_cast<int>(searchHighlights.size()); ++i) {
-        const auto& h = searchHighlights[i];
-        if (h.row == row && col >= h.startCol && col < h.endCol) {
-            return (i == searchCurrentIndex) ? 2 : 1;
+        searchByRow[searchHighlights[i].row].push_back({i, i});
+    }
+}
+
+void D3DTextRenderer::Impl::rebuildUrlIndex() {
+    urlByRow.clear();
+    for (size_t i = 0; i < urlHighlights.size(); ++i) {
+        urlByRow[urlHighlights[i].row].push_back(i);
+    }
+}
+
+int D3DTextRenderer::Impl::searchHighlightType(int row, int col) const {
+    auto it = searchByRow.find(row);
+    if (it == searchByRow.end()) return 0;
+    for (const auto& [idx, _] : it->second) {
+        const auto& h = searchHighlights[idx];
+        if (col >= h.startCol && col < h.endCol) {
+            return (idx == searchCurrentIndex) ? 2 : 1;
         }
     }
     return 0;
 }
 
 const D3DTextRenderer::UrlHighlight* D3DTextRenderer::Impl::urlHighlightAt(int row, int col) const {
-    for (const auto& h : urlHighlights) {
-        if (h.row == row && col >= h.startCol && col < h.endCol) {
+    auto it = urlByRow.find(row);
+    if (it == urlByRow.end()) return nullptr;
+    for (size_t idx : it->second) {
+        const auto& h = urlHighlights[idx];
+        if (col >= h.startCol && col < h.endCol) {
             return &h;
         }
     }
@@ -141,13 +160,13 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         defaultBg[2] *= a;
         defaultBg[3] *= a;
 
-        // Right margin
+        // Right margin (starts below tab bar so it doesn't cover tab bar with semi-transparent bg)
         if (gridRight < viewportWidth) {
             D3DCellInstance inst = {};
             inst.position[0] = gridRight;
-            inst.position[1] = 0.0f;
+            inst.position[1] = gridOffsetY;
             inst.atlas_size[0] = viewportWidth - gridRight;
-            inst.atlas_size[1] = viewportHeight;
+            inst.atlas_size[1] = viewportHeight - gridOffsetY;
             inst.bg_color[0] = defaultBg[0];
             inst.bg_color[1] = defaultBg[1];
             inst.bg_color[2] = defaultBg[2];
@@ -171,10 +190,20 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             cellInstances.push_back(inst);
         }
 
-        // Top margin (above grid, when no tab bar)
+        // Top margin (tab bar area): fill with same bg+opacity as terminal cells
+        // so acrylic blur sees identical alpha across the entire window.
         if (gridOffsetY > 0.0f) {
-            // Tab bar area is handled by overlay passes; if no tab bar but
-            // there's an offset, fill it.
+            D3DCellInstance inst = {};
+            inst.position[0] = 0.0f;
+            inst.position[1] = 0.0f;
+            inst.atlas_size[0] = viewportWidth;
+            inst.atlas_size[1] = gridOffsetY;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;
+            cellInstances.push_back(inst);
         }
     }
 
@@ -508,7 +537,7 @@ void D3DTextRenderer::Impl::appendCursorInstances(
     int rows = screen.rows();
     int cols = screen.cols();
 
-    if (screen.cursorVisible() && cursorBlinkVisible && screen.viewportOffset() == 0) {
+    if (screen.cursorVisible() && cursorBlinkVisible && !imeActive && screen.viewportOffset() == 0) {
         int cRow = screen.cursorRow();
         int cCol = screen.cursorCol();
         if (cRow >= 0 && cRow < rows && cCol >= 0 && cCol < cols) {

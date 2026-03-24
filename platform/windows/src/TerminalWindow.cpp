@@ -243,8 +243,27 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             break;
 
         case WM_IME_COMPOSITION: {
+            // Capture composition (preedit) string for inline rendering
+            if (state && (lParam & GCS_COMPSTR)) {
+                HIMC imc = ImmGetContext(hWnd);
+                if (imc) {
+                    LONG bytes = ImmGetCompositionStringW(imc, GCS_COMPSTR, nullptr, 0);
+                    if (bytes > 0) {
+                        state->imeCompositionText.resize(bytes / sizeof(wchar_t));
+                        ImmGetCompositionStringW(imc, GCS_COMPSTR,
+                            state->imeCompositionText.data(), bytes);
+                    } else {
+                        state->imeCompositionText.clear();
+                    }
+                    ImmReleaseContext(hWnd, imc);
+                    state->needsRender = true;
+                    if (state->renderer) state->renderer->markContentDirty();
+                }
+            }
+
             std::string result = termcore::handleImeComposition(hWnd, lParam);
             if (!result.empty() && state && state->controller) {
+                state->imeCompositionText.clear(); // composition finalized
                 state->controller->onCharInput(result);
                 if (state->controller->needsRender()) {
                     state->needsRender = true;
@@ -256,7 +275,12 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
         }
 
         case WM_IME_ENDCOMPOSITION:
+            if (state) state->imeCompositionText.clear();
             termcore::handleImeEndComposition(hWnd);
+            if (state) {
+                state->needsRender = true;
+                if (state->renderer) state->renderer->markContentDirty();
+            }
             break;
 
         case WM_DPICHANGED:

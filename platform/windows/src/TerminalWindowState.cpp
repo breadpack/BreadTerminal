@@ -5,6 +5,9 @@
 #include "HighContrastDetector.h"
 #include "DirectWriteRasterizer.h"
 #include "DirectWriteDiscovery.h"
+#include "termcore/font/unicode_width.h"
+
+#include <imm.h>
 
 using termcore::D3DTextRenderer;
 
@@ -280,6 +283,7 @@ void TerminalWindowState::pollPty() {
     controller->pollPty();
     if (controller->needsRender()) {
         needsRender = true;
+        controller->flushPendingUrlScan();
         controller->clearNeedsRender();
         if (renderer) renderer->markContentDirty();
 
@@ -339,7 +343,75 @@ void TerminalWindowState::renderFrame() {
         renderer->setBackgroundOpacity(cfg.background_opacity);
     }
 
+    // Hide cursor during IME composition
+    bool imeComposing = !imeCompositionText.empty();
+    renderer->setIMEActive(imeComposing);
+
+    // Inject IME composition (preedit) text into screen cells before render
+    struct IMESavedCell { int row, col; termcore::TermCell cell; };
+    std::vector<IMESavedCell> imeSaved;
+
+    if (imeComposing) {
+        int curRow = screen->cursorRow();
+        int curCol = screen->cursorCol();
+        int cols = screen->cols();
+        int rows = screen->rows();
+        if (curRow >= 0 && curRow < rows) {
+            int col = curCol;
+            for (size_t i = 0; i < imeCompositionText.size(); ++i) {
+                if (col >= cols) break;
+
+                wchar_t ch = imeCompositionText[i];
+                char32_t cp = static_cast<char32_t>(ch);
+                // Handle surrogate pairs
+                if (i + 1 < imeCompositionText.size() &&
+                    ch >= 0xD800 && ch <= 0xDBFF) {
+                    wchar_t lo = imeCompositionText[i + 1];
+                    if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                        cp = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
+                        ++i;
+                    }
+                }
+
+                int w = termcore::codepoint_width(cp);
+                if (w < 1) w = 1;
+                if (col + w > cols) break;
+
+                // Save original cells
+                for (int c = col; c < col + w; ++c) {
+                    const termcore::TermCell& orig = screen->cellAt(curRow, c);
+                    imeSaved.push_back({curRow, c, orig});
+                }
+
+                // Write IME character with inverted colors (fg/bg swapped)
+                termcore::TermCell& cell = screen->mutableCellAt(curRow, col);
+                cell.codepoint = cp;
+                cell.fg_color = screen->dynamicColors().background;
+                cell.bg_color = screen->dynamicColors().foreground;
+                cell.attributes = 0;
+                cell.width = w;
+
+                if (w == 2 && col + 1 < cols) {
+                    termcore::TermCell& cont = screen->mutableCellAt(curRow, col + 1);
+                    cont.codepoint = 0;
+                    cont.fg_color = cell.fg_color;
+                    cont.bg_color = cell.bg_color;
+                    cont.attributes = 0;
+                    cont.width = 0;
+                }
+
+                col += w;
+            }
+        }
+    }
+
     renderer->render(*screen);
+
+    // Restore original cells after render
+    for (const auto& sc : imeSaved) {
+        termcore::TermCell& cell = screen->mutableCellAt(sc.row, sc.col);
+        cell = sc.cell;
+    }
 
     if (swapChain) {
         UINT syncInterval = inLiveResize ? 0 : 1;
@@ -370,26 +442,10 @@ void TerminalWindowState::updateTabBar() {
     D3DTextRenderer::TabBarInfo tabInfo;
     tabInfo.visible = static_cast<int>(tabs.size()) > 1;
 
-    // Derive tab bar colors from theme
-    uint32_t bgR = (config.background >> 16) & 0xFF;
-    uint32_t bgG = (config.background >> 8) & 0xFF;
-    uint32_t bgB = config.background & 0xFF;
-    int lum = bgR * 299 + bgG * 587 + bgB * 114;
-    bool isDark = lum < 128000;
-
-    if (isDark) {
-        tabInfo.bg_color =
-            ((uint32_t)(bgR * 0.7f) << 16) |
-            ((uint32_t)(bgG * 0.7f) << 8) |
-             (uint32_t)(bgB * 0.7f);
-    } else {
-        tabInfo.bg_color =
-            ((uint32_t)(bgR * 0.92f) << 16) |
-            ((uint32_t)(bgG * 0.92f) << 8) |
-             (uint32_t)(bgB * 0.92f);
-    }
+    // Tab bar uses same background as terminal area
+    tabInfo.bg_color = config.background;
     tabInfo.active_bg_color = config.background;
-    tabInfo.inactive_bg_color = tabInfo.bg_color;
+    tabInfo.inactive_bg_color = config.background;
     tabInfo.fg_color = config.foreground;
     tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
     tabInfo.process_icon_map = &config.tab_process_icons;

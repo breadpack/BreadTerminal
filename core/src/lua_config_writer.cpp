@@ -54,6 +54,14 @@ std::string serializeConfigLua(const Config& config) {
         }
         o << " },\n";
     }
+    if (!config.font_fallback.empty()) {
+        o << "    font_fallback = { ";
+        for (size_t i = 0; i < config.font_fallback.size(); ++i) {
+            if (i > 0) o << ", ";
+            o << escLua(config.font_fallback[i]);
+        }
+        o << " },\n";
+    }
     o << "})\n\n";
 
     // Theme & Colors

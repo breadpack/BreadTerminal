@@ -216,20 +216,41 @@ void GLTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                     (uint32_t)(bB + (tB - bB) * t);
         };
 
-        // Full-width tab bar background
-        GLCellInstance tabBarBg = {};
-        tabBarBg.position[0] = 0;
-        tabBarBg.position[1] = 0;
-        tabBarBg.atlas_size[0] = viewportWidth;
-        tabBarBg.atlas_size[1] = tabBarH;
-        colorFromRGBA(tabBar.bg_color | 0xFF000000, tabBarBg.bg_color);
-        tabBarBg.flags = 4;
-        tabBarBg.extra_flags = 0;
-        cellInstances.push_back(tabBarBg);
+        // Subtle tint overlay on top of Pass 1b base background.
+        // Dark themes: lighten slightly; light themes: darken slightly.
+        // This gives the tab bar a distinct look while keeping the same blur opacity.
+        {
+            GLCellInstance tint = {};
+            tint.position[0] = 0;
+            tint.position[1] = 0;
+            tint.atlas_size[0] = viewportWidth;
+            tint.atlas_size[1] = tabBarH;
+            uint32_t bgR = (tabBar.bg_color >> 16) & 0xFF;
+            uint32_t bgG = (tabBar.bg_color >> 8) & 0xFF;
+            uint32_t bgB = tabBar.bg_color & 0xFF;
+            int lum = bgR * 299 + bgG * 587 + bgB * 114;
+            bool isDark = lum < 128000;
+            if (isDark) {
+                // Dark theme: subtle white overlay (lighten)
+                tint.bg_color[0] = 1.0f * 0.06f;
+                tint.bg_color[1] = 1.0f * 0.06f;
+                tint.bg_color[2] = 1.0f * 0.06f;
+                tint.bg_color[3] = 0.06f;
+            } else {
+                // Light theme: subtle black overlay (darken)
+                tint.bg_color[0] = 0.0f;
+                tint.bg_color[1] = 0.0f;
+                tint.bg_color[2] = 0.0f;
+                tint.bg_color[3] = 0.05f;
+            }
+            tint.flags = 8;
+            tint.extra_flags = 0;
+            cellInstances.push_back(tint);
+        }
 
         // Bottom border line
         {
-            uint32_t borderColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.12f);
+            uint32_t borderColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.18f);
             GLCellInstance border = {};
             border.position[0] = 0;
             border.position[1] = tabBarH - bottomBorderH;
@@ -256,18 +277,20 @@ void GLTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 tabH = tabBarH - tabTopPad - 2.0f - bottomBorderH;
             }
 
+            // Tab background color
             uint32_t tabBgColor;
             if (tab.active) {
-                tabBgColor = tabBar.active_bg_color;
+                tabBgColor = tabBar.active_bg_color;  // = terminal bg (seamless with content)
             } else if (tab.needs_attention) {
                 tabBgColor = blendColor(tabBar.bg_color, tabBar.accent_color, 0.25f);
             } else if (isHovered) {
-                tabBgColor = blendColor(tabBar.bg_color, tabBar.active_bg_color, 0.35f);
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.08f);
             } else {
-                tabBgColor = tabBar.bg_color;
+                tabBgColor = blendColor(tabBar.bg_color, tabBar.fg_color, 0.04f);
             }
 
-            if (tab.active || isHovered || tab.needs_attention) {
+            // Tab background rect (always draw for all tabs)
+            {
                 GLCellInstance tabBg = {};
                 tabBg.position[0] = tabX;
                 tabBg.position[1] = tabY;

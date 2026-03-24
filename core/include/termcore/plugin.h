@@ -14,6 +14,8 @@ enum class PluginCapability {
     PaneRead,      // Read pane content
     PaneWrite,     // Write to pane (send text)
     FileSystem,    // Access file system (restricted)
+    UI,          // Extend settings UI
+    Clipboard,   // Access clipboard history and paste guard
 };
 
 struct PluginMetadata {

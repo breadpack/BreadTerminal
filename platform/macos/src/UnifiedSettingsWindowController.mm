@@ -11,6 +11,7 @@
 
 #include <fstream>
 #include <sstream>
+#import <CoreText/CoreText.h>
 
 // Layout constants (matching Windows implementation)
 static const CGFloat kWindowWidth      = 800.0;
@@ -136,7 +137,27 @@ static const CGFloat kSearchFieldHeight = 28.0;
             std::stringstream ss;
             ss << ifs.rdbuf();
             _fontIndex.loadFromJSON(ss.str());
+
+            // Inject CoreText install-check predicate
+            _fontIndex.setInstalledPredicate([](const std::string& name) -> bool {
+                if (name.empty()) return false;
+                CFStringRef cfName = CFStringCreateWithCString(kCFAllocatorDefault,
+                                                                name.c_str(),
+                                                                kCFStringEncodingUTF8);
+                if (!cfName) return false;
+                CTFontRef font = CTFontCreateWithName(cfName, 12.0, nullptr);
+                CFRelease(cfName);
+                if (!font) return false;
+                CFRelease(font);
+                return true;
+            });
             _fontIndex.refreshInstallStatus();
+
+            // Enumerate system fonts and add any not already in the index
+            NSArray<NSString*>* families = [[NSFontManager sharedFontManager] availableFontFamilies];
+            for (NSString* family in families) {
+                _fontIndex.addSystemFont(std::string([family UTF8String]));
+            }
         }
     }
 }
