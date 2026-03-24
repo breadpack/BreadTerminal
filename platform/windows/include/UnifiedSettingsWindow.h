@@ -94,8 +94,10 @@ private:
         const FontMetadata* meta = nullptr;
         RECT cardRect      = {};
         RECT buttonRect    = {};
+        RECT fallbackRect  = {};
         RECT uninstallRect = {};
         bool isActive      = false;
+        bool isFallback    = false;
         bool isInstalling  = false;
         bool isFailed      = false;
     };
@@ -188,6 +190,15 @@ private:
     int fontInstallingCard_ = -1;
     int fontFailedCard_     = -1;
     bool fontIndexReady_    = false;
+
+    // Font search
+    HWND fontSearchEdit_     = nullptr;
+    std::wstring fontSearchText_;
+    void createFontSearchEdit();
+    void repositionFontSearchEdit();
+    void onFontSearchChanged();
+    bool isFontFallback(const std::string& name) const;
+    void toggleFontFallback(const std::string& name);
 
     // Scroll
     float scrollY_ = 0.f;

@@ -6,7 +6,8 @@
            Version="$(var.ProductVersion)"
            UpgradeCode="E8A1B2C3-D4E5-6F7A-8B9C-0D1E2F3A4B5C">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of BreadTerminal is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of BreadTerminal is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">

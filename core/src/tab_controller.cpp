@@ -183,6 +183,10 @@ Screen* TabController::activeScreen() {
     return activeScreen_;
 }
 
+const Screen* TabController::activeScreen() const {
+    return activeScreen_;
+}
+
 Pty* TabController::activePty() {
     return activePty_;
 }

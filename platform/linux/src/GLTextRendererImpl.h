@@ -39,6 +39,9 @@ struct GLTextRenderer::Impl {
     // Search highlight state
     std::vector<GLTextRenderer::SearchHighlight> searchHighlights;
     int searchCurrentIndex = -1;
+    // Row-indexed search highlights for O(1) row lookup
+    std::unordered_map<int, std::vector<std::pair<int,int>>> searchByRow; // row -> [(index, index)]
+    void rebuildSearchIndex();
 
     // Cursor blink state
     bool cursorBlinkVisible = true;
@@ -79,6 +82,9 @@ struct GLTextRenderer::Impl {
 
     // Atlas uploader
     std::unique_ptr<GLAtlasUploader> atlasUploader;
+
+    // Background opacity (1.0 = fully opaque, <1.0 for transparency)
+    float backgroundOpacity = 1.0f;
 
     // Viewport
     float viewportWidth = 0;

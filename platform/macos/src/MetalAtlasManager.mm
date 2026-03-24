@@ -231,12 +231,25 @@ vertex VertexOut cell_vertex(
     CellInstance cell = cells[instance_id];
     float2 corner = corners[vertex_id];
     bool is_bg = (cell.flags & 4) != 0;
+    bool is_overlay = (cell.flags & 8) != 0;
+    bool has_glyph = (cell.flags & 1) != 0;
     float2 cell_origin = float2(cell.grid_pos) * u.cell_size + u.grid_padding;
     float4 fg = float4(cell.fg_color) / 255.0;
     float4 bg = float4(cell.bg_color) / 255.0;
     float2 pixel_pos;
     float2 tex_coord;
-    if (is_bg) {
+    if (is_overlay && has_glyph) {
+        float2 pos = float2(cell.grid_pos);
+        float2 gs = float2(cell.glyph_size);
+        pixel_pos = pos + corner * gs;
+        tex_coord = float2(cell.glyph_uv) + corner * gs;
+    } else if (is_overlay) {
+        float2 pos = float2(cell.grid_pos);
+        float2 size = float2(cell.glyph_size);
+        float2 bearing = float2(cell.offset);
+        pixel_pos = pos + bearing + corner * size;
+        tex_coord = float2(0);
+    } else if (is_bg) {
         pixel_pos = cell_origin + corner * u.cell_size;
         tex_coord = float2(0);
     } else {
@@ -262,6 +275,15 @@ fragment float4 cell_fragment(
     texture2d<float> atlas_gray [[texture(0)]],
     texture2d<float> atlas_color [[texture(1)]]
 ) {
+    if ((in.flags & 8) != 0 && (in.flags & 1) != 0) {
+        constexpr sampler textSampler(coord::pixel, address::clamp_to_edge, filter::nearest);
+        float alpha = atlas_gray.sample(textSampler, in.texCoord).r;
+        return float4(in.fg_color.rgb * alpha, alpha);
+    }
+    if ((in.flags & 8) != 0) {
+        float a = in.bg_color.a;
+        return float4(in.bg_color.rgb * a, a);
+    }
     if ((in.flags & 4) != 0) {
         float a = in.bg_color.a;
         return float4(in.bg_color.rgb * a, a);

@@ -78,6 +78,29 @@ void UnifiedSettingsWindow::setConfig(const Config& config) {
             return isFontInstalled(toWide(psName));
         });
         fontIndex_.refreshInstallStatus();
+
+        // Enumerate system-installed fonts and add any not already in the index
+        {
+            Gdiplus::InstalledFontCollection ifc;
+            int familyCount = ifc.GetFamilyCount();
+            if (familyCount > 0) {
+                std::vector<Gdiplus::FontFamily> families(familyCount);
+                int found = 0;
+                ifc.GetFamilies(familyCount, families.data(), &found);
+                for (int i = 0; i < found; ++i) {
+                    wchar_t nameW[LF_FACESIZE] = {};
+                    families[i].GetFamilyName(nameW);
+                    // Convert to narrow string
+                    int len = WideCharToMultiByte(CP_UTF8, 0, nameW, -1, nullptr, 0, nullptr, nullptr);
+                    if (len > 0) {
+                        std::string nameA(len - 1, '\0');
+                        WideCharToMultiByte(CP_UTF8, 0, nameW, -1, nameA.data(), len, nullptr, nullptr);
+                        fontIndex_.addSystemFont(nameA);
+                    }
+                }
+            }
+        }
+
         rebuildFontFilteredList();
     }
 
@@ -192,12 +215,14 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
     switch (msg) {
     case WM_CREATE:
         createSearchEdit();
+        createFontSearchEdit();
         return 0;
 
     case WM_SIZE: {
         RECT rc;
         GetClientRect(hwnd, &rc);
         repositionSearchEdit(rc.right);
+        repositionFontSearchEdit();
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
@@ -212,12 +237,17 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
             commitInlineEdit();
             return 0;
         }
+        // Font search edit change
+        if (LOWORD(wParam) == 1003 && HIWORD(wParam) == EN_CHANGE) {
+            onFontSearchChanged();
+            return 0;
+        }
         break;
 
     case WM_CTLCOLOREDIT: {
         HDC hdc = (HDC)wParam;
         HWND ctrl = (HWND)lParam;
-        if (ctrl == searchEdit_) {
+        if (ctrl == searchEdit_ || ctrl == fontSearchEdit_) {
             SetTextColor(hdc, chrome_.textColor);
             SetBkColor(hdc, chrome_.fieldBg);
             static HBRUSH fieldBrush = nullptr;
@@ -346,6 +376,17 @@ LRESULT UnifiedSettingsWindow::handleMessage(HWND hwnd, UINT msg,
                 if (hitTestFontUninstallButton(ci, mx, my)) {
                     onFontCardUninstall(ci);
                     return 0;
+                }
+                // Fallback star button
+                if (ci < (int)fontCardRects_.size()) {
+                    const auto& card = fontCardRects_[ci];
+                    if (card.meta && card.meta->installed && !card.isActive) {
+                        const RECT& fr = card.fallbackRect;
+                        if (mx >= fr.left && mx < fr.right && my >= fr.top && my < fr.bottom) {
+                            toggleFontFallback(card.meta->name);
+                            return 0;
+                        }
+                    }
                 }
                 if (hitTestFontCardButton(ci, mx, my)) {
                     onFontCardClick(ci);

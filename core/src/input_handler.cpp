@@ -214,8 +214,8 @@ void InputHandler::sendVtKey(uint32_t keycode) {
     switch (keycode) {
         case 0xF700: { char s[3]={pfx[0],pfx[1],'A'}; d_.sendPtyData(s,3); } return;
         case 0xF701: { char s[3]={pfx[0],pfx[1],'B'}; d_.sendPtyData(s,3); } return;
-        case 0xF702: { char s[3]={pfx[0],pfx[1],'C'}; d_.sendPtyData(s,3); } return;
-        case 0xF703: { char s[3]={pfx[0],pfx[1],'D'}; d_.sendPtyData(s,3); } return;
+        case 0xF702: { char s[3]={pfx[0],pfx[1],'D'}; d_.sendPtyData(s,3); } return; // Left
+        case 0xF703: { char s[3]={pfx[0],pfx[1],'C'}; d_.sendPtyData(s,3); } return; // Right
         case 0xF704: d_.sendPtyData("\x1b[H", 3); return;   // Home
         case 0xF705: d_.sendPtyData("\x1b[F", 3); return;   // End
         case 0xF706: d_.sendPtyData("\x1b[5~", 4); return;  // PageUp

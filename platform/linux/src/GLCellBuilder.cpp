@@ -25,11 +25,20 @@ bool GLTextRenderer::Impl::isCellSelected(int row, int col) const {
     return true;
 }
 
-int GLTextRenderer::Impl::searchHighlightType(int row, int col) const {
+void GLTextRenderer::Impl::rebuildSearchIndex() {
+    searchByRow.clear();
     for (int i = 0; i < static_cast<int>(searchHighlights.size()); ++i) {
-        const auto& h = searchHighlights[i];
-        if (h.row == row && col >= h.startCol && col < h.endCol) {
-            return (i == searchCurrentIndex) ? 2 : 1;
+        searchByRow[searchHighlights[i].row].push_back({i, i});
+    }
+}
+
+int GLTextRenderer::Impl::searchHighlightType(int row, int col) const {
+    auto it = searchByRow.find(row);
+    if (it == searchByRow.end()) return 0;
+    for (const auto& [idx, _] : it->second) {
+        const auto& h = searchHighlights[idx];
+        if (col >= h.startCol && col < h.endCol) {
+            return (idx == searchCurrentIndex) ? 2 : 1;
         }
     }
     return 0;
@@ -97,7 +106,84 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
             }
 
+            // Apply background opacity (premultiplied alpha) only to cells
+            // with the default background color. Cells with explicit ANSI
+            // background colors (e.g. prompt segments) stay fully opaque.
+            bool hasDefaultBg = (cell.bg_color == kColorDefault);
+            if (cell.attributes & AttrInverse) hasDefaultBg = (cell.fg_color == kColorDefault);
+            if (sht == 0 && !isCellSelected(row, col) && hasDefaultBg) {
+                float a = backgroundOpacity;
+                inst.bg_color[0] *= a;
+                inst.bg_color[1] *= a;
+                inst.bg_color[2] *= a;
+                inst.bg_color[3] *= a;
+            }
+
             inst.flags = 4;  // is_bg_pass
+            inst.extra_flags = 0;
+            cellInstances.push_back(inst);
+        }
+    }
+
+    // Pass 1b: Margin quads — fill gaps between cell grid and viewport edges
+    // so margins have the same opacity as the cell background.
+    {
+        float gridRight  = cols * cellW;
+        float gridBottom = rows * cellH + gridOffsetY;
+
+        float defaultBg[4];
+        colorFromRGBA(colors.resolveBg(colors.background), defaultBg);
+        float a = backgroundOpacity;
+        defaultBg[0] *= a;
+        defaultBg[1] *= a;
+        defaultBg[2] *= a;
+        defaultBg[3] *= a;
+
+        // Right margin (starts below tab bar so it doesn't cover tab bar with semi-transparent bg)
+        if (gridRight < viewportWidth) {
+            GLCellInstance inst = {};
+            inst.position[0] = gridRight;
+            inst.position[1] = gridOffsetY;
+            inst.atlas_size[0] = viewportWidth - gridRight;
+            inst.atlas_size[1] = viewportHeight - gridOffsetY;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;  // render as rect
+            inst.extra_flags = 0;
+            cellInstances.push_back(inst);
+        }
+
+        // Bottom margin
+        if (gridBottom < viewportHeight) {
+            GLCellInstance inst = {};
+            inst.position[0] = 0.0f;
+            inst.position[1] = gridBottom;
+            inst.atlas_size[0] = gridRight;  // only up to grid width (right margin covers rest)
+            inst.atlas_size[1] = viewportHeight - gridBottom;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;  // render as rect
+            inst.extra_flags = 0;
+            cellInstances.push_back(inst);
+        }
+
+        // Top margin (tab bar area): fill with same bg+opacity as terminal cells
+        // so transparency looks consistent across the entire window.
+        if (gridOffsetY > 0.0f) {
+            GLCellInstance inst = {};
+            inst.position[0] = 0.0f;
+            inst.position[1] = 0.0f;
+            inst.atlas_size[0] = viewportWidth;
+            inst.atlas_size[1] = gridOffsetY;
+            inst.bg_color[0] = defaultBg[0];
+            inst.bg_color[1] = defaultBg[1];
+            inst.bg_color[2] = defaultBg[2];
+            inst.bg_color[3] = defaultBg[3];
+            inst.flags = 8;
             inst.extra_flags = 0;
             cellInstances.push_back(inst);
         }

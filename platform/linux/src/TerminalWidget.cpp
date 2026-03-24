@@ -156,6 +156,10 @@ static gboolean terminal_widget_render(GtkGLArea* area,
                                         GdkGLContext* /*context*/) {
     TerminalWidget* self = TERMINAL_WIDGET(area);
     if (self->renderer && self->controller) {
+        // Update background opacity from config
+        const auto& cfg = self->controller->config();
+        self->renderer->setBackgroundOpacity(cfg.background_opacity);
+
         Screen* screen = self->controller->activeScreen();
         if (screen) {
             self->renderer->render(*screen);
@@ -192,6 +196,7 @@ static gboolean on_render_tick(gpointer user_data) {
 
         // Queue a render if the controller says we need one
         if (self->controller->needsRender()) {
+            self->controller->flushPendingUrlScan();
             self->controller->clearNeedsRender();
             gtk_gl_area_queue_render(GTK_GL_AREA(self));
         }

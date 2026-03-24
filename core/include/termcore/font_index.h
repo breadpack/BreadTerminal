@@ -37,6 +37,10 @@ public:
     void markInstalled(const std::string& name);
     void markUninstalled(const std::string& name);
 
+    /// Add a system font that isn't already in the index.
+    /// Returns true if the font was added (not a duplicate).
+    bool addSystemFont(const std::string& family_name);
+
     /// Inject a platform predicate that checks if a font (by family name)
     /// is available on the system.
     void setInstalledPredicate(std::function<bool(const std::string&)> pred);

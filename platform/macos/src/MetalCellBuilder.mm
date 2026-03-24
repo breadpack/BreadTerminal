@@ -5,6 +5,50 @@
 namespace termcore {
 
 // ---------------------------------------------------------------------------
+// Row-indexed rebuild helpers
+// ---------------------------------------------------------------------------
+void MetalTextRenderer::Impl::rebuildSearchIndex() {
+    searchByRow.clear();
+    for (int i = 0; i < static_cast<int>(searchHighlights.size()); ++i) {
+        searchByRow[searchHighlights[i].row].push_back({i, i});
+    }
+}
+
+void MetalTextRenderer::Impl::rebuildUrlIndex() {
+    urlByRow.clear();
+    for (size_t i = 0; i < urlHighlights.size(); ++i) {
+        urlByRow[urlHighlights[i].row].push_back(i);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Row-indexed lookup helpers (O(1) row lookup instead of linear scan)
+// ---------------------------------------------------------------------------
+int MetalTextRenderer::Impl::searchHighlightType(int row, int col) const {
+    auto it = searchByRow.find(row);
+    if (it == searchByRow.end()) return 0;
+    for (const auto& [idx, _] : it->second) {
+        const auto& h = searchHighlights[idx];
+        if (col >= h.startCol && col < h.endCol) {
+            return (idx == searchCurrentIndex) ? 2 : 1;
+        }
+    }
+    return 0;
+}
+
+const MetalTextRenderer::UrlHighlight* MetalTextRenderer::Impl::urlHighlightAt(int row, int col) const {
+    auto it = urlByRow.find(row);
+    if (it == urlByRow.end()) return nullptr;
+    for (size_t idx : it->second) {
+        const auto& h = urlHighlights[idx];
+        if (col >= h.startCol && col < h.endCol) {
+            return &h;
+        }
+    }
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // buildCellBuffer -- clean 2-pass (backgrounds then glyphs)
 // ---------------------------------------------------------------------------
 void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
@@ -25,6 +69,10 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     const auto& dc = screen.dynamicColors();
 
     uint8_t bgAlpha = static_cast<uint8_t>(255.0f * backgroundOpacity);
+
+    // Offset grid down when tab bar is visible
+    float tabBarH = cellH * MetalTextRenderer::kTabBarHeightScale;
+    gridOffsetY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
 
     // Selection highlight color (use highlight_bg from dynamic colors, with fg as contrast)
     uint32_t selBg = dc.highlight_bg;
@@ -51,6 +99,16 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 fg = selFg;
             }
 
+            // Search highlight coloring
+            int sht = searchHighlightType(row, col);
+            if (sht == 2) {
+                // Current match: orange background, black text
+                bg = 0xFF9900; fg = 0x000000;
+            } else if (sht == 1) {
+                // Other matches: yellow background, black text
+                bg = 0xFFFF00; fg = 0x000000;
+            }
+
             CellInstance inst = {};
             inst.grid_col = static_cast<uint16_t>(col);
             inst.grid_row = static_cast<uint16_t>(row);
@@ -61,7 +119,7 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             inst.bg_r = (bg >> 16) & 0xFF;
             inst.bg_g = (bg >> 8) & 0xFF;
             inst.bg_b = bg & 0xFF;
-            inst.bg_a = bgAlpha;
+            inst.bg_a = (sht > 0) ? static_cast<uint8_t>(255) : bgAlpha;
             inst.flags = 4; // bg pass
             cellInstances.push_back(inst);
         }
@@ -124,6 +182,10 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                     if (selection.contains(row, col)) {
                         fg = selFg; bg = selBg;
                     }
+                    int sht_box = searchHighlightType(row, col);
+                    if (sht_box > 0) {
+                        fg = 0x000000;
+                    }
 
                     CellInstance inst = {};
                     inst.grid_col = static_cast<uint16_t>(col);
@@ -180,6 +242,10 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             }
             if (selection.contains(row, col)) {
                 fg = selFg; bg = selBg;
+            }
+            int sht2 = searchHighlightType(row, col);
+            if (sht2 > 0) {
+                fg = 0x000000;
             }
 
             bool is_wide = (cell.width == 2);
@@ -258,7 +324,8 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
-    // --- Pass 3b: URL highlight underline (Cmd+hover) ---
+    // --- Pass 3b: URL highlight underlines (Cmd+hover) ---
+    // Legacy single URL highlight
     if (urlHighlightRow >= 0 && urlHighlightRow < rows &&
         urlHighlightStartCol >= 0 && urlHighlightEndCol > urlHighlightStartCol) {
         int endC = std::min(urlHighlightEndCol, cols);
@@ -279,19 +346,62 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             cellInstances.push_back(ulInst);
         }
     }
+    // Vector-based URL highlights
+    for (const auto& uh : urlHighlights) {
+        uint32_t ulColor = uh.color;
+        uint8_t ulAlpha = uh.hovered ? 255 : 153; // 1.0 or 0.6
+        for (int col = uh.startCol; col < uh.endCol && col < cols; ++col) {
+            const TermCell& cell = screen.cellAt(uh.row, col);
+            if (cell.underline_style != 0 || (cell.attributes & AttrUnderline)) continue;
+
+            CellInstance ulInst = {};
+            ulInst.grid_col = static_cast<uint16_t>(col);
+            ulInst.grid_row = static_cast<uint16_t>(uh.row);
+            ulInst.flags = 4; // bg pass (solid rect)
+            ulInst.offset_y = static_cast<int16_t>(cellH - 2);
+            ulInst.glyph_width = static_cast<uint16_t>(cellW);
+            ulInst.glyph_height = 2;
+            ulInst.bg_r = (ulColor >> 16) & 0xFF;
+            ulInst.bg_g = (ulColor >> 8) & 0xFF;
+            ulInst.bg_b = ulColor & 0xFF;
+            ulInst.bg_a = ulAlpha;
+            cellInstances.push_back(ulInst);
+        }
+    }
+
+    // Pass 1b: Top margin (tab bar area) fill with same bg+opacity as terminal cells
+    if (gridOffsetY > 0.0f) {
+        uint32_t defaultBg = dc.resolveBg(dc.background);
+        CellInstance topMargin = {};
+        // Use overlay mode (flag 8) for absolute pixel positioning
+        topMargin.grid_col = 0;
+        topMargin.grid_row = 0;
+        topMargin.glyph_width = static_cast<uint16_t>(viewportWidth);
+        topMargin.glyph_height = static_cast<uint16_t>(gridOffsetY);
+        topMargin.bg_r = (defaultBg >> 16) & 0xFF;
+        topMargin.bg_g = (defaultBg >> 8) & 0xFF;
+        topMargin.bg_b = defaultBg & 0xFF;
+        topMargin.bg_a = bgAlpha;
+        topMargin.flags = 8;  // overlay (solid rect at absolute position)
+        cellInstances.push_back(topMargin);
+    }
 
     // Record insertion point before cursor instances
     cellCountBeforeCursor = cellInstances.size();
 
     // --- Pass 4: Cursor ---
-    appendCursorInstances(screen, cellW, cellH);
+    appendCursorInstances(screen, cellW, cellH, gridOffsetY);
+
+    // --- Passes 5+: Overlay elements (tab bar, etc.) ---
+    buildOverlayPasses(screen, cellW, cellH, ascent, fontSize);
 }
 
 // -----------------------------------------------------------------
 // Append cursor instances (can be called independently for blink)
 // -----------------------------------------------------------------
 void MetalTextRenderer::Impl::appendCursorInstances(const Screen& screen,
-                                                      float cellW, float cellH) {
+                                                      float cellW, float cellH,
+                                                      float /*gridOffsetY*/) {
     // Update blink state (time-based)
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     if (now - lastBlinkToggle >= blinkInterval) {
@@ -346,7 +456,7 @@ void MetalTextRenderer::Impl::patchCursorOnly(const Screen& screen) {
     // Remove old cursor instances (everything after cellCountBeforeCursor)
     cellInstances.resize(cellCountBeforeCursor);
     // Append fresh cursor instances
-    appendCursorInstances(screen, cellW, cellH);
+    appendCursorInstances(screen, cellW, cellH, gridOffsetY);
 }
 
 } // namespace termcore

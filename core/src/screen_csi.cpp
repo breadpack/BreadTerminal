@@ -153,21 +153,28 @@ void Screen::handleEraseDisplay(const std::vector<VtParam>& params) {
     case 0: // Erase below (from cursor to end)
         for (int c = cursor_.col; c < cols_; ++c)
             eraseCell(mutableCellAt(cursor_.row, c));
-        for (int r = cursor_.row + 1; r < rows_; ++r)
+        markRowDirty(cursor_.row);
+        for (int r = cursor_.row + 1; r < rows_; ++r) {
             for (int c = 0; c < cols_; ++c)
                 eraseCell(mutableCellAt(r, c));
+            markRowDirty(r);
+        }
         break;
     case 1: // Erase above (from start to cursor)
-        for (int r = 0; r < cursor_.row; ++r)
+        for (int r = 0; r < cursor_.row; ++r) {
             for (int c = 0; c < cols_; ++c)
                 eraseCell(mutableCellAt(r, c));
+            markRowDirty(r);
+        }
         for (int c = 0; c <= cursor_.col; ++c)
             eraseCell(mutableCellAt(cursor_.row, c));
+        markRowDirty(cursor_.row);
         break;
     case 2: // Erase all
         for (int r = 0; r < rows_; ++r)
             for (int c = 0; c < cols_; ++c)
                 eraseCell(mutableCellAt(r, c));
+        markAllDirty();
         break;
     case 3: // Erase scrollback
         scrollback_.clear();
@@ -186,14 +193,17 @@ void Screen::handleEraseLine(const std::vector<VtParam>& params) {
     case 0: // Erase right
         for (int c = cursor_.col; c < cols_; ++c)
             eraseCell(mutableCellAt(cursor_.row, c));
+        markRowDirty(cursor_.row);
         break;
     case 1: // Erase left
         for (int c = 0; c <= cursor_.col; ++c)
             eraseCell(mutableCellAt(cursor_.row, c));
+        markRowDirty(cursor_.row);
         break;
     case 2: // Erase entire line
         for (int c = 0; c < cols_; ++c)
             eraseCell(mutableCellAt(cursor_.row, c));
+        markRowDirty(cursor_.row);
         break;
     default:
         break;
@@ -450,6 +460,9 @@ void Screen::handleMode(char32_t final_char,
             sync_update_ = set;
             if (set) {
                 sync_start_time_ = std::chrono::steady_clock::now();
+            } else {
+                // ESU received: mark all rows dirty so the deferred frame renders fully
+                markAllDirty();
             }
             break;
         default:
@@ -491,6 +504,7 @@ void Screen::handleInsertDeleteChars(char32_t final_char,
                   row.begin() + cursor_.col + n);
         row.resize(cols_);
     }
+    markRowDirty(cursor_.row);
 }
 
 // --- Scroll Up/Down ---
@@ -511,6 +525,7 @@ void Screen::handleEraseChars(const std::vector<VtParam>& params) {
     for (int i = 0; i < n; ++i) {
         eraseCell(mutableCellAt(cursor_.row, cursor_.col + i));
     }
+    markRowDirty(cursor_.row);
 }
 
 // --- Absolute Position ---

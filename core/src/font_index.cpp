@@ -105,6 +105,22 @@ void FontIndex::markUninstalled(const std::string& name) {
     }
 }
 
+bool FontIndex::addSystemFont(const std::string& family_name) {
+    // Check for duplicates (case-insensitive)
+    std::string lowerName = toLower(family_name);
+    for (const auto& font : fonts_) {
+        if (toLower(font.name) == lowerName) return false;
+        if (!font.postscript_name.empty() && toLower(font.postscript_name) == lowerName) return false;
+    }
+
+    FontMetadata meta;
+    meta.name = family_name;
+    meta.category = "system";
+    meta.installed = true;
+    fonts_.push_back(std::move(meta));
+    return true;
+}
+
 void FontIndex::setInstalledPredicate(std::function<bool(const std::string&)> pred) {
     installedPredicate_ = std::move(pred);
 }

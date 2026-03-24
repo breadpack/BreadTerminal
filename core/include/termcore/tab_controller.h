@@ -44,6 +44,7 @@ public:
 
     // Active pane access
     Screen* activeScreen();
+    const Screen* activeScreen() const;
     Pty* activePty();
     PaneState* activePane();
     PaneState* paneById(PaneId id);

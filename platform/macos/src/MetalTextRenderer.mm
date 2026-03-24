@@ -129,9 +129,9 @@ void MetalTextRenderer::render(const Screen& screen) {
             }
         }
 
-        // Grid padding (same on all sides)
+        // Grid padding (same on all sides, plus tab bar offset on Y)
         uniforms.grid_padding[0] = impl_->gridPadding;
-        uniforms.grid_padding[1] = impl_->gridPadding;
+        uniforms.grid_padding[1] = impl_->gridPadding + impl_->gridOffsetY;
 
         id<MTLBuffer> uniformBuf = [impl_->device
             newBufferWithBytes:&uniforms
@@ -222,6 +222,31 @@ void MetalTextRenderer::setUrlHighlight(int row, int startCol, int endCol) {
     impl_->urlHighlightRow = row;
     impl_->urlHighlightStartCol = startCol;
     impl_->urlHighlightEndCol = endCol;
+}
+
+void MetalTextRenderer::setSearchHighlights(
+        const std::vector<SearchHighlight>& highlights, int currentIndex) {
+    impl_->searchHighlights = highlights;
+    impl_->searchCurrentIndex = currentIndex;
+    impl_->rebuildSearchIndex();
+}
+
+void MetalTextRenderer::setUrlHighlights(const std::vector<UrlHighlight>& highlights) {
+    impl_->urlHighlights = highlights;
+    impl_->rebuildUrlIndex();
+}
+
+void MetalTextRenderer::setTabBar(const TabBarInfo& info) {
+    impl_->tabBar = info;
+    impl_->contentDirty = true;
+}
+
+MetalTextRenderer::TabBarInfo MetalTextRenderer::getTabBar() const {
+    return impl_->tabBar;
+}
+
+void MetalTextRenderer::markContentDirty() {
+    impl_->contentDirty = true;
 }
 
 IAtlasUploader* MetalTextRenderer::atlasUploader() {

@@ -56,6 +56,7 @@
     _impl->needsRender = false;
 
     if (_impl->controller) {
+        _impl->controller->flushPendingUrlScan();
         _impl->controller->clearNeedsRender();
     }
 
@@ -128,6 +129,43 @@
                 col += w;
             }
         }
+    }
+
+    // Update tab bar state from controller
+    if (_impl->controller) {
+        auto tabs = _impl->controller->tabBarInfo();
+        const auto& config = _impl->controller->config();
+        float cellH = _impl->controller->cellHeight();
+
+        termcore::MetalTextRenderer::TabBarInfo tabInfo;
+        tabInfo.visible = static_cast<int>(tabs.size()) > 1;
+
+        // Tab bar uses same background as terminal area
+        tabInfo.bg_color = config.background;
+        tabInfo.active_bg_color = config.background;
+        tabInfo.inactive_bg_color = config.background;
+        tabInfo.fg_color = config.foreground;
+        tabInfo.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+        tabInfo.process_icon_map = &config.tab_process_icons;
+
+        // Preserve hover state from previous frame
+        auto prevTabBar = _impl->renderer->getTabBar();
+        tabInfo.hovered_tab = prevTabBar.hovered_tab;
+        tabInfo.hover_close = prevTabBar.hover_close;
+        tabInfo.hover_plus = prevTabBar.hover_plus;
+
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            termcore::MetalTextRenderer::TabInfo ti;
+            ti.title = tabs[i].title;
+            ti.icon_name = tabs[i].icon_name;
+            ti.process_name = tabs[i].process_name;
+            ti.active = tabs[i].active;
+            ti.has_unread = tabs[i].has_unread;
+            ti.needs_attention = tabs[i].needs_attention;
+            tabInfo.tabs.push_back(ti);
+        }
+
+        _impl->renderer->setTabBar(tabInfo);
     }
 
     // Pass selection state from controller to renderer

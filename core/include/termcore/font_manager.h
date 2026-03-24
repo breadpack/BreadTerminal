@@ -3,6 +3,7 @@
 
 #include "termcore/font/font_collection.h"
 #include <string>
+#include <vector>
 
 namespace termcore {
 
@@ -13,6 +14,7 @@ public:
     void changeFontSize(float delta);
     void resetFontSize();
     void setFont(const std::string& family, float size);
+    void setFallbackFonts(const std::vector<std::string>& families);
 
     float cellWidth() const { return cellW_; }
     float cellHeight() const { return cellH_; }
@@ -29,6 +31,7 @@ private:
 
     FontCollection* fc_;          // not owned - platform manages lifetime
     std::string family_;
+    std::vector<std::string> fallbackFamilies_;
     float baseSize_;
     float currentSize_;
     float cellW_ = 8.0f;

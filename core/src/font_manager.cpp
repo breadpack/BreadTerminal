@@ -20,6 +20,9 @@ void FontManager::changeFontSize(float delta) {
     currentSize_ = newSize;
     if (fc_) {
         fc_->setPrimaryFont(family_, currentSize_);
+        for (const auto& fb : fallbackFamilies_) {
+            fc_->addFallbackFont(fb);
+        }
     }
     refreshMetrics();
 }
@@ -30,6 +33,9 @@ void FontManager::resetFontSize() {
     currentSize_ = baseSize_;
     if (fc_) {
         fc_->setPrimaryFont(family_, currentSize_);
+        for (const auto& fb : fallbackFamilies_) {
+            fc_->addFallbackFont(fb);
+        }
     }
     refreshMetrics();
 }
@@ -40,6 +46,21 @@ void FontManager::setFont(const std::string& family, float size) {
     currentSize_ = size;
     if (fc_) {
         fc_->setPrimaryFont(family_, currentSize_);
+        for (const auto& fb : fallbackFamilies_) {
+            fc_->addFallbackFont(fb);
+        }
+    }
+    refreshMetrics();
+}
+
+void FontManager::setFallbackFonts(const std::vector<std::string>& families) {
+    fallbackFamilies_ = families;
+    // Re-apply: setPrimaryFont clears chain, then re-add fallbacks
+    if (fc_) {
+        fc_->setPrimaryFont(family_, currentSize_);
+        for (const auto& fb : fallbackFamilies_) {
+            fc_->addFallbackFont(fb);
+        }
     }
     refreshMetrics();
 }

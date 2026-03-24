@@ -141,6 +141,11 @@ void UnifiedSettingsWindow::showFontCards() {
             gtk_widget_add_css_class(badge, "active");
             gtk_box_append(GTK_BOX(badgeBox), badge);
         }
+        if (meta->category == "system") {
+            GtkWidget* badge = gtk_label_new("System");
+            gtk_widget_add_css_class(badge, "filter-button");
+            gtk_box_append(GTK_BOX(badgeBox), badge);
+        }
         if (meta->has_ligatures) {
             GtkWidget* badge = gtk_label_new("Ligatures");
             gtk_widget_add_css_class(badge, "filter-button");

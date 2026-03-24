@@ -112,6 +112,9 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // Notification tray icon state
     bool notifyIconAdded = false;
 
+    // IME composition (preedit) text for inline rendering
+    std::wstring imeCompositionText;
+
     // --- D3D / terminal lifecycle ---
     bool initD3D(HWND hWnd);
     void createRenderTarget();

@@ -8,6 +8,7 @@ add_library(termcore_macos STATIC
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
     src/MetalCellBuilder.mm
+    src/MetalCellBuilderOverlays.mm
     src/MetalAtlasManager.mm
     src/WKWebViewBridge.mm
 )
@@ -41,6 +42,7 @@ set_source_files_properties(
     src/MetalAtlasUploader.mm
     src/MetalTextRenderer.mm
     src/MetalCellBuilder.mm
+    src/MetalCellBuilderOverlays.mm
     src/MetalAtlasManager.mm
     src/WKWebViewBridge.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++"

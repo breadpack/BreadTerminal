@@ -4,6 +4,7 @@
 #include "termcore/platform_host.h"
 #include "termcore/keybinding.h"
 #include "termcore/screen.h"
+#include "MetalTextRenderer.h"
 
 #include <AppKit/AppKit.h>
 
@@ -315,6 +316,11 @@ static termcore::KeyEvent keyEventFromNSEvent(NSEvent* event) {
 
 #pragma mark - Mouse helpers
 
+- (float)tabBarOffset {
+    if (!_impl->controller || _impl->controller->tabCount() <= 1) return 0.0f;
+    return _cellHeight * termcore::MetalTextRenderer::kTabBarHeightScale;
+}
+
 - (NSPoint)pixelPositionForEvent:(NSEvent*)event {
     NSPoint loc = [self convertPoint:event.locationInWindow fromView:nil];
     // NSView default: Y=0 at bottom. Terminal row 0 at top. Flip Y.
@@ -328,7 +334,85 @@ static termcore::KeyEvent keyEventFromNSEvent(NSEvent* event) {
     return NSMakePoint((loc.x - padding) * scaleX, (flippedY - padding) * scaleY);
 }
 
+/// Pixel position in drawable coordinates (no padding subtraction, for tab bar hit testing)
+- (NSPoint)rawPixelPositionForEvent:(NSEvent*)event {
+    NSPoint loc = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat flippedY = self.bounds.size.height - loc.y;
+    NSSize ds = _metalLayer.drawableSize;
+    NSSize bs = self.bounds.size;
+    CGFloat scaleX = (bs.width > 0 && ds.width > 0) ? ds.width / bs.width : 2.0;
+    CGFloat scaleY = (bs.height > 0 && ds.height > 0) ? ds.height / bs.height : 2.0;
+    return NSMakePoint(loc.x * scaleX, flippedY * scaleY);
+}
+
 #pragma mark - Mouse events
+
+- (BOOL)handleTabBarClick:(NSPoint)px {
+    if (!_impl->controller) return NO;
+    if (_impl->controller->tabCount() <= 1) return NO;
+
+    float cellH = _impl->controller->cellHeight();
+    float cellW = _impl->controller->cellWidth();
+    float tabBarH = cellH * termcore::MetalTextRenderer::kTabBarHeightScale;
+
+    if (px.y >= tabBarH) return NO;
+
+    int tabCount = _impl->controller->tabCount();
+
+    // Layout constants (must match MetalCellBuilderOverlays.mm)
+    float tabGap = 4.0f;
+    float tabMinW = cellW * 12.0f;
+    float tabMaxW = cellW * 24.0f;
+    float leftMargin = 8.0f;
+    float plusBtnW = cellW * 2.0f;
+
+    float availW = _metalLayer.drawableSize.width - leftMargin - plusBtnW - 8.0f;
+    float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+    tabW = std::max(tabMinW, std::min(tabMaxW, tabW));
+
+    float fmx = px.x;
+
+    // Check "+" button
+    float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
+    if (fmx >= plusX && fmx < plusX + plusBtnW) {
+        auto* tabs = _impl->controller->tabs();
+        if (tabs) {
+            termcore::Screen* scr = _impl->controller->activeScreen();
+            int rows = scr ? scr->rows() : 24;
+            int cols = scr ? scr->cols() : 80;
+            tabs->createTab(rows, cols);
+        }
+        _impl->needsRender = true;
+        return YES;
+    }
+
+    // Check which tab was clicked
+    float closeW = cellW * 1.5f;
+    for (int t = 0; t < tabCount; ++t) {
+        float tabX = leftMargin + t * (tabW + tabGap);
+        if (fmx >= tabX && fmx < tabX + tabW) {
+            // Check close button area (right side of tab)
+            float closeStart = tabX + tabW - closeW - 4.0f;
+            auto tabInfo = _impl->renderer->getTabBar();
+            bool showClose = (tabInfo.tabs.size() > static_cast<size_t>(t))
+                && (tabInfo.tabs[t].active || t == tabInfo.hovered_tab);
+            if (showClose && fmx >= closeStart) {
+                auto* tabs = _impl->controller->tabs();
+                if (tabs) {
+                    tabs->switchToTab(t);
+                    tabs->closeTab();
+                }
+            } else {
+                auto* tabs = _impl->controller->tabs();
+                if (tabs) tabs->switchToTab(t);
+            }
+            _impl->needsRender = true;
+            return YES;
+        }
+    }
+
+    return NO;
+}
 
 - (void)mouseDown:(NSEvent*)event {
     // Ensure we're first responder on click
@@ -338,7 +422,13 @@ static termcore::KeyEvent keyEventFromNSEvent(NSEvent* event) {
 
     if (!_impl->controller) return;
 
+    NSPoint rawPx = [self rawPixelPositionForEvent:event];
+
+    // Check tab bar click first (uses raw pixel coordinates)
+    if ([self handleTabBarClick:rawPx]) return;
+
     NSPoint px = [self pixelPositionForEvent:event];
+
     int clickCount = (int)event.clickCount;
 
     termcore::InputMouseEvent me;
@@ -431,10 +521,86 @@ static termcore::KeyEvent keyEventFromNSEvent(NSEvent* event) {
     [self addTrackingArea:_trackingArea];
 }
 
+- (void)updateTabBarHover:(NSPoint)px {
+    if (!_impl->controller || _impl->controller->tabCount() <= 1) return;
+
+    float cellH = _impl->controller->cellHeight();
+    float cellW = _impl->controller->cellWidth();
+    float tabBarH = cellH * termcore::MetalTextRenderer::kTabBarHeightScale;
+
+    auto tabInfo = _impl->renderer->getTabBar();
+
+    if (px.y >= tabBarH) {
+        if (tabInfo.hovered_tab != -1 || tabInfo.hover_plus) {
+            tabInfo.hovered_tab = -1;
+            tabInfo.hover_close = false;
+            tabInfo.hover_plus = false;
+            _impl->renderer->setTabBar(tabInfo);
+            _impl->needsRender = true;
+        }
+        return;
+    }
+
+    int tabCount = _impl->controller->tabCount();
+
+    // Layout constants (must match MetalCellBuilderOverlays.mm)
+    float tabGap = 4.0f;
+    float tabMinW = cellW * 12.0f;
+    float tabMaxW = cellW * 24.0f;
+    float leftMargin = 8.0f;
+    float plusBtnW = cellW * 2.0f;
+    float closeW = cellW * 1.5f;
+
+    float vw = _metalLayer.drawableSize.width;
+    float availW = vw - leftMargin - plusBtnW - 8.0f;
+    float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+    tabW = std::max(tabMinW, std::min(tabMaxW, tabW));
+
+    float fmx = px.x;
+
+    int newHover = -1;
+    bool newCloseHover = false;
+    bool newPlusHover = false;
+
+    for (int t = 0; t < tabCount; ++t) {
+        float tabX = leftMargin + t * (tabW + tabGap);
+        if (fmx >= tabX && fmx < tabX + tabW) {
+            newHover = t;
+            // Check if over close button area
+            float closeStart = tabX + tabW - closeW - 4.0f;
+            if (fmx >= closeStart) {
+                newCloseHover = true;
+            }
+            break;
+        }
+    }
+
+    // Check "+" button
+    float plusX = leftMargin + tabCount * (tabW + tabGap) + 4.0f;
+    if (fmx >= plusX && fmx < plusX + plusBtnW) {
+        newPlusHover = true;
+    }
+
+    if (tabInfo.hovered_tab != newHover
+        || tabInfo.hover_close != newCloseHover
+        || tabInfo.hover_plus != newPlusHover) {
+        tabInfo.hovered_tab = newHover;
+        tabInfo.hover_close = newCloseHover;
+        tabInfo.hover_plus = newPlusHover;
+        _impl->renderer->setTabBar(tabInfo);
+        _impl->needsRender = true;
+    }
+}
+
 - (void)mouseMoved:(NSEvent*)event {
     if (!_impl->controller) return;
 
+    NSPoint rawPx = [self rawPixelPositionForEvent:event];
     NSPoint px = [self pixelPositionForEvent:event];
+
+    // Update tab bar hover state (uses raw pixel coordinates)
+    [self updateTabBarHover:rawPx];
+
     bool cmdHeld = (event.modifierFlags & NSEventModifierFlagCommand) != 0;
 
     if (cmdHeld) {

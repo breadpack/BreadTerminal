@@ -9,6 +9,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <vector>
+#import <unordered_map>
 #import <cstring>
 #import <cmath>
 
@@ -78,10 +79,30 @@ struct MetalTextRenderer::Impl {
     // Minimum contrast ratio (1.0 = disabled)
     float minimumContrast = 1.0f;
 
-    // URL highlight (Cmd+hover underline)
+    // URL highlight (Cmd+hover underline) -- legacy single highlight
     int urlHighlightRow = -1;
     int urlHighlightStartCol = -1;
     int urlHighlightEndCol = -1;
+
+    // Search highlight state
+    std::vector<MetalTextRenderer::SearchHighlight> searchHighlights;
+    int searchCurrentIndex = -1;
+    // Row-indexed search highlights for O(1) row lookup
+    std::unordered_map<int, std::vector<std::pair<int,int>>> searchByRow;
+    void rebuildSearchIndex();
+
+    // URL highlight state (vector-based)
+    std::vector<MetalTextRenderer::UrlHighlight> urlHighlights;
+    // Row-indexed URL highlights for O(1) row lookup
+    std::unordered_map<int, std::vector<size_t>> urlByRow;
+    void rebuildUrlIndex();
+
+    // Tab bar state
+    MetalTextRenderer::TabBarInfo tabBar;
+    float gridOffsetY = 0.0f;  // computed from tab bar height
+
+    // Content dirty flag (forces full rebuild)
+    bool contentDirty = true;
 
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;
@@ -97,9 +118,16 @@ struct MetalTextRenderer::Impl {
     id<MTLLibrary> compileShaderSource();
 
     // Cell building (implemented in MetalCellBuilder.mm)
+    int searchHighlightType(int row, int col) const;
+    const MetalTextRenderer::UrlHighlight* urlHighlightAt(int row, int col) const;
     void buildCellBuffer(const Screen& screen);
-    void appendCursorInstances(const Screen& screen, float cellW, float cellH);
+    void appendCursorInstances(const Screen& screen, float cellW, float cellH,
+                               float gridOffsetY);
     void patchCursorOnly(const Screen& screen);
+
+    // Overlay passes (implemented in MetalCellBuilderOverlays.mm)
+    void buildOverlayPasses(const Screen& screen, float cellW, float cellH,
+                            float ascent, float fontSize);
 };
 
 } // namespace termcore

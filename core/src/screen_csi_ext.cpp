@@ -44,12 +44,12 @@ void Screen::handleDeviceAttributes(const std::vector<VtParam>& params,
     if (secondary) {
         // Secondary DA: CSI > c or CSI > 0 c
         if (p == 0) {
-            response_callback_("\033[>1;0;0c");
+            response_callback_("\033[>65;1;0c");
         }
     } else {
         // Primary DA: CSI c or CSI 0 c
         if (p == 0) {
-            response_callback_("\033[?1;2c");
+            response_callback_("\033[?62;22c");
         }
     }
 }
