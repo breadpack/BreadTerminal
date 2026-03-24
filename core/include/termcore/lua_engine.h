@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "termcore/result.h"
+#include "termcore/lua_module.h"
 
 namespace termcore {
 
@@ -38,11 +39,17 @@ public:
         return loaded_plugins_;
     }
 
+    void registerModule(std::shared_ptr<ILuaModule> module);
+    void initializeModules();
+    void initializeModules(const std::vector<PluginCapability>& capabilities);
+    void clearAllModules();
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::string last_error_;
     std::vector<std::string> loaded_plugins_;
+    std::vector<std::shared_ptr<ILuaModule>> modules_;
 };
 
 } // namespace termcore

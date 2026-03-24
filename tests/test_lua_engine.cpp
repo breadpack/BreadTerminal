@@ -6,6 +6,9 @@ TEST(LuaEngineTest, Disabled) { GTEST_SKIP() << "Lua not available"; }
 #else
 
 #include <termcore/lua_engine.h>
+#include <termcore/lua_module.h>
+#define SOL_ALL_SAFETIES_ON 1
+#include <sol/sol.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -166,6 +169,34 @@ TEST(LuaEngine, LoadPluginNonexistent) {
     LuaEngine engine;
     EXPECT_FALSE(engine.loadPlugin("/nonexistent/path/plugin.lua").ok());
     EXPECT_FALSE(engine.lastError().empty());
+}
+
+// 11. Module registration creates sub-table
+TEST(LuaEngine, RegisterModuleCreatesSubTable) {
+    LuaEngine engine;
+    class TestModule : public termcore::ILuaModule {
+    public:
+        std::string greeting;
+        std::string_view moduleName() const override { return "test_mod"; }
+        termcore::PluginCapability requiredCapability() const override {
+            return termcore::PluginCapability::Events;
+        }
+        void registerBindings(void* luaState, void* terminalTable) override {
+            auto& terminal = *static_cast<sol::table*>(terminalTable);
+            auto tbl = terminal.create_named("test_mod");
+            tbl.set_function("greet", [this](const std::string& name) {
+                greeting = "hello " + name;
+            });
+        }
+        void clearCallbacks() override { greeting.clear(); }
+    };
+
+    auto mod = std::make_shared<TestModule>();
+    engine.registerModule(mod);
+    engine.initializeModules();
+
+    EXPECT_TRUE(engine.loadString("terminal.test_mod.greet('world')").ok());
+    EXPECT_EQ(mod->greeting, "hello world");
 }
 
 #endif // TERMCORE_HAS_LUA
