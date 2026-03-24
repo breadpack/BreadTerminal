@@ -34,9 +34,17 @@ public:
     /// Check if a string looks like a URL
     static bool isUrl(const std::string& text);
 
+    /// Add a custom URL scheme (e.g. "magnet", "obsidian").
+    void addCustomScheme(const std::string& scheme);
+
+    /// Get all custom schemes registered by Lua plugins.
+    const std::vector<std::string>& customSchemes() const { return customSchemes_; }
+
 private:
     /// Find the end position of a URL starting at pos
     static size_t findUrlEnd(const std::string& text, size_t pos);
+
+    std::vector<std::string> customSchemes_;
 };
 
 } // namespace termcore

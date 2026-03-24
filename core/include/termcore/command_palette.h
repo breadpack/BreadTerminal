@@ -2,10 +2,18 @@
 #define TERMCORE_COMMAND_PALETTE_H
 
 #include "termcore/keybinding.h"
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace termcore {
+
+/// A Lua-registered command in the command palette.
+struct LuaCommand {
+    std::string name;
+    std::string category;
+    std::function<void()> handler;
+};
 
 /// A single command entry in the command palette.
 struct PaletteCommand {
@@ -64,6 +72,17 @@ public:
     /// Maximum number of visible items in the list.
     static constexpr int kMaxVisibleItems = 10;
 
+    /// Register a Lua command with an optional category.
+    void registerLuaCommand(const std::string& name,
+                            std::function<void()> handler,
+                            const std::string& category = "Plugin");
+
+    /// Remove a previously registered Lua command by name.
+    void removeLuaCommand(const std::string& name);
+
+    /// Get all registered Lua commands.
+    const std::vector<LuaCommand>& luaCommands() const { return luaCommands_; }
+
 private:
     void populateCommands();
     void applyFilter();
@@ -76,6 +95,7 @@ private:
 
     std::vector<PaletteCommand> allCommands_;
     std::vector<PaletteCommand> filtered_;
+    std::vector<LuaCommand> luaCommands_;
 };
 
 } // namespace termcore

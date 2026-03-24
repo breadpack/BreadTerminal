@@ -4,8 +4,10 @@
 #include "termcore/url_detector.h"
 #include "termcore/config.h"
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace termcore {
@@ -71,6 +73,18 @@ public:
     /// Apply settings from Config.
     void applyConfig(const Config& config);
 
+    /// Set a Lua click callback. Return true from callback to suppress default open.
+    void setClickCallback(std::function<bool(const std::string&)> cb);
+
+    /// Set per-scheme URL highlight color.
+    void setSchemeColor(const std::string& scheme, uint32_t color);
+
+    /// Get the click callback (may be nullptr).
+    const std::function<bool(const std::string&)>& clickCallback() const { return clickCallback_; }
+
+    /// Get per-scheme color, or url_color_ if not set.
+    uint32_t colorForUrl(const std::string& url) const;
+
 private:
     UrlDetector detector_;
     std::vector<UrlSpan> urls_;
@@ -78,6 +92,8 @@ private:
     bool dirty_ = true;
     bool enabled_ = true;
     uint32_t url_color_ = 0x89b4fa;
+    std::function<bool(const std::string&)> clickCallback_;
+    std::unordered_map<std::string, uint32_t> schemeColors_;
 };
 
 } // namespace termcore

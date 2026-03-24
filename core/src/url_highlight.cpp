@@ -110,4 +110,22 @@ void UrlHighlightManager::applyConfig(const Config& config) {
     markDirty();  // force rescan with new settings
 }
 
+void UrlHighlightManager::setClickCallback(std::function<bool(const std::string&)> cb) {
+    clickCallback_ = std::move(cb);
+}
+
+void UrlHighlightManager::setSchemeColor(const std::string& scheme, uint32_t color) {
+    schemeColors_[scheme] = color;
+}
+
+uint32_t UrlHighlightManager::colorForUrl(const std::string& url) const {
+    auto pos = url.find("://");
+    if (pos != std::string::npos) {
+        std::string scheme = url.substr(0, pos);
+        auto it = schemeColors_.find(scheme);
+        if (it != schemeColors_.end()) return it->second;
+    }
+    return url_color_;
+}
+
 } // namespace termcore

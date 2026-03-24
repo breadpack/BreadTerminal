@@ -290,4 +290,25 @@ int CommandPalette::fuzzyScore(const std::string& name, const std::string& q) co
     return score;
 }
 
+void CommandPalette::registerLuaCommand(const std::string& name,
+                                         std::function<void()> handler,
+                                         const std::string& category) {
+    // Replace existing command with same name
+    for (auto& cmd : luaCommands_) {
+        if (cmd.name == name) {
+            cmd.handler = std::move(handler);
+            cmd.category = category;
+            return;
+        }
+    }
+    luaCommands_.push_back({name, category, std::move(handler)});
+}
+
+void CommandPalette::removeLuaCommand(const std::string& name) {
+    luaCommands_.erase(
+        std::remove_if(luaCommands_.begin(), luaCommands_.end(),
+            [&name](const LuaCommand& cmd) { return cmd.name == name; }),
+        luaCommands_.end());
+}
+
 } // namespace termcore
