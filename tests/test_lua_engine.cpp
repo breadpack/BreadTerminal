@@ -199,4 +199,67 @@ TEST(LuaEngine, RegisterModuleCreatesSubTable) {
     EXPECT_EQ(mod->greeting, "hello world");
 }
 
+// 12. clearAllModules clears callbacks
+TEST(LuaEngine, ClearAllModulesCallsClearCallbacks) {
+    LuaEngine engine;
+    class TrackModule : public termcore::ILuaModule {
+    public:
+        bool cleared = false;
+        std::string_view moduleName() const override { return "track"; }
+        termcore::PluginCapability requiredCapability() const override {
+            return termcore::PluginCapability::Events;
+        }
+        void registerBindings(void* luaState, void* terminalTable) override {}
+        void clearCallbacks() override { cleared = true; }
+    };
+
+    auto mod = std::make_shared<TrackModule>();
+    engine.registerModule(mod);
+    engine.initializeModules();
+    engine.clearAllModules();
+    EXPECT_TRUE(mod->cleared);
+}
+
+// 13. initializeModules with capability filter
+TEST(LuaEngine, InitializeModulesCapabilityFilter) {
+    LuaEngine engine;
+
+    class AllowedModule : public termcore::ILuaModule {
+    public:
+        bool registered = false;
+        std::string_view moduleName() const override { return "allowed"; }
+        termcore::PluginCapability requiredCapability() const override {
+            return termcore::PluginCapability::Events;
+        }
+        void registerBindings(void* luaState, void* terminalTable) override {
+            registered = true;
+        }
+        void clearCallbacks() override {}
+    };
+
+    class DeniedModule : public termcore::ILuaModule {
+    public:
+        bool registered = false;
+        std::string_view moduleName() const override { return "denied"; }
+        termcore::PluginCapability requiredCapability() const override {
+            return termcore::PluginCapability::FileSystem;
+        }
+        void registerBindings(void* luaState, void* terminalTable) override {
+            registered = true;
+        }
+        void clearCallbacks() override {}
+    };
+
+    auto allowed = std::make_shared<AllowedModule>();
+    auto denied = std::make_shared<DeniedModule>();
+    engine.registerModule(allowed);
+    engine.registerModule(denied);
+
+    std::vector<termcore::PluginCapability> caps = {termcore::PluginCapability::Events};
+    engine.initializeModules(caps);
+
+    EXPECT_TRUE(allowed->registered);
+    EXPECT_FALSE(denied->registered);
+}
+
 #endif // TERMCORE_HAS_LUA
