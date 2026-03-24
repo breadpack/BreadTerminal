@@ -10,6 +10,8 @@ TEST(LuaEngineTest, Disabled) { GTEST_SKIP() << "Lua not available"; }
 #define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
 
+#include "lua_bindings/lua_tab_module.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -260,6 +262,64 @@ TEST(LuaEngine, InitializeModulesCapabilityFilter) {
 
     EXPECT_TRUE(allowed->registered);
     EXPECT_FALSE(denied->registered);
+}
+
+// 14. LuaTabModule registers terminal.tab sub-table
+TEST(LuaEngine, TabModuleRegistersSubTable) {
+    LuaEngine engine;
+    auto tabMod = std::make_shared<termcore::LuaTabModule>(nullptr);
+    engine.registerModule(tabMod);
+    engine.initializeModules();
+
+    std::string result;
+    engine.registerFunction("test_capture", [&](const std::string& s) -> std::string {
+        result = s;
+        return "";
+    });
+    EXPECT_TRUE(engine.loadString(R"(
+        if terminal.tab then
+            terminal.test_capture("tab_exists")
+        end
+    )").ok());
+    EXPECT_EQ(result, "tab_exists");
+}
+
+// 15. Full round-trip: Lua callback -> LuaTabModule -> title format
+TEST(LuaEngine, TabModuleTitleFormatRoundTrip) {
+    LuaEngine engine;
+    auto tabMod = std::make_shared<termcore::LuaTabModule>(nullptr);
+    engine.registerModule(tabMod);
+    engine.initializeModules();
+
+    EXPECT_TRUE(engine.loadString(R"(
+        terminal.tab.on_title_format(function(info)
+            return "[" .. info.process .. "] " .. info.cwd
+        end)
+    )").ok());
+
+    ASSERT_TRUE(tabMod->titleFormatCallback() != nullptr);
+
+    termcore::TabTitleInfo info;
+    info.process_name = "vim";
+    info.working_dir = "/home/user";
+    auto result = tabMod->titleFormatCallback()(info);
+    EXPECT_EQ(result, "[vim] /home/user");
+}
+
+// 16. clearCallbacks resets title format
+TEST(LuaEngine, TabModuleClearCallbacksResetsFormat) {
+    LuaEngine engine;
+    auto tabMod = std::make_shared<termcore::LuaTabModule>(nullptr);
+    engine.registerModule(tabMod);
+    engine.initializeModules();
+
+    EXPECT_TRUE(engine.loadString(R"(
+        terminal.tab.on_title_format(function(info) return "custom" end)
+    )").ok());
+    EXPECT_TRUE(tabMod->titleFormatCallback() != nullptr);
+
+    tabMod->clearCallbacks();
+    EXPECT_TRUE(tabMod->titleFormatCallback() == nullptr);
 }
 
 #endif // TERMCORE_HAS_LUA
