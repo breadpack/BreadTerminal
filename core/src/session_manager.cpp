@@ -121,7 +121,9 @@ bool MultiSessionManager::saveSession(
         std::string dir = resolveSessionDir("");
         if (dir.empty()) return false;
 
-        std::string name = generateSessionName();
+        // Use custom naming callback if set, otherwise auto-generate
+        std::string name = (namingCallback) ? namingCallback() : generateSessionName();
+        if (name.empty()) name = generateSessionName();
         filepath = buildFilePath(dir, name);
         if (filepath.empty()) return false;
     }
@@ -159,7 +161,14 @@ bool MultiSessionManager::saveSession(
 
     std::error_code ec;
     fs::rename(lastJson, filepath, ec);
-    return !ec;
+    bool ok = !ec;
+
+    // Fire save callback with the session name (stem of filename)
+    if (ok && onSave) {
+        std::string savedName = fs::path(filepath).stem().string();
+        onSave(savedName);
+    }
+    return ok;
 }
 
 // --------------------------------------------------------------------------
@@ -201,6 +210,12 @@ bool MultiSessionManager::restoreSession(const std::string& path,
     if (!result.ok()) return false;
 
     outData = std::move(result.value());
+
+    // Fire restore callback with the session name (stem of filename)
+    if (onRestore) {
+        std::string restoredName = fs::path(path).stem().string();
+        onRestore(restoredName);
+    }
     return true;
 }
 
