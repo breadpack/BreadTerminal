@@ -107,9 +107,15 @@ void ViCopyMode::selectAll() {
 std::string ViCopyMode::yankSelection() const {
     if (!active_ || mode_ == ViMode::Normal) return {};
     auto sel = getSelection();
-    if (mode_ == ViMode::VisualLine) return extractLineText(sel.start_row, sel.end_row);
-    if (mode_ == ViMode::VisualBlock) return extractBlockText(sel.start_row, sel.start_col, sel.end_row, sel.end_col);
-    return extractText(sel.start_row, sel.start_col, sel.end_row, sel.end_col);
+    std::string text;
+    if (mode_ == ViMode::VisualLine)
+        text = extractLineText(sel.start_row, sel.end_row);
+    else if (mode_ == ViMode::VisualBlock)
+        text = extractBlockText(sel.start_row, sel.start_col, sel.end_row, sel.end_col);
+    else
+        text = extractText(sel.start_row, sel.start_col, sel.end_row, sel.end_col);
+    if (onYank_) onYank_(text);
+    return text;
 }
 
 // --- Motions ---
@@ -247,6 +253,22 @@ char32_t ViCopyMode::cellAt(int row, int col) const {
 }
 
 bool ViCopyMode::isWordChar(char32_t ch) const {
+    if (!word_chars_.empty()) {
+        // Simple ASCII range check: parse "a-zA-Z0-9_-" style char class.
+        const auto& wc = word_chars_;
+        for (size_t i = 0; i < wc.size(); ) {
+            if (i + 2 < wc.size() && wc[i + 1] == '-') {
+                if (ch >= static_cast<char32_t>(wc[i]) &&
+                    ch <= static_cast<char32_t>(wc[i + 2]))
+                    return true;
+                i += 3;
+            } else {
+                if (ch == static_cast<char32_t>(wc[i])) return true;
+                ++i;
+            }
+        }
+        return false;
+    }
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
            (ch >= '0' && ch <= '9') || ch == '_';
 }
@@ -287,6 +309,20 @@ std::string ViCopyMode::extractBlockText(int r0, int c0, int r1, int c1) const {
         if (r < r1) out += '\n';
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Lua extension helpers
+// ---------------------------------------------------------------------------
+
+void ViCopyMode::mapKey(const std::string& key, CustomKeyCallback cb) {
+    custom_keys_[key] = std::move(cb);
+}
+
+void ViCopyMode::clearLuaCallbacks() {
+    onYank_ = nullptr;
+    custom_keys_.clear();
+    word_chars_.clear();
 }
 
 } // namespace termcore
