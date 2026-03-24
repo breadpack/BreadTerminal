@@ -230,6 +230,36 @@ target_include_directories(termcore
 target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES} nlohmann_json::nlohmann_json ZLIB::ZLIB)
 target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
 
+# Embed defaults/*.lua as C byte arrays
+if(TERMCORE_HAS_LUA)
+    set(DEFAULT_LUA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/defaults)
+    set(LUA_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/lua_generated)
+    file(MAKE_DIRECTORY ${LUA_GENERATED_DIR})
+
+    set(DEFAULT_LUA_NAMES
+        config colors keybindings commands
+        tab_title paste_guard url_detect icons themes
+    )
+
+    set(LUA_GENERATED_HEADERS "")
+    foreach(NAME ${DEFAULT_LUA_NAMES})
+        set(LUA_INPUT ${DEFAULT_LUA_DIR}/${NAME}.lua)
+        set(LUA_OUTPUT ${LUA_GENERATED_DIR}/default_${NAME}_lua.h)
+        add_custom_command(
+            OUTPUT ${LUA_OUTPUT}
+            COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lua.cmake
+                ${LUA_INPUT} ${LUA_OUTPUT} default_${NAME}_lua
+            DEPENDS ${LUA_INPUT}
+            COMMENT "Embedding defaults/${NAME}.lua"
+        )
+        list(APPEND LUA_GENERATED_HEADERS ${LUA_OUTPUT})
+    endforeach()
+
+    add_custom_target(generate_lua_defaults DEPENDS ${LUA_GENERATED_HEADERS})
+    add_dependencies(termcore generate_lua_defaults)
+    target_include_directories(termcore PRIVATE ${LUA_GENERATED_DIR})
+endif()
+
 if(TERMCORE_HAS_LUA)
     target_include_directories(termcore PUBLIC ${LUA_INCLUDE_DIRS})
     target_include_directories(termcore PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
