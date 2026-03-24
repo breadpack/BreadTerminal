@@ -243,6 +243,45 @@ PasteGuard::PasteGuard() : cfg_() {}
 
 PasteGuard::PasteGuard(Config cfg) : cfg_(cfg) {}
 
+void PasteGuard::addCustomDanger(const std::string& pattern, const std::string& description) {
+    customDangerPatterns_.emplace_back(pattern, description);
+}
+
+void PasteGuard::addWhitelist(const std::string& pattern) {
+    whitelistPatterns_.push_back(pattern);
+}
+
+void PasteGuard::setModeFromString(const std::string& mode) {
+    if (mode == "never") {
+        cfg_.mode = Config::Mode::Never;
+    } else if (mode == "multiline") {
+        cfg_.mode = Config::Mode::Multiline;
+    } else if (mode == "always") {
+        cfg_.mode = Config::Mode::Always;
+    }
+}
+
+bool PasteGuard::isWhitelisted(const std::string& text) const {
+    for (const auto& pattern : whitelistPatterns_) {
+        if (text.find(pattern) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PasteGuard::checkCustomDanger(const std::string& text, uint32_t& signals) const {
+    bool found = false;
+    for (const auto& [pattern, desc] : customDangerPatterns_) {
+        if (text.find(pattern) != std::string::npos) {
+            // Use a spare high bit for custom danger signals
+            signals |= (1u << 16);
+            found = true;
+        }
+    }
+    return found;
+}
+
 PasteAnalysis PasteGuard::analyze(const std::string& text, bool bracketed_paste_active) const {
     PasteAnalysis result{};
     result.signals = 0;
@@ -376,7 +415,15 @@ PasteAnalysis PasteGuard::analyze(const std::string& text, bool bracketed_paste_
         line_offset += line.size() + 1; // +1 for '\n' consumed by getline
     }
 
-    result.danger = computeDanger(result.signals, bracketed_paste_active);
+    // Check custom danger patterns
+    checkCustomDanger(text, result.signals);
+
+    // Whitelist overrides everything
+    if (isWhitelisted(text)) {
+        result.danger = PasteDanger::Safe;
+    } else {
+        result.danger = computeDanger(result.signals, bracketed_paste_active);
+    }
     return result;
 }
 

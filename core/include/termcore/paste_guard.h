@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace termcore {
@@ -49,10 +50,30 @@ public:
 
     PasteAnalysis analyze(const std::string& text, bool bracketed_paste_active) const;
 
+    /// Add a custom danger pattern with a description (Lua-configurable).
+    void addCustomDanger(const std::string& pattern, const std::string& description);
+
+    /// Add a whitelist pattern — pastes matching this are always Safe (Lua-configurable).
+    void addWhitelist(const std::string& pattern);
+
+    /// Set the paste guard mode from a string: "never", "multiline", "always".
+    void setModeFromString(const std::string& mode);
+
+    /// Get current config (read-only).
+    const Config& config() const { return cfg_; }
+
 private:
     Config cfg_;
+    std::vector<std::pair<std::string, std::string>> customDangerPatterns_;
+    std::vector<std::string> whitelistPatterns_;
 
     PasteDanger computeDanger(uint32_t signals, bool bracketed) const;
+
+    /// Check if text matches any whitelist pattern (substring match).
+    bool isWhitelisted(const std::string& text) const;
+
+    /// Check custom danger patterns; returns true and sets a signal bit if matched.
+    bool checkCustomDanger(const std::string& text, uint32_t& signals) const;
 };
 
 } // namespace termcore
