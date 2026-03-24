@@ -44,8 +44,22 @@ std::string GitBranchDetector::readBranch(const std::string& cwd) {
         branch = parseHeadFile(head_path);
     }
 
-    // Cache with 2s TTL
-    cache_[cwd] = {branch, now + std::chrono::seconds(2)};
+    // Fire branch-change callback if branch changed
+    auto lastIt = lastBranch_.find(cwd);
+    if (lastIt == lastBranch_.end() || lastIt->second != branch) {
+        lastBranch_[cwd] = branch;
+        if (onBranchChange && !branch.empty()) {
+            onBranchChange(branch);
+        }
+    }
+
+    // Apply optional format transform
+    if (formatBranch && !branch.empty()) {
+        branch = formatBranch(branch);
+    }
+
+    // Cache with configurable TTL
+    cache_[cwd] = {branch, now + std::chrono::seconds(cacheTtlSeconds_)};
     return branch;
 }
 
