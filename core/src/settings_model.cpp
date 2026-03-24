@@ -259,4 +259,40 @@ void SettingsModel::refreshModified(const Config& current) {
     markModified(current);
 }
 
+void SettingsModel::addLuaCategory(const std::string& name,
+                                   const std::vector<SettingItem>& items) {
+    // Ensure a top-level "plugins" parent exists (created once).
+    static const std::string kPluginsId = "plugins";
+    bool has_plugins_root = false;
+    for (const auto& cat : categories_) {
+        if (cat.id == kPluginsId) { has_plugins_root = true; break; }
+    }
+    if (!has_plugins_root) {
+        categories_.push_back({kPluginsId, "Plugins", "", SectionType::Settings, {}});
+    }
+
+    // Derive a stable id from the category name.
+    std::string id = kPluginsId + "." + name;
+    // Replace spaces with underscores for safe key.
+    for (char& c : id) { if (c == ' ') c = '_'; }
+
+    // Avoid duplicate category ids.
+    for (const auto& cat : categories_) {
+        if (cat.id == id) return;
+    }
+
+    categories_.push_back({id, name, kPluginsId, SectionType::Settings, items});
+}
+
+void SettingsModel::clearLuaCategories() {
+    static const std::string kPluginsId = "plugins";
+    // Remove all categories whose parentId is "plugins" (or the root itself).
+    categories_.erase(
+        std::remove_if(categories_.begin(), categories_.end(),
+            [&](const SettingsCategory& cat) {
+                return cat.id == kPluginsId || cat.parentId == kPluginsId;
+            }),
+        categories_.end());
+}
+
 } // namespace termcore

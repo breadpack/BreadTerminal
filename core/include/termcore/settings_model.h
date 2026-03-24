@@ -88,6 +88,15 @@ public:
     /// Re-check which items differ from defaults
     void refreshModified(const Config& current);
 
+    /// Add a plugin-defined category (called from Lua via LuaSettingsModule).
+    /// The category id is derived from name; items are appended to a top-level
+    /// "plugins" parent.  Safe to call multiple times — each call appends.
+    void addLuaCategory(const std::string& name,
+                        const std::vector<SettingItem>& items);
+
+    /// Remove all categories that were added via addLuaCategory.
+    void clearLuaCategories();
+
 private:
     void buildCategories();
     void markModified(const Config& current);
