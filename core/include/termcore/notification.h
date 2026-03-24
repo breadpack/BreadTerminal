@@ -91,6 +91,16 @@ public:
     /// Set callback for new notifications
     void setCallback(NotificationCallback cb) { callback_ = std::move(cb); }
 
+    /// Set maximum notifications limit (Lua-configurable).
+    void setMaxNotifications(size_t n) { max_notifications_ = n; }
+
+    /// Set deduplication window in seconds (Lua-configurable).
+    /// Notifications with the same title+body within this window are suppressed.
+    void setDeduplicateWindowSec(int seconds) { deduplicate_window_sec_ = seconds; }
+
+    /// Get deduplication window in seconds.
+    int deduplicateWindowSec() const { return deduplicate_window_sec_; }
+
     /// Total count
     size_t count() const { return notifications_.size(); }
 
@@ -99,6 +109,7 @@ private:
     size_t max_notifications_;
     uint64_t next_id_ = 1;
     NotificationCallback callback_;
+    int deduplicate_window_sec_ = 0;
 
     /// Parse OSC notification data
     void parseOsc9(const std::string& data, std::string& title,

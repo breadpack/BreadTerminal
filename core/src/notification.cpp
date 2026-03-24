@@ -12,6 +12,20 @@ uint64_t NotificationStore::add(PaneId pane_id, NotificationSource source,
                                 NotificationUrgency urgency,
                                 const std::string& title,
                                 const std::string& body) {
+    // Deduplication: suppress if same title+body appeared within the window
+    if (deduplicate_window_sec_ > 0) {
+        auto now = std::chrono::steady_clock::now();
+        for (const auto& existing : notifications_) {
+            if (existing.title == title && existing.body == body) {
+                auto age = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - existing.timestamp).count();
+                if (age < deduplicate_window_sec_) {
+                    return existing.id; // Suppressed as duplicate
+                }
+            }
+        }
+    }
+
     Notification n;
     n.id = next_id_++;
     n.pane_id = pane_id;
