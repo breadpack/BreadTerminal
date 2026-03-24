@@ -10,6 +10,16 @@ extern "C" {
 
 #include <unordered_map>
 
+#include "default_config_lua.h"
+#include "default_colors_lua.h"
+#include "default_keybindings_lua.h"
+#include "default_commands_lua.h"
+#include "default_tab_title_lua.h"
+#include "default_paste_guard_lua.h"
+#include "default_url_detect_lua.h"
+#include "default_icons_lua.h"
+#include "default_themes_lua.h"
+
 namespace termcore {
 
 static const char* eventToString(LuaEvent event) {
@@ -57,6 +67,14 @@ struct LuaEngine::Impl {
 
         terminal_table = lua.create_named_table("terminal");
         terminal_table["version"] = "0.1.0";
+
+#if defined(__APPLE__)
+        terminal_table["platform"] = "macos";
+#elif defined(_WIN32)
+        terminal_table["platform"] = "windows";
+#else
+        terminal_table["platform"] = "linux";
+#endif
 
         terminal_table.set_function(
             "on",
@@ -155,6 +173,43 @@ void LuaEngine::clearAllModules() {
         mod->clearCallbacks();
     }
     modules_.clear();
+}
+
+void LuaEngine::setActionHandler(ActionHandler handler) {
+    impl_->terminal_table.set_function("action",
+        [handler = std::move(handler)](const std::string& name) {
+            handler(name);
+        });
+}
+
+namespace {
+struct DefaultScript {
+    const char* name;
+    const unsigned char* data;
+    unsigned int len;
+};
+
+static const DefaultScript kDefaultScripts[] = {
+    {"config",      default_config_lua,      default_config_lua_len},
+    {"colors",      default_colors_lua,      default_colors_lua_len},
+    {"keybindings", default_keybindings_lua,  default_keybindings_lua_len},
+    {"commands",    default_commands_lua,     default_commands_lua_len},
+    {"tab_title",   default_tab_title_lua,   default_tab_title_lua_len},
+    {"paste_guard", default_paste_guard_lua,  default_paste_guard_lua_len},
+    {"url_detect",  default_url_detect_lua,   default_url_detect_lua_len},
+    {"icons",       default_icons_lua,        default_icons_lua_len},
+    {"themes",      default_themes_lua,       default_themes_lua_len},
+};
+} // anonymous namespace
+
+void LuaEngine::loadDefaults() {
+    for (const auto& script : kDefaultScripts) {
+        std::string code(reinterpret_cast<const char*>(script.data), script.len);
+        auto result = loadString(code);
+        if (!result.ok()) {
+            // Log error but continue loading remaining defaults
+        }
+    }
 }
 
 } // namespace termcore

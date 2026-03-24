@@ -44,6 +44,10 @@ public:
     void initializeModules(const std::vector<PluginCapability>& capabilities);
     void clearAllModules();
 
+    void loadDefaults();
+    using ActionHandler = std::function<void(const std::string&)>;
+    void setActionHandler(ActionHandler handler);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

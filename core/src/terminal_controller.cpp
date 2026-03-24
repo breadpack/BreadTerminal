@@ -4,6 +4,8 @@
 #include "termcore/search_history.h"
 #include "termcore/theme_loader.h"
 
+#include <unordered_map>
+
 // Lua binding modules
 #include "lua_bindings/lua_tab_module.h"
 #include "lua_bindings/lua_command_module.h"
@@ -27,6 +29,83 @@
 #include "lua_bindings/lua_quick_module.h"
 
 namespace termcore {
+
+static Action parseActionName(const std::string& name) {
+    static const std::unordered_map<std::string, Action> kMap = {
+        {"new_tab", Action::NewTab},
+        {"close_tab", Action::CloseTab},
+        {"next_tab", Action::NextTab},
+        {"prev_tab", Action::PrevTab},
+        {"split_right", Action::SplitRight},
+        {"split_down", Action::SplitDown},
+        {"close_pane", Action::ClosePane},
+        {"focus_up", Action::FocusUp},
+        {"focus_down", Action::FocusDown},
+        {"focus_left", Action::FocusLeft},
+        {"focus_right", Action::FocusRight},
+        {"close_window", Action::CloseWindow},
+        {"copy", Action::Copy},
+        {"paste", Action::Paste},
+        {"paste_from_history", Action::PasteFromHistory},
+        {"select_all", Action::SelectAll},
+        {"search_open", Action::SearchOpen},
+        {"search_close", Action::SearchClose},
+        {"search_next", Action::SearchNext},
+        {"search_prev", Action::SearchPrev},
+        {"font_increase", Action::FontIncrease},
+        {"font_decrease", Action::FontDecrease},
+        {"font_reset", Action::FontReset},
+        {"toggle_fullscreen", Action::ToggleFullscreen},
+        {"scroll_page_up", Action::ScrollPageUp},
+        {"scroll_page_down", Action::ScrollPageDown},
+        {"scroll_to_top", Action::ScrollToTop},
+        {"scroll_to_bottom", Action::ScrollToBottom},
+        {"scroll_up", Action::ScrollUp},
+        {"scroll_down", Action::ScrollDown},
+        {"new_window", Action::NewWindow},
+        {"jump_prompt_up", Action::JumpPromptUp},
+        {"jump_prompt_down", Action::JumpPromptDown},
+        {"reset_terminal", Action::ResetTerminal},
+        {"clear_scrollback", Action::ClearScrollback},
+        {"reload_config", Action::ReloadConfig},
+        {"enter_copy_mode", Action::EnterCopyMode},
+        {"toggle_sidebar", Action::ToggleSidebar},
+        {"open_settings", Action::OpenSettings},
+        {"open_theme_hub", Action::OpenThemeHub},
+        {"open_font_hub", Action::OpenFontHub},
+        {"open_command_palette", Action::OpenCommandPalette},
+        {"toggle_broadcast", Action::ToggleBroadcast},
+        {"show_profile_dropdown", Action::ShowProfileDropdown},
+        {"switch_tab_1", Action::SwitchTab1},
+        {"switch_tab_2", Action::SwitchTab2},
+        {"switch_tab_3", Action::SwitchTab3},
+        {"switch_tab_4", Action::SwitchTab4},
+        {"switch_tab_5", Action::SwitchTab5},
+        {"switch_tab_6", Action::SwitchTab6},
+        {"switch_tab_7", Action::SwitchTab7},
+        {"switch_tab_8", Action::SwitchTab8},
+        {"switch_tab_9", Action::SwitchTab9},
+        {"new_tab_profile_1", Action::NewTabProfile1},
+        {"new_tab_profile_2", Action::NewTabProfile2},
+        {"new_tab_profile_3", Action::NewTabProfile3},
+        {"new_tab_profile_4", Action::NewTabProfile4},
+        {"new_tab_profile_5", Action::NewTabProfile5},
+        {"new_tab_profile_6", Action::NewTabProfile6},
+        {"new_tab_profile_7", Action::NewTabProfile7},
+        {"new_tab_profile_8", Action::NewTabProfile8},
+        {"new_tab_profile_9", Action::NewTabProfile9},
+        {"show_notifications", Action::ShowNotifications},
+        {"ssh_connect", Action::SshConnect},
+        {"toggle_inspector", Action::ToggleInspector},
+        {"enter_instant_replay", Action::EnterInstantReplay},
+        {"exit_instant_replay", Action::ExitInstantReplay},
+        {"add_annotation", Action::AddAnnotation},
+        {"open_password_manager", Action::OpenPasswordManager},
+        {"export_screen", Action::ExportScreen},
+    };
+    auto it = kMap.find(name);
+    return it != kMap.end() ? it->second : Action::None;
+}
 
 TerminalController::TerminalController(IPlatformHost* host, Config config,
                                        FontCollection* fontCollection)
@@ -157,6 +236,17 @@ void TerminalController::initTerminal() {
     luaEngine_->registerModule(std::make_shared<LuaViModule>(nullptr));
 
     luaEngine_->initializeModules();
+
+    // Register terminal.action() to dispatch C++ actions from Lua
+    luaEngine_->setActionHandler([this](const std::string& name) {
+        Action a = parseActionName(name);
+        if (a != Action::None) {
+            handleAction(a);
+        }
+    });
+
+    // Load embedded Lua defaults (before user config)
+    luaEngine_->loadDefaults();
 }
 
 void TerminalController::pollPty() {
