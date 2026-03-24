@@ -14,6 +14,8 @@
 
 namespace termcore {
 
+struct TabTitleInfo;  // defined in lua_bindings/lua_tab_module.h
+
 struct PaneState {
     PaneId id = kInvalidPane;
     std::string profile_id;
@@ -89,6 +91,10 @@ public:
 
     void setProfileManager(ProfileManager* mgr) { profileMgr_ = mgr; }
 
+    // Lua callback for custom tab title formatting.
+    using TitleFormatFn = std::function<std::string(const TabTitleInfo&)>;
+    void setTitleFormatCallback(TitleFormatFn fn) { titleFormatFn_ = std::move(fn); }
+
 private:
     std::unique_ptr<Mux> mux_;
     WorkspaceId wsId_;
@@ -104,6 +110,8 @@ private:
     Pty* activePty_ = nullptr;
 
     Config config_;
+    mutable TitleFormatFn titleFormatFn_;
+    mutable bool inTitleFormat_ = false;  // reentrancy guard
 };
 
 } // namespace termcore

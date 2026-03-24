@@ -1,4 +1,5 @@
 #include "termcore/tab_controller.h"
+#include "lua_bindings/lua_tab_module.h"  // for TabTitleInfo
 #include <algorithm>
 
 namespace termcore {
@@ -240,6 +241,22 @@ std::vector<TabController::TabInfo> TabController::tabBarInfo() const {
             ti.title = ws->tabs[i]->title;
         } else {
             ti.title = "Tab " + std::to_string(i + 1);
+        }
+
+        // Try Lua title format callback (can override built title)
+        if (titleFormatFn_ && !inTitleFormat_) {
+            TabTitleInfo luaInfo;
+            luaInfo.tab_index = static_cast<int>(i);
+            luaInfo.process_name = processName;
+            luaInfo.working_dir = cwd;
+            luaInfo.title = ti.title;
+            luaInfo.is_active = ti.active;
+            inTitleFormat_ = true;
+            auto custom = titleFormatFn_(luaInfo);
+            inTitleFormat_ = false;
+            if (!custom.empty()) {
+                ti.title = std::move(custom);
+            }
         }
 
         // Pass through icon name and process name for renderer
