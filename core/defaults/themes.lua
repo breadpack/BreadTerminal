@@ -1,1 +1,122 @@
--- Placeholder: will be populated in Task 4
+-- BreadTerminal core themes
+-- Additional themes available at ~/.config/bread/themes/
+
+terminal.colorscheme("Catppuccin Mocha", {
+    foreground = 0xcdd6f4, background = 0x1e1e2e,
+    cursor_color = 0xf5e0dc,
+    selection_background = 0x585b70, selection_foreground = 0xcdd6f4,
+    palette = {
+        0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af,
+        0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xbac2de,
+        0x585b70, 0xf38ba8, 0xa6e3a1, 0xf9e2af,
+        0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xa6adc8,
+    },
+})
+
+terminal.colorscheme("Catppuccin Latte", {
+    foreground = 0x4c4f69, background = 0xeff1f5,
+    cursor_color = 0xdc8a78,
+    selection_background = 0xacb0be, selection_foreground = 0x4c4f69,
+    palette = {
+        0x5c5f77, 0xd20f39, 0x40a02b, 0xdf8e1d,
+        0x1e66f5, 0xea76cb, 0x179299, 0xbcc0cc,
+        0x6c6f85, 0xd20f39, 0x40a02b, 0xdf8e1d,
+        0x1e66f5, 0xea76cb, 0x179299, 0xacb0be,
+    },
+})
+
+terminal.colorscheme("Dracula", {
+    foreground = 0xf8f8f2, background = 0x282a36,
+    cursor_color = 0xf8f8f2,
+    selection_background = 0x44475a, selection_foreground = 0xf8f8f2,
+    palette = {
+        0x21222c, 0xff5555, 0x50fa7b, 0xf1fa8c,
+        0xbd93f9, 0xff79c6, 0x8be9fd, 0xf8f8f2,
+        0x6272a4, 0xff6e6e, 0x69ff94, 0xffffa5,
+        0xd6acff, 0xff92df, 0xa4ffff, 0xffffff,
+    },
+})
+
+terminal.colorscheme("One Dark", {
+    foreground = 0xabb2bf, background = 0x282c34,
+    cursor_color = 0x528bff,
+    selection_background = 0x3e4451, selection_foreground = 0xabb2bf,
+    palette = {
+        0x282c34, 0xe06c75, 0x98c379, 0xe5c07b,
+        0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf,
+        0x545862, 0xe06c75, 0x98c379, 0xe5c07b,
+        0x61afef, 0xc678dd, 0x56b6c2, 0xc8ccd4,
+    },
+})
+
+terminal.colorscheme("Solarized Dark", {
+    foreground = 0x839496, background = 0x002b36,
+    cursor_color = 0x93a1a1,
+    selection_background = 0x073642, selection_foreground = 0x93a1a1,
+    palette = {
+        0x073642, 0xdc322f, 0x859900, 0xb58900,
+        0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+        0x002b36, 0xcb4b16, 0x586e75, 0x657b83,
+        0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+    },
+})
+
+terminal.colorscheme("Solarized Light", {
+    foreground = 0x657b83, background = 0xfdf6e3,
+    cursor_color = 0x586e75,
+    selection_background = 0xeee8d5, selection_foreground = 0x586e75,
+    palette = {
+        0x073642, 0xdc322f, 0x859900, 0xb58900,
+        0x268bd2, 0xd33682, 0x2aa198, 0xeee8d5,
+        0x002b36, 0xcb4b16, 0x586e75, 0x657b83,
+        0x839496, 0x6c71c4, 0x93a1a1, 0xfdf6e3,
+    },
+})
+
+terminal.colorscheme("Tokyo Night", {
+    foreground = 0xa9b1d6, background = 0x1a1b26,
+    cursor_color = 0xc0caf5,
+    selection_background = 0x283457, selection_foreground = 0xa9b1d6,
+    palette = {
+        0x15161e, 0xf7768e, 0x9ece6a, 0xe0af68,
+        0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xa9b1d6,
+        0x414868, 0xf7768e, 0x9ece6a, 0xe0af68,
+        0x7aa2f7, 0xbb9af7, 0x7dcfff, 0xc0caf5,
+    },
+})
+
+terminal.colorscheme("Nord", {
+    foreground = 0xd8dee9, background = 0x2e3440,
+    cursor_color = 0xd8dee9,
+    selection_background = 0x434c5e, selection_foreground = 0xd8dee9,
+    palette = {
+        0x3b4252, 0xbf616a, 0xa3be8c, 0xebcb8b,
+        0x81a1c1, 0xb48ead, 0x88c0d0, 0xe5e9f0,
+        0x4c566a, 0xbf616a, 0xa3be8c, 0xebcb8b,
+        0x81a1c1, 0xb48ead, 0x8fbcbb, 0xeceff4,
+    },
+})
+
+terminal.colorscheme("Gruvbox Dark", {
+    foreground = 0xebdbb2, background = 0x282828,
+    cursor_color = 0xebdbb2,
+    selection_background = 0x504945, selection_foreground = 0xebdbb2,
+    palette = {
+        0x282828, 0xcc241d, 0x98971a, 0xd79921,
+        0x458588, 0xb16286, 0x689d6a, 0xa89984,
+        0x928374, 0xfb4934, 0xb8bb26, 0xfabd2f,
+        0x83a598, 0xd3869b, 0x8ec07c, 0xebdbb2,
+    },
+})
+
+terminal.colorscheme("Rose Pine", {
+    foreground = 0xe0def4, background = 0x191724,
+    cursor_color = 0x555169,
+    selection_background = 0x2a283e, selection_foreground = 0xe0def4,
+    palette = {
+        0x26233a, 0xeb6f92, 0x31748f, 0xf6c177,
+        0x9ccfd8, 0xc4a7e7, 0xebbcba, 0xe0def4,
+        0x6e6a86, 0xeb6f92, 0x31748f, 0xf6c177,
+        0x9ccfd8, 0xc4a7e7, 0xebbcba, 0xe0def4,
+    },
+})
