@@ -16,13 +16,18 @@ void ClipboardHistory::addEntry(const std::string& text) {
     // Insert at front
     ClipboardEntry entry;
     entry.text = text;
-    entry.preview = makePreview(text);
+    entry.preview = makePreview(text, preview_max_length_);
     entry.timestamp = std::chrono::system_clock::now();
     entries_.insert(entries_.begin(), std::move(entry));
 
     // Enforce capacity
-    if (entries_.size() > kMaxEntries) {
-        entries_.resize(kMaxEntries);
+    if (entries_.size() > max_entries_) {
+        entries_.resize(max_entries_);
+    }
+
+    // Fire copy callback
+    if (onCopyCallback) {
+        onCopyCallback(text);
     }
 }
 
@@ -45,18 +50,18 @@ size_t ClipboardHistory::size() const {
     return entries_.size();
 }
 
-std::string ClipboardHistory::makePreview(const std::string& text) {
-    // Take first line only, then truncate to kPreviewMaxLength
+std::string ClipboardHistory::makePreview(const std::string& text, size_t maxLen) {
+    // Take first line only, then truncate to maxLen
     std::string preview;
     for (char c : text) {
         if (c == '\n' || c == '\r') break;
         preview += c;
-        if (preview.size() >= kPreviewMaxLength) break;
+        if (preview.size() >= maxLen) break;
     }
-    if (preview.size() >= kPreviewMaxLength || preview.size() < text.size()) {
+    if (preview.size() >= maxLen || preview.size() < text.size()) {
         // Indicate truncation if we stopped early
-        if (preview.size() >= kPreviewMaxLength) {
-            preview.resize(kPreviewMaxLength);
+        if (preview.size() >= maxLen) {
+            preview.resize(maxLen);
         }
         if (preview.size() < text.size()) {
             preview += "...";
