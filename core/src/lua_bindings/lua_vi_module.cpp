@@ -45,7 +45,7 @@ void LuaViModule::registerBindings(void* luaState, void* terminalTable) {
 }
 
 void LuaViModule::clearCallbacks() {
-    vi_->clearLuaCallbacks();
+    if (vi_) vi_->clearLuaCallbacks();
 }
 
 } // namespace termcore

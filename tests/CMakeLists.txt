@@ -83,6 +83,7 @@ add_executable(termcore_tests
     test_tmux_integration.cpp
     test_subpixel.cpp
     test_screen_export.cpp
+    test_lua_plugin_integration.cpp
 )
 
 target_link_libraries(termcore_tests

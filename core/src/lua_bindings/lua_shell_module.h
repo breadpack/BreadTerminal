@@ -5,8 +5,6 @@
 #include <memory>
 #include <string>
 
-namespace sol { class protected_function; }
-
 namespace termcore {
 
 class ShellIntegrationConfig;
@@ -24,7 +22,8 @@ public:
 
 private:
     ShellIntegrationConfig* config_;
-    std::shared_ptr<sol::protected_function> commandFinishFn_;
+    // Stored as shared_ptr<void> to avoid sol.hpp in header
+    std::shared_ptr<void> commandFinishFn_;
 };
 
 } // namespace termcore

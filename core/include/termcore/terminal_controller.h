@@ -18,6 +18,7 @@
 #include "termcore/clipboard_history.h"
 #include "termcore/command_palette.h"
 #include "termcore/profile_dropdown.h"
+#include "termcore/lua_engine.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -94,6 +95,7 @@ public:
     FontManager* fontMgr() { return fontMgr_.get(); }
     KeybindingManager* keybindings() { return keybindings_.get(); }
     ProfileManager* profileManager() { return profileMgr_.get(); }
+    LuaEngine* luaEngine() { return luaEngine_.get(); }
 
     void pasteText(const std::string& text);
 
@@ -123,9 +125,11 @@ private:
     UrlHighlightManager urlHighlightMgr_;
 
     std::unique_ptr<InputHandler> inputHandler_;
+    std::unique_ptr<LuaEngine> luaEngine_;
     ClipboardHistory clipboardHistory_;
     CommandPalette commandPalette_;
     ProfileDropdown profileDropdown_;
+    PasteGuard pasteGuard_;
 
     int termRows_ = 24;
     int termCols_ = 80;

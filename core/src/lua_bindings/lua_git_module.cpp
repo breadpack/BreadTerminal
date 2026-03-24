@@ -28,9 +28,9 @@ void LuaGitModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.git.on_branch_change(function(branch) end)
     git.set_function("on_branch_change",
         [this](sol::protected_function fn) {
-            branchChangeFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto fnPtr = std::make_shared<sol::protected_function>(std::move(fn));
+            branchChangeFn_ = fnPtr;
             if (detector_) {
-                auto fnPtr = branchChangeFn_;
                 detector_->onBranchChange = [fnPtr](const std::string& branch) {
                     if (fnPtr && fnPtr->valid()) {
                         (*fnPtr)(branch);
@@ -42,9 +42,9 @@ void LuaGitModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.git.format_branch(function(name) return "branch: " .. name end)
     git.set_function("format_branch",
         [this](sol::protected_function fn) {
-            formatBranchFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto fnPtr = std::make_shared<sol::protected_function>(std::move(fn));
+            formatBranchFn_ = fnPtr;
             if (detector_) {
-                auto fnPtr = formatBranchFn_;
                 detector_->formatBranch = [fnPtr](const std::string& name) -> std::string {
                     if (fnPtr && fnPtr->valid()) {
                         auto result = (*fnPtr)(name);

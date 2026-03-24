@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-namespace sol { class protected_function; }
-
 namespace termcore {
 
 class AnnotationManager;
@@ -25,8 +23,8 @@ public:
 
 private:
     AnnotationManager* annotMgr_;
-    // Keep pattern callbacks alive alongside the module
-    std::vector<std::shared_ptr<sol::protected_function>> patternFns_;
+    // Keep pattern callbacks alive alongside the module (stored as shared_ptr<void> to avoid sol.hpp in header)
+    std::vector<std::shared_ptr<void>> patternFns_;
 };
 
 } // namespace termcore

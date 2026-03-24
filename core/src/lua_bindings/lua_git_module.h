@@ -6,8 +6,6 @@
 #include <memory>
 #include <string>
 
-namespace sol { class protected_function; }
-
 namespace termcore {
 
 class GitBranchDetector;
@@ -25,8 +23,9 @@ public:
 
 private:
     GitBranchDetector* detector_;
-    std::shared_ptr<sol::protected_function> branchChangeFn_;
-    std::shared_ptr<sol::protected_function> formatBranchFn_;
+    // Stored as shared_ptr<void> to avoid sol.hpp in header
+    std::shared_ptr<void> branchChangeFn_;
+    std::shared_ptr<void> formatBranchFn_;
 };
 
 } // namespace termcore

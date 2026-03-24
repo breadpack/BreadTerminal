@@ -5,8 +5,6 @@
 #include <memory>
 #include <string>
 
-namespace sol { class protected_function; }
-
 namespace termcore {
 
 class MultiSessionManager;
@@ -24,9 +22,10 @@ public:
 
 private:
     MultiSessionManager* sessionMgr_;
-    std::shared_ptr<sol::protected_function> onSaveFn_;
-    std::shared_ptr<sol::protected_function> onRestoreFn_;
-    std::shared_ptr<sol::protected_function> namingFn_;
+    // Stored as shared_ptr<void> to avoid sol.hpp in header
+    std::shared_ptr<void> onSaveFn_;
+    std::shared_ptr<void> onRestoreFn_;
+    std::shared_ptr<void> namingFn_;
 };
 
 } // namespace termcore

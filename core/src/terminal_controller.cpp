@@ -4,6 +4,28 @@
 #include "termcore/search_history.h"
 #include "termcore/theme_loader.h"
 
+// Lua binding modules
+#include "lua_bindings/lua_tab_module.h"
+#include "lua_bindings/lua_command_module.h"
+#include "lua_bindings/lua_event_module.h"
+#include "lua_bindings/lua_theme_module.h"
+#include "lua_bindings/lua_url_module.h"
+#include "lua_bindings/lua_mux_module.h"
+#include "lua_bindings/lua_shader_module.h"
+#include "lua_bindings/lua_search_module.h"
+#include "lua_bindings/lua_clipboard_module.h"
+#include "lua_bindings/lua_paste_module.h"
+#include "lua_bindings/lua_notify_module.h"
+#include "lua_bindings/lua_status_module.h"
+#include "lua_bindings/lua_git_module.h"
+#include "lua_bindings/lua_session_module.h"
+#include "lua_bindings/lua_annotation_module.h"
+#include "lua_bindings/lua_shell_module.h"
+#include "lua_bindings/lua_workspace_module.h"
+#include "lua_bindings/lua_settings_module.h"
+#include "lua_bindings/lua_vi_module.h"
+#include "lua_bindings/lua_quick_module.h"
+
 namespace termcore {
 
 TerminalController::TerminalController(IPlatformHost* host, Config config,
@@ -106,6 +128,35 @@ void TerminalController::initTerminal() {
     tabCtrl_->createTab(termRows_, termCols_);
     tabCtrl_->syncActivePointers();
     needsRender_ = true;
+
+    // --- Lua Plugin Module Registration ---
+    luaEngine_ = std::make_unique<LuaEngine>();
+
+    // Modules backed by components owned by this controller
+    luaEngine_->registerModule(std::make_shared<LuaTabModule>(tabCtrl_.get()));
+    luaEngine_->registerModule(std::make_shared<LuaCommandModule>(&commandPalette_));
+    luaEngine_->registerModule(std::make_shared<LuaEventModule>());
+    luaEngine_->registerModule(std::make_shared<LuaThemeModule>(&config_));
+    luaEngine_->registerModule(std::make_shared<LuaUrlModule>(&urlDetector_, &urlHighlightMgr_));
+    luaEngine_->registerModule(std::make_shared<LuaMuxModule>(tabCtrl_->mux(), tabCtrl_.get()));
+    luaEngine_->registerModule(std::make_shared<LuaSearchModule>(&searchCtrl_));
+    luaEngine_->registerModule(std::make_shared<LuaClipboardModule>(&clipboardHistory_));
+    luaEngine_->registerModule(std::make_shared<LuaPasteModule>(&pasteGuard_));
+    luaEngine_->registerModule(std::make_shared<LuaStatusModule>(tabCtrl_.get()));
+    luaEngine_->registerModule(std::make_shared<LuaQuickModule>(&config_));
+
+    // Modules backed by components not yet owned — pass nullptr (safe, functions return nil+error)
+    luaEngine_->registerModule(std::make_shared<LuaShaderModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaNotifyModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaGitModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaSessionModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaAnnotationModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaShellModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaWorkspaceModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaSettingsModule>(nullptr));
+    luaEngine_->registerModule(std::make_shared<LuaViModule>(nullptr));
+
+    luaEngine_->initializeModules();
 }
 
 void TerminalController::pollPty() {
@@ -920,8 +971,7 @@ void TerminalController::pasteText(const std::string& text) {
     bool bracketed = scr && scr->bracketedPaste();
 
     // Paste guard
-    PasteGuard guard;
-    PasteAnalysis analysis = guard.analyze(text, bracketed);
+    PasteAnalysis analysis = pasteGuard_.analyze(text, bracketed);
     if (analysis.danger == PasteDanger::Warn) {
         std::string msg = "The clipboard content may be dangerous:\n\n";
         if (analysis.signals & static_cast<uint32_t>(PasteSignal::MultiLine))

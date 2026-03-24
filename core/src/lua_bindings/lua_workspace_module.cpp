@@ -57,8 +57,9 @@ void LuaWorkspaceModule::registerBindings(void* luaState, void* terminalTable) {
 }
 
 void LuaWorkspaceModule::clearCallbacks() {
-    // Reset the provider callback to a no-op to sever Lua references
-    provider_->setOnChanged(nullptr);
+    if (provider_) {
+        provider_->setOnChanged(nullptr);
+    }
     luaPtr_ = nullptr;
 }
 

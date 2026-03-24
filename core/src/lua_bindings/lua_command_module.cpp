@@ -43,6 +43,7 @@ void LuaCommandModule::registerBindings(void* luaState, void* terminalTable) {
 }
 
 void LuaCommandModule::clearCallbacks() {
+    if (!palette_) return;
     // Remove all registered Lua commands from the palette
     // Collect names first to avoid modifying while iterating
     std::vector<std::string> names;

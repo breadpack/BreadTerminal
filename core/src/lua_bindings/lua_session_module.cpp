@@ -20,9 +20,9 @@ void LuaSessionModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.session.on_save(function(name) end)
     session.set_function("on_save",
         [this](sol::protected_function fn) {
-            onSaveFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto fnPtr = std::make_shared<sol::protected_function>(std::move(fn));
+            onSaveFn_ = fnPtr;
             if (sessionMgr_) {
-                auto fnPtr = onSaveFn_;
                 sessionMgr_->onSave = [fnPtr](const std::string& name) {
                     if (fnPtr && fnPtr->valid()) {
                         (*fnPtr)(name);
@@ -34,9 +34,9 @@ void LuaSessionModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.session.on_restore(function(name) end)
     session.set_function("on_restore",
         [this](sol::protected_function fn) {
-            onRestoreFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto fnPtr = std::make_shared<sol::protected_function>(std::move(fn));
+            onRestoreFn_ = fnPtr;
             if (sessionMgr_) {
-                auto fnPtr = onRestoreFn_;
                 sessionMgr_->onRestore = [fnPtr](const std::string& name) {
                     if (fnPtr && fnPtr->valid()) {
                         (*fnPtr)(name);
@@ -48,9 +48,9 @@ void LuaSessionModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.session.set_naming(function() return "custom-name" end)
     session.set_function("set_naming",
         [this](sol::protected_function fn) {
-            namingFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto fnPtr = std::make_shared<sol::protected_function>(std::move(fn));
+            namingFn_ = fnPtr;
             if (sessionMgr_) {
-                auto fnPtr = namingFn_;
                 sessionMgr_->namingCallback = [fnPtr]() -> std::string {
                     if (fnPtr && fnPtr->valid()) {
                         auto result = (*fnPtr)();

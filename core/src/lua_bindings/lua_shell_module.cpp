@@ -28,12 +28,12 @@ void LuaShellModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.shell.on_command_finish(function(exit_code, duration) end)
     shell.set_function("on_command_finish",
         [this](sol::protected_function fn) {
-            commandFinishFn_ = std::make_shared<sol::protected_function>(std::move(fn));
+            auto stored = std::make_shared<sol::protected_function>(std::move(fn));
+            commandFinishFn_ = stored;
             if (config_) {
-                auto fnPtr = commandFinishFn_;
-                config_->onCommandFinish = [fnPtr](int exitCode, double duration) {
-                    if (fnPtr && fnPtr->valid()) {
-                        (*fnPtr)(exitCode, duration);
+                config_->onCommandFinish = [stored](int exitCode, double duration) {
+                    if (stored && stored->valid()) {
+                        (*stored)(exitCode, duration);
                     }
                 };
             }
