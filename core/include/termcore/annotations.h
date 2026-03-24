@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -25,6 +26,13 @@ struct TabBadge {
     uint32_t bgColor = 0;  // 0 = use default
     uint32_t fgColor = 0;  // 0 = use default
     bool visible = true;
+};
+
+/// A pattern-match rule: fires callback when row text matches the pattern.
+struct AnnotationPatternRule {
+    std::string pattern;
+    /// Signature: void(int row, const std::string& text)
+    std::function<void(int, const std::string&)> callback;
 };
 
 /// Manages annotations for a single pane/screen
@@ -54,9 +62,30 @@ public:
     /// Count
     size_t count() const;
 
+    // --- Lua callback hooks ---
+
+    /// Add a pattern rule. When a row's text matches the pattern substring,
+    /// the callback is fired with (row, text).
+    void addPatternCallback(const std::string& pattern,
+                            std::function<void(int, const std::string&)> cb);
+
+    /// Remove all pattern rules.
+    void clearPatternCallbacks();
+
+    /// Get current pattern rules (for firing by the terminal renderer).
+    const std::vector<AnnotationPatternRule>& patternRules() const {
+        return patternRules_;
+    }
+
+    /// Set a custom badge format string (e.g., "{branch} | {cwd}").
+    void setBadgeFormat(const std::string& fmt) { badgeFormat_ = fmt; }
+    const std::string& badgeFormat() const { return badgeFormat_; }
+
 private:
     int nextId_ = 1;
     std::map<int, Annotation> annotations_;  // id -> Annotation
+    std::vector<AnnotationPatternRule> patternRules_;
+    std::string badgeFormat_;
 };
 
 /// Badge format string expansion.

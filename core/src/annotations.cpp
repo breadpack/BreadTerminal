@@ -52,6 +52,16 @@ size_t AnnotationManager::count() const {
     return annotations_.size();
 }
 
+void AnnotationManager::addPatternCallback(
+    const std::string& pattern,
+    std::function<void(int, const std::string&)> cb) {
+    patternRules_.push_back({pattern, std::move(cb)});
+}
+
+void AnnotationManager::clearPatternCallbacks() {
+    patternRules_.clear();
+}
+
 std::string expandBadgeFormat(const std::string& format,
                               const std::string& hostname,
                               const std::string& user,

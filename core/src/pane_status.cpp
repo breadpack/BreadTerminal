@@ -41,6 +41,19 @@ void PaneStatusData::clearStatus(const std::string& key) {
         status_pills.end());
 }
 
+void PaneStatusData::setStatusPillFromLua(const std::string& key,
+                                           const std::string& value,
+                                           uint32_t color) {
+    for (auto& pill : status_pills) {
+        if (pill.key == key) {
+            pill.value = value;
+            pill.color = color;
+            return;
+        }
+    }
+    status_pills.push_back({key, value, /*icon=*/"", color});
+}
+
 void PaneStatusData::addLog(LogEntry::Level level, const std::string& message,
                             const std::string& source) {
     LogEntry entry;

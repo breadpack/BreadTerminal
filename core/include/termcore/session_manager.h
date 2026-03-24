@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,21 @@ public:
 
     /// Resolve the sessions directory (platform default or user-supplied).
     static std::string resolveSessionDir(const std::string& dir = "");
+
+    // --- Lua callback slots ---
+
+    /// Called after a session is successfully saved.
+    /// Signature: void(const std::string& sessionName)
+    std::function<void(const std::string&)> onSave;
+
+    /// Called after a session is successfully restored.
+    /// Signature: void(const std::string& sessionName)
+    std::function<void(const std::string&)> onRestore;
+
+    /// Optional naming override: returns a custom session name.
+    /// If unset, generateSessionName() is used.
+    /// Signature: std::string()
+    std::function<std::string()> namingCallback;
 
 private:
     /// Build a full file path from directory + session name.
