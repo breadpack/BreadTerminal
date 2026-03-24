@@ -5,9 +5,8 @@
 
 namespace termcore {
 
-static const std::string kSchemes[] = {
-    "https://", "http://", "ftp://", "file://", "ssh://", "git://",
-};
+// Built-in URL schemes are now defined in Lua (defaults/url.lua).
+// Only customSchemes_ (populated via Lua) is used for scheme detection.
 
 static bool isUrlTerminator(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -67,8 +66,8 @@ std::vector<DetectedUrl> UrlDetector::detectInLine(const std::string& text, int 
     for (size_t i = 0; i < text.size(); ) {
         bool found = false;
 
-        // Check for scheme URLs
-        for (const auto& scheme : kSchemes) {
+        // Check for scheme URLs (from Lua-registered custom schemes)
+        for (const auto& scheme : customSchemes_) {
             if (i + scheme.size() <= text.size()
                 && text.compare(i, scheme.size(), scheme) == 0) {
                 size_t start = i;
@@ -141,11 +140,10 @@ std::string UrlDetector::urlAt(const std::vector<DetectedUrl>& urls, int row, in
 }
 
 bool UrlDetector::isUrl(const std::string& text) {
-    for (const auto& scheme : kSchemes) {
-        if (text.size() >= scheme.size()
-            && text.compare(0, scheme.size(), scheme) == 0) {
-            return true;
-        }
+    // Note: isUrl() is static and cannot access customSchemes_.
+    // Basic heuristic: check for "://" or "www." prefix.
+    if (text.find("://") != std::string::npos) {
+        return true;
     }
     if (text.size() >= 4 && text.compare(0, 4, "www.") == 0) {
         return true;

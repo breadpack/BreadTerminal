@@ -5,61 +5,20 @@
 
 namespace termcore {
 
-// Human-readable names for each action.
-static const struct { Action action; const char* name; const char* desc; } kActionEntries[] = {
-    { Action::NewTab,            "New Tab",              "Open a new tab" },
-    { Action::CloseTab,          "Close Tab",            "Close the current tab" },
-    { Action::NextTab,           "Next Tab",             "Switch to the next tab" },
-    { Action::PrevTab,           "Previous Tab",         "Switch to the previous tab" },
-    { Action::SplitRight,        "Split Right",          "Split pane to the right" },
-    { Action::SplitDown,         "Split Down",           "Split pane downward" },
-    { Action::ClosePane,         "Close Pane",           "Close the current pane" },
-    { Action::FocusUp,           "Focus Up",             "Move focus to pane above" },
-    { Action::FocusDown,         "Focus Down",           "Move focus to pane below" },
-    { Action::FocusLeft,         "Focus Left",           "Move focus to pane on the left" },
-    { Action::FocusRight,        "Focus Right",          "Move focus to pane on the right" },
-    { Action::Copy,              "Copy",                 "Copy selection to clipboard" },
-    { Action::Paste,             "Paste",                "Paste from clipboard" },
-    { Action::SelectAll,         "Select All",           "Select all text" },
-    { Action::ScrollUp,          "Scroll Up",            "Scroll up a few lines" },
-    { Action::ScrollDown,        "Scroll Down",          "Scroll down a few lines" },
-    { Action::ScrollPageUp,      "Scroll Page Up",       "Scroll up one page" },
-    { Action::ScrollPageDown,    "Scroll Page Down",     "Scroll down one page" },
-    { Action::ScrollToTop,       "Scroll to Top",        "Scroll to the top of history" },
-    { Action::ScrollToBottom,    "Scroll to Bottom",     "Scroll to the bottom" },
-    { Action::SearchOpen,        "Find",                 "Open search bar" },
-    { Action::SearchNext,        "Find Next",            "Jump to next search match" },
-    { Action::SearchPrev,        "Find Previous",        "Jump to previous search match" },
-    { Action::NewWindow,         "New Window",           "Open a new window" },
-    { Action::CloseWindow,       "Close Window",         "Close the window" },
-    { Action::ToggleFullscreen,  "Toggle Fullscreen",    "Toggle fullscreen mode" },
-    { Action::FontIncrease,      "Increase Font Size",   "Make text larger" },
-    { Action::FontDecrease,      "Decrease Font Size",   "Make text smaller" },
-    { Action::FontReset,         "Reset Font Size",      "Reset text to default size" },
-    { Action::ResetTerminal,     "Reset Terminal",       "Reset the terminal state" },
-    { Action::ClearScrollback,   "Clear Scrollback",     "Clear scrollback buffer" },
-    { Action::ReloadConfig,      "Reload Config",        "Reload configuration file" },
-    { Action::JumpPromptUp,      "Jump to Previous Prompt", "Navigate to previous shell prompt" },
-    { Action::JumpPromptDown,    "Jump to Next Prompt",  "Navigate to next shell prompt" },
-    { Action::EnterCopyMode,     "Enter Copy Mode",      "Enter vi-style copy mode" },
-    { Action::ToggleSidebar,     "Toggle Sidebar",       "Show or hide the sidebar" },
-    { Action::OpenSettings,      "Open Settings",        "Open settings window" },
-    { Action::OpenThemeHub,      "Open Theme Hub",       "Browse and apply themes" },
-    { Action::OpenFontHub,       "Open Font Hub",        "Browse and apply fonts" },
-};
-
 CommandPalette::CommandPalette() {
-    populateCommands();
+    // No built-in entries — all commands come from Lua
 }
 
 void CommandPalette::populateCommands() {
     allCommands_.clear();
-    for (const auto& entry : kActionEntries) {
-        PaletteCommand cmd;
-        cmd.name = entry.name;
-        cmd.description = entry.desc;
-        cmd.action = entry.action;
-        allCommands_.push_back(std::move(cmd));
+    // Include Lua-registered commands in the searchable set
+    for (const auto& cmd : luaCommands_) {
+        PaletteCommand pc;
+        pc.name = cmd.name;
+        pc.description = "";
+        pc.action = Action::None;
+        pc.lua_handler = cmd.handler;
+        allCommands_.push_back(std::move(pc));
     }
 }
 
@@ -67,6 +26,7 @@ void CommandPalette::open() {
     open_ = true;
     query_.clear();
     selectedIndex_ = 0;
+    populateCommands();  // Refresh Lua commands
     applyFilter();
 }
 
@@ -104,6 +64,19 @@ Action CommandPalette::selectedAction() const {
         return filtered_[selectedIndex_].action;
     }
     return Action::None;
+}
+
+Action CommandPalette::executeSelected() {
+    if (filtered_.empty()) return Action::None;
+    int maxVisible = std::min(kMaxVisibleItems, static_cast<int>(filtered_.size()));
+    if (selectedIndex_ < 0 || selectedIndex_ >= maxVisible) return Action::None;
+
+    const auto& cmd = filtered_[selectedIndex_];
+    if (cmd.lua_handler) {
+        cmd.lua_handler();
+        return Action::None;
+    }
+    return cmd.action;
 }
 
 void CommandPalette::onChar(char ch) {

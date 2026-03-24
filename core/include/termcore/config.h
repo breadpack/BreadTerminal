@@ -17,88 +17,85 @@ struct KeyBinding {
 };
 
 /// Terminal configuration
+/// All member initializers are "unset" sentinel values.
+/// Actual defaults are provided by embedded defaults/*.lua files.
 struct Config {
     // Font
-    std::string font_family = "Menlo";
-    float font_size = 14.0f;
-    std::vector<std::string> font_features;  // OpenType features
-    std::vector<std::string> font_fallback;  // Explicit fallback font families (tried before system fallback)
-    std::string font_subpixel = "auto";  // "none", "rgb", "bgr", "vrgb", "vbgr", "auto"
-    std::string font_hinting = "auto";   // "none", "slight", "medium", "full", "auto"
+    std::string font_family;              // unset — populated by Lua defaults
+    float font_size = 0;                  // unset (0 = not configured)
+    std::vector<std::string> font_features;
+    std::vector<std::string> font_fallback;
+    std::string font_subpixel;            // unset
+    std::string font_hinting;             // unset
 
     // Colors
-    uint32_t background = 0x1e1e2e;
-    uint32_t foreground = 0xcdd6f4;
-    uint32_t cursor_color = 0xf5e0dc;
-    uint32_t selection_background = 0x585b70;
-    uint32_t selection_foreground = 0xcdd6f4;
-    uint32_t palette[16] = {
-        0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af,
-        0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xbac2de,
-        0x585b70, 0xf38ba8, 0xa6e3a1, 0xf9e2af,
-        0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xa6adc8,
-    };
+    uint32_t background = 0;              // unset
+    uint32_t foreground = 0;              // unset
+    uint32_t cursor_color = 0;            // unset
+    uint32_t selection_background = 0;    // unset
+    uint32_t selection_foreground = 0;    // unset
+    uint32_t palette[16] = {};            // unset — populated by Lua defaults
 
     // Window
-    int window_width = 800;
-    int window_height = 600;
-    int window_padding = 0;           // pixels, all sides
+    int window_width = 0;                 // unset
+    int window_height = 0;                // unset
+    int window_padding = 0;
 
-    // Minimum contrast ratio (WCAG 2.0): 1.0 = disabled, up to 21.0
-    float minimum_contrast = 1.0f;
+    // Minimum contrast ratio
+    float minimum_contrast = 0;           // unset
 
     // Quick terminal / visor mode
-    std::string quick_terminal_hotkey;        // global hotkey (e.g., "ctrl+`", "F12")
-    float quick_terminal_height = 0.4f;       // dropdown height as fraction of screen (0.1-1.0)
-    int quick_terminal_animation_ms = 150;    // slide animation duration in milliseconds
-    std::string quick_terminal_position = "top";  // top, bottom, left, right
-    bool quick_terminal_auto_hide = true;     // hide on focus loss
+    std::string quick_terminal_hotkey;
+    float quick_terminal_height = 0;      // unset
+    int quick_terminal_animation_ms = 0;  // unset
+    std::string quick_terminal_position;  // unset
+    bool quick_terminal_auto_hide = false; // unset
 
     // Terminal
-    int scrollback_limit = 10000;
-    std::string cursor_style = "block";  // block, underline, bar
-    bool cursor_blink = true;
-    float cursor_blink_interval = 0.5f;  // seconds (0.1 - 2.0)
-    std::string shell;  // Empty = use $SHELL
+    int scrollback_limit = 0;             // unset
+    std::string cursor_style;             // unset
+    bool cursor_blink = false;            // unset
+    float cursor_blink_interval = 0;      // unset
+    std::string shell;
 
     // Clipboard paste protection
-    std::string clipboard_paste_protection = "multiline";  // "never", "multiline", "always"
-    bool clipboard_paste_bracketed_safe = true;
+    std::string clipboard_paste_protection;  // unset
+    bool clipboard_paste_bracketed_safe = false; // unset
 
-    // OSC 52 clipboard write from applications (default: false for security)
+    // OSC 52 clipboard write from applications
     bool allow_clipboard_write = false;
 
     // Clickable URLs
-    bool clickable_urls = true;            // Underline detected URLs, Ctrl+Click to open
-    uint32_t url_color = 0x89b4fa;         // Link color (Catppuccin blue)
+    bool clickable_urls = false;           // unset
+    uint32_t url_color = 0;               // unset
 
     // Command completion notifications
-    bool notify_on_command_finish = true;
-    float notify_after_seconds = 5.0f;  // only notify if command took > N seconds
+    bool notify_on_command_finish = false;  // unset
+    float notify_after_seconds = 0;        // unset
 
-    // Post-processing shader: "none", "crt", "bloom", etc., or path to custom shader file
-    std::string custom_shader = "none";
-    float shader_intensity = 1.0f;     // 0.0 to 1.0 shader effect strength
+    // Shader
+    std::string custom_shader;             // unset
+    float shader_intensity = 0;            // unset
 
-    // Background transparency
-    float background_opacity = 1.0f;   // 0.0 (transparent) to 1.0 (opaque)
-    float background_blur = 0.5f;       // legacy (macOS used as int 0-3), kept for config compat
-    std::string background_blur_mode = "none";      // Windows: "none", "acrylic" (DWM)
-    std::string background_blur_material = "none";  // macOS: "none", "hud_window", "sheet", "under_window"
+    // Background
+    float background_opacity = 0;          // unset
+    float background_blur = 0;             // unset
+    std::string background_blur_mode;      // unset
+    std::string background_blur_material;  // unset
 
     // Sidebar
-    bool sidebar_visible = true;
-    int sidebar_width = 220;
+    bool sidebar_visible = false;          // unset
+    int sidebar_width = 0;                 // unset
 
     // Theme
-    std::string theme;  // Theme name or "dark:name,light:name"
+    std::string theme;
 
     // Accessibility
-    bool auto_detect_high_contrast = true;  // auto-switch to HC theme when OS HC is on
-    bool respect_reduced_motion = true;      // honor OS reduced motion setting
+    bool auto_detect_high_contrast = false; // unset
+    bool respect_reduced_motion = false;    // unset
 
     // Keybindings
-    std::string keybinding_preset;  // Preset name: "Ghostty", "Kitty", "tmux", etc.
+    std::string keybinding_preset;
     std::vector<KeyBinding> keybindings;
 
     // Profiles (user-defined only — auto-detected are runtime)
@@ -107,59 +104,25 @@ struct Config {
     std::vector<std::string> hidden_profile_ids;
 
     // Update checking
-    bool check_for_updates = true;
-    int update_check_interval = 24;  // hours
+    bool check_for_updates = false;        // unset
+    int update_check_interval = 0;         // unset
 
     // Font ligatures
-    bool font_ligatures = true;
+    bool font_ligatures = false;           // unset
 
-    // Inline image preview (opt-in)
+    // Inline image preview
     bool image_preview = false;
-    int image_preview_max_height = 10;  // max cell rows for inline preview
+    int image_preview_max_height = 0;      // unset
 
-    // Tab badge format (e.g., "{hostname}", "{user}@{hostname}")
+    // Tab badge format
     std::string tab_badge_format;
 
-    // Tab process icon map: process_name -> Nerd Font hex codepoint string
-    // Users can override or extend in config.lua via tab_process_icons table.
-    std::unordered_map<std::string, std::string> tab_process_icons = {
-        {"bash",            "F489"},  // nf-oct-terminal
-        {"sh",              "F489"},
-        {"zsh",             "F489"},
-        {"fish",            "F489"},
-        {"cmd",             "E70F"},  // nf-dev-windows
-        {"cmd.exe",         "E70F"},
-        {"powershell",      "EBC7"},  // nf-md-powershell
-        {"pwsh",            "EBC7"},
-        {"powershell.exe",  "EBC7"},
-        {"pwsh.exe",        "EBC7"},
-        {"python",          "E73C"},  // nf-dev-python
-        {"python3",         "E73C"},
-        {"python.exe",      "E73C"},
-        {"python3.exe",     "E73C"},
-        {"node",            "E718"},  // nf-dev-nodejs_small
-        {"node.exe",        "E718"},
-        {"vim",             "E62B"},  // nf-dev-vim
-        {"nvim",            "E62B"},
-        {"git",             "E702"},  // nf-dev-git
-        {"git.exe",         "E702"},
-        {"ssh",             "F489"},  // nf-oct-terminal
-        {"ssh.exe",         "F489"},
-        {"docker",          "F308"},  // nf-linux-docker
-        {"docker.exe",      "F308"},
-        {"cargo",           "E7A8"},  // nf-dev-rust
-        {"rustc",           "E7A8"},
-        {"go",              "E626"},  // nf-dev-go
-        {"go.exe",          "E626"},
-        {"ruby",            "E739"},  // nf-dev-ruby
-        {"irb",             "E739"},
-        {"lua",             "E620"},  // nf-seti-lua
-        {"luajit",          "E620"},
-    };
+    // Tab process icon map — now empty, populated by Lua defaults/icons.lua
+    std::unordered_map<std::string, std::string> tab_process_icons;
 
-    // Session auto-save for crash recovery
-    bool session_autosave = true;
-    int session_autosave_interval = 30;  // seconds
+    // Session
+    bool session_autosave = false;         // unset
+    int session_autosave_interval = 0;     // unset
 
     // Raw key-value pairs (for custom/unknown keys)
     std::unordered_map<std::string, std::string> raw;

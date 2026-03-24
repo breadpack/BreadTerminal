@@ -21,6 +21,7 @@ struct PaletteCommand {
     std::string description;    // Brief description
     Action action;              // Associated KeyAction
     std::string shortcut_hint;  // e.g. "Ctrl+T"
+    std::function<void()> lua_handler;  // For Lua-registered commands
 };
 
 /// VS Code-style command palette with fuzzy filtering.
@@ -59,6 +60,10 @@ public:
     /// Get the action of the currently selected command.
     /// Returns Action::None if nothing is selected.
     Action selectedAction() const;
+
+    /// Execute the currently selected command (handles both Action and Lua commands).
+    /// Returns the Action if it's an action-based command, or Action::None for Lua commands.
+    Action executeSelected();
 
     /// Process a character typed into the palette input.
     void onChar(char ch);

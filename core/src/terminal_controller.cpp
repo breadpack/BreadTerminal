@@ -247,6 +247,13 @@ void TerminalController::initTerminal() {
 
     // Load embedded Lua defaults (before user config)
     luaEngine_->loadDefaults();
+
+    // Safety fallback if defaults failed to load
+    if (config_.font_size <= 0) config_.font_size = 14.0f;
+    if (config_.foreground == 0) config_.foreground = 0xffffff;
+    if (config_.background == 0) config_.background = 0x000000;
+    if (config_.scrollback_limit <= 0) config_.scrollback_limit = 10000;
+    if (config_.cursor_style.empty()) config_.cursor_style = "block";
 }
 
 void TerminalController::pollPty() {
