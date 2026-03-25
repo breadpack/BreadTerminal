@@ -660,6 +660,48 @@ std::string Screen::getScrollbackLineText(int line) const {
     return scrollback_[idx].text(cols_);
 }
 
+// --- currentInputText ---
+std::string Screen::currentInputText() const {
+    if (prompt_state_ != PromptState::Input) return "";
+    if (input_start_row_ < 0 || input_start_col_ < 0) return "";
+
+    int absRow = static_cast<int>(scrollback_.size()) + cursor_.row;
+
+    std::string result;
+    for (int r = input_start_row_; r <= absRow; ++r) {
+        int viewRow = r - static_cast<int>(scrollback_.size());
+        if (viewRow < 0 || viewRow >= rows_) continue;
+
+        int startCol = (r == input_start_row_) ? input_start_col_ : 0;
+        int endCol = (r == absRow) ? cursor_.col : cols_;
+
+        for (int c = startCol; c < endCol && c < cols_; ++c) {
+            const TermCell& cell = grid_[viewRow][c];
+            if (cell.width == 0) continue;
+            if (cell.codepoint == 0) continue;
+
+            char32_t cp = cell.codepoint;
+            if (cp < 0x80) {
+                result += static_cast<char>(cp);
+            } else if (cp < 0x800) {
+                result += static_cast<char>(0xC0 | (cp >> 6));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            } else if (cp < 0x10000) {
+                result += static_cast<char>(0xE0 | (cp >> 12));
+                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            } else {
+                result += static_cast<char>(0xF0 | (cp >> 18));
+                result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                result += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+        }
+        if (r < absRow) result += '\n';
+    }
+    return result;
+}
+
 // --- Alt screen ---
 void Screen::switchToAltScreen(bool save_cursor) {
     if (alt_screen_active_) return;

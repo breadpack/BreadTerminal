@@ -114,6 +114,9 @@ public:
     const std::string& currentHyperlink() const { return current_hyperlink_; }
     PromptState promptState() const { return prompt_state_; }
     const TermNotification& lastNotification() const { return last_notification_; }
+    std::string currentInputText() const;
+    int inputStartCol() const { return input_start_col_; }
+    int inputStartRow() const { return input_start_row_; }
 
     // --- Prompt navigation (OSC 133) ---
     const std::vector<int>& promptRows() const { return prompt_rows_; }
@@ -151,6 +154,11 @@ public:
     using CommandFinishCallback = std::function<void(double duration_seconds)>;
     void setCommandFinishCallback(CommandFinishCallback cb) { command_finish_callback_ = std::move(cb); }
     void setNotifyAfterSeconds(float seconds) { notify_after_seconds_ = seconds; }
+
+    // --- Command capture callback (fires when OSC 133;C is received with input text) ---
+    void setCommandCaptureCallback(std::function<void(const std::string&)> cb) {
+        onCommandCapture_ = std::move(cb);
+    }
 
     // --- Dynamic colors ---
     struct DynamicColorEvent {
@@ -255,6 +263,8 @@ private:
     std::string remote_hostname_;
     std::string current_hyperlink_;
     PromptState prompt_state_ = PromptState::None;
+    int input_start_row_ = -1;
+    int input_start_col_ = -1;
     TermNotification last_notification_;
 
     /// Prompt marker positions for navigation.
@@ -292,6 +302,7 @@ private:
     ClipboardCallback clipboard_callback_;
     DynamicColorCallback dynamic_color_callback_;
     CommandFinishCallback command_finish_callback_;
+    std::function<void(const std::string&)> onCommandCapture_;
 
     // Command execution timing (for completion notifications)
     std::chrono::steady_clock::time_point command_start_time_;

@@ -273,6 +273,9 @@ void Screen::handleOscShellIntegration(const std::string& str) {
         prompt_state_ = PromptState::Prompt;
         prompt_rows_.push_back(absolute_row);
         prompt_markers_.push_back({absolute_row, PromptState::Prompt});
+        // Reset input tracking
+        input_start_row_ = -1;
+        input_start_col_ = -1;
         // If a command was active, fire finish callback
         if (command_running_ && command_finish_callback_) {
             auto now = std::chrono::steady_clock::now();
@@ -286,14 +289,23 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     case 'B':
         prompt_state_ = PromptState::Input;
         prompt_markers_.push_back({absolute_row, PromptState::Input});
+        input_start_row_ = static_cast<int>(scrollback_.size()) + cursor_.row;
+        input_start_col_ = cursor_.col;
         break;
-    case 'C':
+    case 'C': {
+        if (prompt_state_ == PromptState::Input && onCommandCapture_) {
+            std::string cmd = currentInputText();
+            if (!cmd.empty()) {
+                onCommandCapture_(cmd);
+            }
+        }
         prompt_state_ = PromptState::Output;
         prompt_markers_.push_back({absolute_row, PromptState::Output});
         // Record command start time for completion notifications
         command_start_time_ = std::chrono::steady_clock::now();
         command_running_ = true;
         break;
+    }
     case 'D': {
         prompt_state_ = PromptState::None;
         prompt_markers_.push_back({absolute_row, PromptState::None});
