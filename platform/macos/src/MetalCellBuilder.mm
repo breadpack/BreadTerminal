@@ -99,6 +99,10 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 fg = selFg;
             }
 
+            if (cell.attributes & AttrDim) {
+                fg = ((fg >> 1) & 0x7F7F7F00) | (fg & 0xFF);
+            }
+
             // Search highlight coloring
             int sht = searchHighlightType(row, col);
             if (sht == 2) {
@@ -182,6 +186,9 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                     if (selection.contains(row, col)) {
                         fg = selFg; bg = selBg;
                     }
+                    if (cell.attributes & AttrDim) {
+                        fg = ((fg >> 1) & 0x7F7F7F00) | (fg & 0xFF);
+                    }
                     int sht_box = searchHighlightType(row, col);
                     if (sht_box > 0) {
                         fg = 0x000000;
@@ -242,6 +249,9 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             }
             if (selection.contains(row, col)) {
                 fg = selFg; bg = selBg;
+            }
+            if (cell.attributes & AttrDim) {
+                fg = ((fg >> 1) & 0x7F7F7F00) | (fg & 0xFF);
             }
             int sht2 = searchHighlightType(row, col);
             if (sht2 > 0) {

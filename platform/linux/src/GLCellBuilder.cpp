@@ -93,6 +93,12 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 std::swap(inst.fg_color[3], inst.bg_color[3]);
             }
 
+            if (cell.attributes & AttrDim) {
+                inst.fg_color[0] *= 0.5f;
+                inst.fg_color[1] *= 0.5f;
+                inst.fg_color[2] *= 0.5f;
+            }
+
             int sht = searchHighlightType(row, col);
             if (sht == 2) {
                 inst.bg_color[0] = 1.0f; inst.bg_color[1] = 0.6f;
@@ -253,6 +259,11 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                         std::swap(inst.fg_color[2], inst.bg_color[2]);
                         std::swap(inst.fg_color[3], inst.bg_color[3]);
                     }
+                    if (cell.attributes & AttrDim) {
+                        inst.fg_color[0] *= 0.5f;
+                        inst.fg_color[1] *= 0.5f;
+                        inst.fg_color[2] *= 0.5f;
+                    }
                     inst.flags = 1;  // has_glyph
                     inst.extra_flags = 0;
                     cellInstances.push_back(inst);
@@ -315,6 +326,12 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 std::swap(inst.fg_color[1], inst.bg_color[1]);
                 std::swap(inst.fg_color[2], inst.bg_color[2]);
                 std::swap(inst.fg_color[3], inst.bg_color[3]);
+            }
+
+            if (cell.attributes & AttrDim) {
+                inst.fg_color[0] *= 0.5f;
+                inst.fg_color[1] *= 0.5f;
+                inst.fg_color[2] *= 0.5f;
             }
 
             int sht2 = searchHighlightType(row, col);
