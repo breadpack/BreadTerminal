@@ -354,11 +354,11 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 ++gtCol; continue;
             }
 
-            // Ghost text color: 35% brightness of default foreground
+            // Ghost text color: 20% brightness of default foreground
             uint32_t fgFull = gtColors.resolveFg(kColorDefault);
-            uint8_t gt_r = static_cast<uint8_t>(((fgFull >> 16) & 0xFF) * 0.35f);
-            uint8_t gt_g = static_cast<uint8_t>(((fgFull >> 8) & 0xFF) * 0.35f);
-            uint8_t gt_b = static_cast<uint8_t>((fgFull & 0xFF) * 0.35f);
+            uint8_t gt_r = static_cast<uint8_t>(((fgFull >> 16) & 0xFF) * 0.20f);
+            uint8_t gt_g = static_cast<uint8_t>(((fgFull >> 8) & 0xFF) * 0.20f);
+            uint8_t gt_b = static_cast<uint8_t>((fgFull & 0xFF) * 0.20f);
 
             CellInstance inst = {};
             inst.grid_col = static_cast<uint16_t>(gtCol);

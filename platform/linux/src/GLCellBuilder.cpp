@@ -403,12 +403,12 @@ void GLTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             inst.atlas_size[0] = static_cast<float>(info->region.width);
             inst.atlas_size[1] = static_cast<float>(info->region.height);
 
-            // Ghost text color: 35% brightness of default foreground
+            // Ghost text color: 20% brightness of default foreground
             float fgFull[4];
             colorFromRGBA(gtColors.resolveFg(kColorDefault), fgFull);
-            inst.fg_color[0] = fgFull[0] * 0.35f;
-            inst.fg_color[1] = fgFull[1] * 0.35f;
-            inst.fg_color[2] = fgFull[2] * 0.35f;
+            inst.fg_color[0] = fgFull[0] * 0.20f;
+            inst.fg_color[1] = fgFull[1] * 0.20f;
+            inst.fg_color[2] = fgFull[2] * 0.20f;
             inst.fg_color[3] = fgFull[3];
 
             inst.flags = 1;  // has_glyph
