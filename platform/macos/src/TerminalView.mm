@@ -14,6 +14,7 @@
 #include "termcore/theme_loader.h"
 
 #import <UserNotifications/UserNotifications.h>
+#include <nlohmann/json.hpp>
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <memory>
@@ -344,6 +345,31 @@
                 termcore::Pty* pty = strongSelf->_impl->controller->tabs()->activePty();
                 if (pty) pty->write(response.data(), response.size());
             });
+        });
+
+        // Wire OSC 7770 callback: route in-band events to notification/agent system
+        auto* notifStore = _impl->notifications.get();
+        auto* tracker = _impl->agentTracker.get();
+        scr->setOscHookCallback([notifStore, tracker](const std::string& json_str) {
+            auto j = nlohmann::json::parse(json_str, nullptr, false);
+            if (j.is_discarded() || !j.is_object()) return;
+            auto eventType = j.value("event", "");
+            if (eventType == "Notification") {
+                auto title = j.value("title", "");
+                auto body = j.value("body", "");
+                auto urgency_str = j.value("urgency", "normal");
+                auto urgency = (urgency_str == "critical") ? termcore::NotificationUrgency::Critical
+                             : (urgency_str == "low")      ? termcore::NotificationUrgency::Low
+                                                            : termcore::NotificationUrgency::Normal;
+                notifStore->add(0, termcore::NotificationSource::Agent, urgency, title, body);
+            } else if (eventType == "StateChange") {
+                auto state_str = j.value("state", "");
+                auto state = termcore::AgentTracker::stringToState(state_str);
+                auto* info = tracker->getAgent(0);
+                if (info) {
+                    tracker->reportState(0, info->type, state);
+                }
+            }
         });
     }
 

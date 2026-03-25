@@ -7,6 +7,7 @@
 #include "DirectWriteDiscovery.h"
 #include "termcore/font/unicode_width.h"
 
+#include <nlohmann/json.hpp>
 #include <imm.h>
 
 using termcore::D3DTextRenderer;
@@ -292,6 +293,36 @@ void TerminalWindowState::initTerminal() {
     // Wire agent auto-detection to provider registry for install notifications
     agentTracker->setProviderRegistry(&controller->providerRegistry());
     agentTracker->setNotificationStore(notifications.get());
+
+    // Wire OSC 7770 callback: route in-band events to notification/agent system
+    {
+        termcore::Screen* scr = controller->activeScreen();
+        if (scr) {
+            auto* notifStore = notifications.get();
+            auto* tracker = agentTracker.get();
+            scr->setOscHookCallback([notifStore, tracker](const std::string& json_str) {
+                auto j = nlohmann::json::parse(json_str, nullptr, false);
+                if (j.is_discarded() || !j.is_object()) return;
+                auto eventType = j.value("event", "");
+                if (eventType == "Notification") {
+                    auto title = j.value("title", "");
+                    auto body = j.value("body", "");
+                    auto urgency_str = j.value("urgency", "normal");
+                    auto urgency = (urgency_str == "critical") ? termcore::NotificationUrgency::Critical
+                                 : (urgency_str == "low")      ? termcore::NotificationUrgency::Low
+                                                                : termcore::NotificationUrgency::Normal;
+                    notifStore->add(0, termcore::NotificationSource::Agent, urgency, title, body);
+                } else if (eventType == "StateChange") {
+                    auto state_str = j.value("state", "");
+                    auto state = termcore::AgentTracker::stringToState(state_str);
+                    auto* info = tracker->getAgent(0);
+                    if (info) {
+                        tracker->reportState(0, info->type, state);
+                    }
+                }
+            });
+        }
+    }
 
     // Initialize UI Automation accessibility provider
     accessibilityProvider = new TerminalAccessibilityProvider(hwnd);
