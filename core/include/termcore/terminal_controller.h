@@ -19,6 +19,7 @@
 #include "termcore/command_palette.h"
 #include "termcore/profile_dropdown.h"
 #include "termcore/completion_manager.h"
+#include "termcore/provider_registry.h"
 #include "termcore/lua_engine.h"
 #include <chrono>
 #include <memory>
@@ -135,6 +136,7 @@ private:
     ProfileDropdown profileDropdown_;
     PasteGuard pasteGuard_;
     CompletionManager completionManager_;
+    ProviderRegistry providerRegistry_;
     std::string lastCompletionInput_;
 
     int termRows_ = 24;

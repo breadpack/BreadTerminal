@@ -29,6 +29,8 @@
 #include "lua_bindings/lua_quick_module.h"
 #include "lua_bindings/lua_config_api_module.h"
 #include "lua_bindings/lua_completion_module.h"
+#include "lua_bindings/lua_provider_module.h"
+#include "termcore/provider_registry.h"
 
 namespace termcore {
 
@@ -246,6 +248,7 @@ void TerminalController::initTerminal() {
     // Must be registered before loadDefaults() so embedded Lua scripts can use them.
     luaEngine_->registerModule(std::make_shared<LuaConfigApiModule>(&config_, keybindings_.get()));
     luaEngine_->registerModule(std::make_shared<LuaCompletionModule>(&completionManager_));
+    luaEngine_->registerModule(std::make_shared<LuaProviderModule>(&providerRegistry_));
 
     luaEngine_->initializeModules();
 

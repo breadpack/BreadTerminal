@@ -19,6 +19,7 @@ extern "C" {
 #include "default_url_detect_lua.h"
 #include "default_icons_lua.h"
 #include "default_themes_lua.h"
+#include "default_providers_lua.h"
 
 namespace termcore {
 
@@ -199,6 +200,7 @@ static const DefaultScript kDefaultScripts[] = {
     {"url_detect",  default_url_detect_lua,   default_url_detect_lua_len},
     {"icons",       default_icons_lua,        default_icons_lua_len},
     {"themes",      default_themes_lua,       default_themes_lua_len},
+    {"providers",   default_providers_lua,    default_providers_lua_len},
 };
 } // anonymous namespace
 

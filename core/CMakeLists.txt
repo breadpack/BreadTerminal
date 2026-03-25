@@ -245,6 +245,7 @@ if(TERMCORE_HAS_LUA)
     set(DEFAULT_LUA_NAMES
         config colors keybindings commands
         tab_title paste_guard url_detect icons themes
+        providers
     )
 
     set(LUA_GENERATED_HEADERS "")
