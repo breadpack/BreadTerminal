@@ -197,6 +197,10 @@ public:
     /// Mark content as dirty so next render does a full rebuild.
     void markContentDirty() override;
 
+    /// Set ghost text (dim suggestion) to display at the given row/col.
+    /// Pass an empty string or row=-1 to clear.
+    void setGhostText(const std::string& text, int row, int col);
+
     /// Return the atlas uploader for GPU texture management.
     IAtlasUploader* atlasUploader() override;
 

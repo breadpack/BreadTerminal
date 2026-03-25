@@ -485,6 +485,13 @@ void D3DTextRenderer::setBackgroundOpacity(float opacity) {
     impl_->contentDirty = true;
 }
 
+void D3DTextRenderer::setGhostText(const std::string& text, int row, int col) {
+    impl_->ghostText.text = text;
+    impl_->ghostText.row = row;
+    impl_->ghostText.col = col;
+    impl_->contentDirty = true;
+}
+
 void D3DTextRenderer::setStatusBar(const StatusBarInfo& info) {
     impl_->statusBar = info;
     impl_->contentDirty = true;

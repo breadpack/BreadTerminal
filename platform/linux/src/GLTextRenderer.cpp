@@ -466,4 +466,11 @@ void GLTextRenderer::setBackgroundOpacity(float opacity) {
     impl_->contentDirty = true;
 }
 
+void GLTextRenderer::setGhostText(const std::string& text, int row, int col) {
+    impl_->ghostText.text = text;
+    impl_->ghostText.row = row;
+    impl_->ghostText.col = col;
+    impl_->contentDirty = true;
+}
+
 } // namespace termcore

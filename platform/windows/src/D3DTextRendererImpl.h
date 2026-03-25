@@ -81,6 +81,14 @@ struct D3DTextRenderer::Impl {
     int resizeOverlayCols = 0;
     int resizeOverlayRows = 0;
 
+    // Ghost text (dim suggestion text at cursor position)
+    struct GhostText {
+        std::string text;  // UTF-8 ghost text to display
+        int row = -1;      // row to display at
+        int col = -1;      // starting column
+    };
+    GhostText ghostText;
+
     // Shaders
     ID3D11VertexShader* vertexShader = nullptr;
     ID3D11PixelShader* pixelShader = nullptr;

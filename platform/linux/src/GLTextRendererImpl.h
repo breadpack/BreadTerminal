@@ -74,6 +74,14 @@ struct GLTextRenderer::Impl {
     int resizeOverlayCols = 0;
     int resizeOverlayRows = 0;
 
+    // Ghost text (dim suggestion text at cursor position)
+    struct GhostText {
+        std::string text;  // UTF-8 ghost text to display
+        int row = -1;      // row to display at
+        int col = -1;      // starting column
+    };
+    GhostText ghostText;
+
     // Font stack (not owned)
     FontCollection* fontCollection = nullptr;
     GlyphCache* glyphCache = nullptr;

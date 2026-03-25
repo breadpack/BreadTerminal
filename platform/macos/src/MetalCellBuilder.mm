@@ -310,6 +310,76 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
+    // Pass 2b: Ghost text (dim suggestion text after cursor)
+    if (!ghostText.text.empty() && ghostText.row >= 0 && ghostText.col >= 0 &&
+        ghostText.row < rows) {
+        const auto& gtColors = screen.dynamicColors();
+        int gtCol = ghostText.col;
+
+        // Decode UTF-8 ghost text to codepoints and render each
+        const std::string& gt = ghostText.text;
+        size_t i = 0;
+        while (i < gt.size() && gtCol < cols) {
+            // UTF-8 decode
+            char32_t cp = 0;
+            uint8_t b = static_cast<uint8_t>(gt[i]);
+            int seqLen = 1;
+            if (b < 0x80) { cp = b; }
+            else if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; seqLen = 2; }
+            else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; seqLen = 3; }
+            else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; seqLen = 4; }
+            for (int j = 1; j < seqLen && (i + j) < gt.size(); ++j) {
+                cp = (cp << 6) | (static_cast<uint8_t>(gt[i + j]) & 0x3F);
+            }
+            i += seqLen;
+
+            if (cp == ' ' || cp == 0) { ++gtCol; continue; }
+
+            // Check if cell already has content — don't overlay
+            const TermCell& existing = screen.cellAt(ghostText.row, gtCol);
+            if (existing.codepoint != ' ' && existing.codepoint != 0) {
+                break;
+            }
+
+            // Look up glyph
+            auto faceId = fontCollection->resolveFace(cp);
+            if (faceId == kInvalidCollectionFace) { ++gtCol; continue; }
+            auto rastFace = fontCollection->rasterizerFaceId(faceId);
+            uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cp);
+            if (glyphIdx == 0) { ++gtCol; continue; }
+
+            GlyphKey key{rastFace, glyphIdx, {0, 0}};
+            auto info = glyphCache->getOrRasterize(key, fontSize, *rasterizer, *glyphAtlas);
+            if (!info || info->region.width <= 0 || info->region.height <= 0) {
+                ++gtCol; continue;
+            }
+
+            // Ghost text color: 35% brightness of default foreground
+            uint32_t fgFull = gtColors.resolveFg(kColorDefault);
+            uint8_t gt_r = static_cast<uint8_t>(((fgFull >> 16) & 0xFF) * 0.35f);
+            uint8_t gt_g = static_cast<uint8_t>(((fgFull >> 8) & 0xFF) * 0.35f);
+            uint8_t gt_b = static_cast<uint8_t>((fgFull & 0xFF) * 0.35f);
+
+            CellInstance inst = {};
+            inst.grid_col = static_cast<uint16_t>(gtCol);
+            inst.grid_row = static_cast<uint16_t>(ghostText.row);
+            inst.glyph_x = static_cast<uint16_t>(info->region.x);
+            inst.glyph_y = static_cast<uint16_t>(info->region.y);
+            inst.glyph_width = static_cast<uint16_t>(info->region.width);
+            inst.glyph_height = static_cast<uint16_t>(info->region.height);
+            inst.offset_x = static_cast<int16_t>(info->region.bearing_x);
+            inst.offset_y = static_cast<int16_t>(
+                static_cast<int>(ascent) - info->region.bearing_y);
+            inst.fg_r = gt_r;
+            inst.fg_g = gt_g;
+            inst.fg_b = gt_b;
+            inst.fg_a = 255;
+            inst.flags = 1;  // has_glyph
+            cellInstances.push_back(inst);
+            ++gtCol;
+        }
+    }
+
     // --- Pass 3: Underline for cells with AttrUnderline ---
     // (Moved before cursor so cursor is always last)
     for (int row = 0; row < rows; ++row) {

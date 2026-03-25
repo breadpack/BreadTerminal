@@ -249,6 +249,10 @@ public:
     /// Text and foreground elements remain fully opaque.
     void setBackgroundOpacity(float opacity);
 
+    /// Set ghost text (dim suggestion) to display at the given row/col.
+    /// Pass an empty string or row=-1 to clear.
+    void setGhostText(const std::string& text, int row, int col);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

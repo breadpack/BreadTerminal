@@ -447,6 +447,75 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
+    // Pass 2b: Ghost text (dim suggestion text after cursor)
+    if (!ghostText.text.empty() && ghostText.row >= 0 && ghostText.col >= 0 &&
+        ghostText.row < rows) {
+        const DynamicColors& gtColors = screen.dynamicColors();
+        int gtCol = ghostText.col;
+
+        // Decode UTF-8 ghost text to codepoints and render each
+        const std::string& gt = ghostText.text;
+        size_t i = 0;
+        while (i < gt.size() && gtCol < cols) {
+            // UTF-8 decode
+            char32_t cp = 0;
+            uint8_t b = static_cast<uint8_t>(gt[i]);
+            int seqLen = 1;
+            if (b < 0x80) { cp = b; }
+            else if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; seqLen = 2; }
+            else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; seqLen = 3; }
+            else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; seqLen = 4; }
+            for (int j = 1; j < seqLen && (i + j) < gt.size(); ++j) {
+                cp = (cp << 6) | (static_cast<uint8_t>(gt[i + j]) & 0x3F);
+            }
+            i += seqLen;
+
+            if (cp == ' ' || cp == 0) { ++gtCol; continue; }
+
+            // Check if cell already has content — don't overlay
+            const TermCell& existing = screen.cellAt(ghostText.row, gtCol);
+            if (existing.codepoint != ' ' && existing.codepoint != 0) {
+                break;
+            }
+
+            // Look up glyph
+            auto faceId = fontCollection->resolveFace(cp);
+            if (faceId == kInvalidCollectionFace) { ++gtCol; continue; }
+            auto rastFace = fontCollection->rasterizerFaceId(faceId);
+            uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cp);
+            if (glyphIdx == 0) { ++gtCol; continue; }
+
+            GlyphKey key{rastFace, glyphIdx, {0, 0}};
+            auto info = glyphCache->getOrRasterize(key, fontSize, *rasterizer, *glyphAtlas);
+            if (!info || info->region.width <= 0 || info->region.height <= 0) {
+                ++gtCol; continue;
+            }
+
+            D3DCellInstance inst = {};
+            float offsetX = static_cast<float>(info->region.bearing_x);
+            float offsetY = ascent - static_cast<float>(info->region.bearing_y);
+
+            inst.position[0] = gtCol * cellW + offsetX;
+            inst.position[1] = ghostText.row * cellH + offsetY + gridOffsetY;
+            inst.atlas_uv[0] = static_cast<float>(info->region.x);
+            inst.atlas_uv[1] = static_cast<float>(info->region.y);
+            inst.atlas_size[0] = static_cast<float>(info->region.width);
+            inst.atlas_size[1] = static_cast<float>(info->region.height);
+
+            // Ghost text color: 35% brightness of default foreground
+            float fgFull[4];
+            colorFromRGBA(gtColors.resolveFg(kColorDefault), fgFull);
+            inst.fg_color[0] = fgFull[0] * 0.35f;
+            inst.fg_color[1] = fgFull[1] * 0.35f;
+            inst.fg_color[2] = fgFull[2] * 0.35f;
+            inst.fg_color[3] = fgFull[3];
+
+            inst.flags = 1;  // has_glyph
+            cellInstances.push_back(inst);
+            ++gtCol;
+        }
+    }
+
     // Pass 3: Underlines
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {

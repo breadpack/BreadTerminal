@@ -104,6 +104,14 @@ struct MetalTextRenderer::Impl {
     // Content dirty flag (forces full rebuild)
     bool contentDirty = true;
 
+    // Ghost text (dim suggestion text at cursor position)
+    struct GhostText {
+        std::string text;  // UTF-8 ghost text to display
+        int row = -1;      // row to display at
+        int col = -1;      // starting column
+    };
+    GhostText ghostText;
+
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;
     id<MTLTexture> dummyBGRA;
