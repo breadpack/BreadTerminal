@@ -286,6 +286,8 @@ void Screen::handleSGR(const std::vector<VtParam>& params) {
             pen_ = Pen{};
         } else if (p == 1) {
             pen_.attributes |= AttrBold;
+        } else if (p == 2) {
+            pen_.attributes |= AttrDim;
         } else if (p == 3) {
             pen_.attributes |= AttrItalic;
         } else if (p == 4) {
@@ -303,6 +305,8 @@ void Screen::handleSGR(const std::vector<VtParam>& params) {
                 pen_.attributes |= AttrUnderline;
                 pen_.underline_style = UnderlineSingle;
             }
+        } else if (p == 5) {
+            pen_.attributes |= AttrBlink;
         } else if (p == 7) {
             pen_.attributes |= AttrInverse;
         } else if (p == 8) {
@@ -314,7 +318,7 @@ void Screen::handleSGR(const std::vector<VtParam>& params) {
             pen_.attributes |= AttrUnderline;
             pen_.underline_style = UnderlineDouble;
         } else if (p == 22) {
-            pen_.attributes &= ~AttrBold;
+            pen_.attributes &= ~(AttrBold | AttrDim);
         } else if (p == 23) {
             pen_.attributes &= ~AttrItalic;
         } else if (p == 24) {

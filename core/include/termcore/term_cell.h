@@ -16,6 +16,7 @@ enum CellAttribute : uint16_t {
     AttrInverse       = 16,
     AttrHidden        = 32,
     AttrStrikethrough = 64,
+    AttrDim           = 128,
 };
 
 /// Underline style values (SGR 4:x).
