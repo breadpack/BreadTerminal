@@ -122,6 +122,8 @@ set(TERMCORE_SOURCES
     src/serial_port.cpp
     src/password_manager.cpp
     src/tmux_integration.cpp
+    src/history_provider.cpp
+    src/completion_manager.cpp
 )
 
 if(UNIX)
