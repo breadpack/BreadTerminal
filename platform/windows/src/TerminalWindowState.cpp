@@ -343,6 +343,18 @@ void TerminalWindowState::renderFrame() {
         renderer->setBackgroundOpacity(cfg.background_opacity);
     }
 
+    // Ghost text for autocomplete
+    {
+        auto& cm = controller->completionManager();
+        if (cm.hasGhostText()) {
+            renderer->setGhostText(cm.ghostText(),
+                                    screen->cursorRow(),
+                                    screen->cursorCol());
+        } else {
+            renderer->setGhostText("", -1, -1);
+        }
+    }
+
     // Hide cursor during IME composition
     bool imeComposing = !imeCompositionText.empty();
     renderer->setIMEActive(imeComposing);

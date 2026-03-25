@@ -18,6 +18,7 @@
 #include "termcore/clipboard_history.h"
 #include "termcore/command_palette.h"
 #include "termcore/profile_dropdown.h"
+#include "termcore/completion_manager.h"
 #include "termcore/lua_engine.h"
 #include <chrono>
 #include <memory>
@@ -90,6 +91,9 @@ public:
     // Profile dropdown
     ProfileDropdown& profileDropdown() { return profileDropdown_; }
 
+    // Completion manager
+    CompletionManager& completionManager() { return completionManager_; }
+
     // Direct access for platform-specific needs
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
@@ -130,6 +134,8 @@ private:
     CommandPalette commandPalette_;
     ProfileDropdown profileDropdown_;
     PasteGuard pasteGuard_;
+    CompletionManager completionManager_;
+    std::string lastCompletionInput_;
 
     int termRows_ = 24;
     int termCols_ = 80;

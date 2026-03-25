@@ -221,7 +221,9 @@ PaneId TabController::createPaneState(int rows, int cols) {
         ps->pty = ptyFactory_(profile, rows, cols);
     }
 
+    Screen* screenPtr = ps->screen.get();
     panes_[id] = std::move(ps);
+    if (onPaneCreated_) onPaneCreated_(screenPtr);
     return id;
 }
 

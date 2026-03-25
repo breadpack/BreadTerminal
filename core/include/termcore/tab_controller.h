@@ -91,6 +91,10 @@ public:
 
     void setProfileManager(ProfileManager* mgr) { profileMgr_ = mgr; }
 
+    // Callback invoked after each new pane's Screen is created.
+    using OnPaneCreatedFn = std::function<void(Screen*)>;
+    void setOnPaneCreated(OnPaneCreatedFn fn) { onPaneCreated_ = std::move(fn); }
+
     // Lua callback for custom tab title formatting.
     using TitleFormatFn = std::function<std::string(const TabTitleInfo&)>;
     void setTitleFormatCallback(TitleFormatFn fn) { titleFormatFn_ = std::move(fn); }
@@ -125,6 +129,7 @@ private:
     mutable bool inTitleFormat_ = false;  // reentrancy guard
     std::unordered_map<int, std::string> customTitles_;  // tab_index -> override title
     std::unordered_map<std::string, std::string> processIcons_;
+    OnPaneCreatedFn onPaneCreated_;
 };
 
 } // namespace termcore

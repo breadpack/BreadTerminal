@@ -28,6 +28,7 @@
 #include "lua_bindings/lua_vi_module.h"
 #include "lua_bindings/lua_quick_module.h"
 #include "lua_bindings/lua_config_api_module.h"
+#include "lua_bindings/lua_completion_module.h"
 
 namespace termcore {
 
@@ -203,6 +204,11 @@ void TerminalController::initTerminal() {
     tabCtrl_ = std::make_unique<TabController>(
         std::move(mux), wsId, std::move(factory), config_);
     tabCtrl_->setProfileManager(profileMgr_.get());
+    tabCtrl_->setOnPaneCreated([this](Screen* screen) {
+        screen->setCommandCaptureCallback([this](const std::string& cmd) {
+            completionManager_.historyProvider().addEntry(cmd);
+        });
+    });
 
     // Create initial tab
     tabCtrl_->createTab(termRows_, termCols_);
@@ -239,6 +245,7 @@ void TerminalController::initTerminal() {
     // Config API module: exposes terminal.config(), terminal.keymap(), terminal.colorscheme()
     // Must be registered before loadDefaults() so embedded Lua scripts can use them.
     luaEngine_->registerModule(std::make_shared<LuaConfigApiModule>(&config_, keybindings_.get()));
+    luaEngine_->registerModule(std::make_shared<LuaCompletionModule>(&completionManager_));
 
     luaEngine_->initializeModules();
 
@@ -300,6 +307,23 @@ void TerminalController::tick() {
                 host_->updateSearchResults(searchCtrl_.currentMatch(),
                                            searchCtrl_.totalMatches());
             }
+            needsRender_ = true;
+        }
+    }
+
+    // Update autocomplete ghost text
+    Screen* screen = activeScreen();
+    if (screen && screen->promptState() == PromptState::Input) {
+        std::string input = screen->currentInputText();
+        if (input != lastCompletionInput_) {
+            lastCompletionInput_ = input;
+            completionManager_.onInputChanged(input, screen->workingDirectory());
+            needsRender_ = true;
+        }
+    } else {
+        if (completionManager_.hasGhostText()) {
+            completionManager_.clear();
+            lastCompletionInput_.clear();
             needsRender_ = true;
         }
     }
@@ -1158,6 +1182,7 @@ void TerminalController::initInputHandler() {
     deps.cellHeight = [this]() { return cellHeight(); };
     deps.needsRender = [this]() -> bool& { return needsRender_; };
     deps.urlHighlight = [this]() -> UrlHighlightManager* { return &urlHighlightMgr_; };
+    deps.getCompletionManager = [this]() -> CompletionManager* { return &completionManager_; };
     inputHandler_ = std::make_unique<InputHandler>(std::move(deps));
 }
 

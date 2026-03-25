@@ -181,6 +181,18 @@
         _impl->renderer->setSelection(sel);
     }
 
+    // Ghost text for autocomplete
+    {
+        auto& cm = _impl->controller->completionManager();
+        if (cm.hasGhostText()) {
+            _impl->renderer->setGhostText(cm.ghostText(),
+                                            screen->cursorRow(),
+                                            screen->cursorCol());
+        } else {
+            _impl->renderer->setGhostText("", -1, -1);
+        }
+    }
+
     _impl->renderer->render(*screen);
 
     // Clear dirty flags after successful render

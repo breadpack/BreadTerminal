@@ -162,6 +162,18 @@ static gboolean terminal_widget_render(GtkGLArea* area,
 
         Screen* screen = self->controller->activeScreen();
         if (screen) {
+            // Ghost text for autocomplete
+            {
+                auto& cm = self->controller->completionManager();
+                if (cm.hasGhostText()) {
+                    self->renderer->setGhostText(cm.ghostText(),
+                                                  screen->cursorRow(),
+                                                  screen->cursorCol());
+                } else {
+                    self->renderer->setGhostText("", -1, -1);
+                }
+            }
+
             self->renderer->render(*screen);
         }
     }

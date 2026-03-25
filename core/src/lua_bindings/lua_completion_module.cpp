@@ -31,7 +31,8 @@ void LuaCompletionModule::registerBindings(void* luaState, void* terminalTable) 
             prov.priority = priority;
             prov.getSuggestion = [onInput](const std::string& input,
                                             const std::string& cwd) -> std::string {
-                sol::table ctx = onInput->lua_state().create_table();
+                sol::state_view sv(onInput->lua_state());
+                sol::table ctx = sv.create_table();
                 ctx["text"] = input;
                 ctx["cwd"] = cwd;
                 auto result = (*onInput)(ctx);
