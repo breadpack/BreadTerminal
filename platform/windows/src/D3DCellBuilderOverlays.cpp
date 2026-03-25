@@ -10,22 +10,8 @@ namespace termcore {
 
 // Decode first UTF-8 codepoint from a string
 static char32_t firstCodepoint(const std::string& s) {
-    if (s.empty()) return 0;
-    auto b = static_cast<unsigned char>(s[0]);
-    if (b < 0x80) return b;
-    char32_t cp = 0;
-    int extra = 0;
-    if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; extra = 1; }
-    else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; extra = 2; }
-    else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; extra = 3; }
-    else return 0;
-    if (static_cast<int>(s.size()) < extra + 1) return 0;
-    for (int i = 1; i <= extra; ++i) {
-        auto c = static_cast<unsigned char>(s[i]);
-        if ((c & 0xC0) != 0x80) return 0;
-        cp = (cp << 6) | (c & 0x3F);
-    }
-    return cp;
+    size_t pos = 0;
+    return nextCodepoint(s, pos);
 }
 
 void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
@@ -52,8 +38,9 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
 
         // Render status bar text characters
         auto renderStatusText = [&](const std::string& text, int startCol) {
-            for (size_t i = 0; i < text.size() && startCol + static_cast<int>(i) < statusCols; ++i) {
-                char32_t cp = static_cast<char32_t>(static_cast<unsigned char>(text[i]));
+            int col = 0;
+            for (size_t i = 0; i < text.size() && startCol + col < statusCols; ++col) {
+                char32_t cp = nextCodepoint(text, i);
                 if (cp == ' ' || cp == 0) continue;
 
                 CollectionFaceId faceId = fontCollection->resolveFace(cp);
@@ -69,11 +56,11 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 if (!info || info->region.width <= 0) continue;
 
                 D3DCellInstance inst = {};
-                int col = startCol + static_cast<int>(i);
+                int absCol = startCol + col;
                 float offsetX = static_cast<float>(info->region.bearing_x);
                 float offsetY = ascent - static_cast<float>(info->region.bearing_y);
 
-                inst.position[0] = col * cellW + offsetX;
+                inst.position[0] = absCol * cellW + offsetX;
                 inst.position[1] = statusY + offsetY;
                 inst.atlas_uv[0] = static_cast<float>(info->region.x);
                 inst.atlas_uv[1] = static_cast<float>(info->region.y);
@@ -161,9 +148,9 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
         float textStartX = boxX + cellW;
         float textY = boxY + (boxH - cellH) / 2.0f;
 
-        for (size_t i = 0; i < text.size(); ++i) {
-            char32_t cp = static_cast<char32_t>(static_cast<unsigned char>(text[i]));
-            if (cp == ' ') continue;
+        for (size_t i = 0, charIdx = 0; i < text.size(); ++charIdx) {
+            char32_t cp = nextCodepoint(text, i);
+            if (cp == ' ' || cp == 0) continue;
 
             CollectionFaceId faceId = fontCollection->resolveFace(cp);
             if (faceId == kInvalidCollectionFace) continue;
@@ -179,7 +166,7 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             D3DCellInstance inst = {};
             float offsetX = static_cast<float>(info->region.bearing_x);
             float offsetY = ascent - static_cast<float>(info->region.bearing_y);
-            inst.position[0] = textStartX + i * cellW + offsetX;
+            inst.position[0] = textStartX + charIdx * cellW + offsetX;
             inst.position[1] = textY + offsetY;
             inst.atlas_uv[0] = static_cast<float>(info->region.x);
             inst.atlas_uv[1] = static_cast<float>(info->region.y);
@@ -444,9 +431,8 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 textX += cellW * 1.2f;  // space after icon
             }
 
-            for (size_t i = 0; i < title.size(); ++i) {
-                char32_t cp = static_cast<char32_t>(
-                    static_cast<unsigned char>(title[i]));
+            for (size_t i = 0; i < title.size(); ) {
+                char32_t cp = nextCodepoint(title, i);
                 if (cp == ' ' || cp == 0) { textX += cellW; continue; }
 
                 CollectionFaceId faceId = fontCollection->resolveFace(cp);

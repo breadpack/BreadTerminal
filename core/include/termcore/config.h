@@ -84,7 +84,7 @@ struct Config {
     std::string background_blur_material = "none";
 
     // Sidebar
-    bool sidebar_visible = true;
+    bool sidebar_visible = false;
     int sidebar_width = 220;
 
     // TMUX compatibility (for Agent Team support)

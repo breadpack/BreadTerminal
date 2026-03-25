@@ -173,6 +173,27 @@ struct D3DTextRenderer::Impl {
                             uint32_t color, float maxX);
 };
 
+// Decode UTF-8 codepoint at position `pos`, advance `pos` past it.
+inline char32_t nextCodepoint(const std::string& s, size_t& pos) {
+    if (pos >= s.size()) return 0;
+    auto b = static_cast<unsigned char>(s[pos]);
+    if (b < 0x80) { ++pos; return b; }
+    char32_t cp = 0;
+    int extra = 0;
+    if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; extra = 1; }
+    else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; extra = 2; }
+    else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; extra = 3; }
+    else { ++pos; return 0; }
+    if (pos + extra >= s.size()) { ++pos; return 0; }
+    for (int i = 1; i <= extra; ++i) {
+        auto c = static_cast<unsigned char>(s[pos + i]);
+        if ((c & 0xC0) != 0x80) { ++pos; return 0; }
+        cp = (cp << 6) | (c & 0x3F);
+    }
+    pos += extra + 1;
+    return cp;
+}
+
 } // namespace termcore
 
 #endif // _WIN32

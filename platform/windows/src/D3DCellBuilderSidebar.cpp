@@ -29,8 +29,8 @@ float D3DTextRenderer::Impl::renderSidebarText(
         float cellW_, float fontSize_,
         uint32_t color, float maxX) {
     float x = startX;
-    for (size_t i = 0; i < text.size(); ++i) {
-        char32_t cp = static_cast<char32_t>(static_cast<unsigned char>(text[i]));
+    for (size_t i = 0; i < text.size(); ) {
+        char32_t cp = nextCodepoint(text, i);
         if (cp == ' ' || cp == 0) { x += cellW_ * 0.55f; continue; }
 
         CollectionFaceId faceId = fontCollection->resolveFace(cp);
