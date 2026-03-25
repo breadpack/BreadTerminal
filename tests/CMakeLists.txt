@@ -124,3 +124,16 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(termcore_tests)
+
+# Bread CLI tests
+add_executable(bread_tmux_compat_test
+    test_tmux_compat.cpp
+    ${CMAKE_SOURCE_DIR}/tools/bread/tmux_compat.cpp
+    ${CMAKE_SOURCE_DIR}/tools/bread/arg_parser.cpp
+)
+target_compile_features(bread_tmux_compat_test PRIVATE cxx_std_20)
+target_include_directories(bread_tmux_compat_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/tools/bread
+)
+target_link_libraries(bread_tmux_compat_test PRIVATE nlohmann_json::nlohmann_json GTest::gtest_main)
+gtest_discover_tests(bread_tmux_compat_test)

@@ -1,4 +1,5 @@
 #include "arg_parser.h"
+#include "tmux_compat.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -311,6 +312,11 @@ bool parseRefId(const std::string& ref, nlohmann::json& params) {
 }
 
 ParsedArgs parseArgs(int argc, char* argv[]) {
+    // Intercept --tmux mode before any other parsing
+    if (argc >= 2 && std::string(argv[1]) == "--tmux") {
+        return parseTmuxArgs(argc - 2, argv + 2);
+    }
+
     ParsedArgs result;
     result.valid = false;
 
