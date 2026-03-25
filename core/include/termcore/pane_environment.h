@@ -22,7 +22,7 @@ struct PaneEnvironment {
     /// Convert to a list of key=value pairs suitable for PTY spawn.
     std::vector<std::pair<std::string, std::string>> toEnvVars() const {
         std::vector<std::pair<std::string, std::string>> vars;
-        vars.reserve(8);
+        vars.reserve(10);
 
         vars.emplace_back("BREADTERMINAL", "1");
         vars.emplace_back("TERM_PROGRAM", "BreadTerminal");
@@ -42,6 +42,9 @@ struct PaneEnvironment {
             vars.emplace_back("BREADTERMINAL_PANE_ID",
                               std::to_string(pane_id));
         }
+
+        vars.emplace_back("BREADTERMINAL_OSC_CHANNEL", "7770");
+        vars.emplace_back("BREADTERMINAL_VERSION", "0.1.0");
 
         if (tmux_compat_enabled && !bread_cli_path.empty()) {
             vars.emplace_back("TMUX", "bread//" + std::to_string(pane_id));
