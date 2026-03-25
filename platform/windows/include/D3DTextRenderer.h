@@ -120,6 +120,8 @@ public:
         bool active = false;
         bool has_unread = false;       // show dot indicator
         bool needs_attention = false;  // highlight tab background
+        int agent_state = 0;           // AgentState as int (avoids core dependency)
+        float progress_value = -1.0f;  // -1 = hidden, 0.0-1.0 = percentage
     };
 
     /// Tab bar height multiplier relative to cell height.
@@ -169,6 +171,47 @@ public:
 
     /// Set pane border segments for rendering.
     void setPaneBorders(const PaneBorderInfo& info);
+
+    /// Sidebar subagent entry for tree display.
+    struct SidebarSubagentEntry {
+        std::string name;
+        std::string status;     // "[Running]", "[Done]" etc.
+        int state = 0;          // AgentState as int
+        int indent_level = 0;
+    };
+
+    /// A single pane entry in the sidebar.
+    struct SidebarRenderEntry {
+        uint32_t pane_id = 0;
+        std::string title;
+        std::string subtitle;        // "main . PR #42"
+        std::string status_text;     // "Thinking... (8s)"
+        int agent_state = 0;
+        float progress_value = -1.0f;
+        std::string progress_label;
+        bool has_unread = false;
+        bool active = false;
+        float attention_intensity = 0.0f;
+        std::vector<SidebarSubagentEntry> subagents;
+        bool subagents_expanded = true;
+    };
+
+    /// Sidebar panel render information.
+    struct SidebarRenderInfo {
+        bool visible = false;
+        int width = 220;
+        std::vector<SidebarRenderEntry> entries;
+        int hovered_entry = -1;
+        int hovered_subagent = -1;
+        int scroll_offset = 0;
+        uint32_t bg_color = 0x1a1a1a;
+        uint32_t fg_color = 0xcccccc;
+        uint32_t accent_color = 0x007acc;
+        uint32_t separator_color = 0x333333;
+    };
+
+    /// Set sidebar content for rendering.
+    void setSidebar(const SidebarRenderInfo& info);
 
     /// Return the atlas uploader for GPU texture management.
     IAtlasUploader* atlasUploader() override;

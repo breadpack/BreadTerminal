@@ -76,6 +76,9 @@ struct D3DTextRenderer::Impl {
     // Profile dropdown state
     D3DTextRenderer::ProfileDropdownInfo profileDropdown;
 
+    // Sidebar state
+    D3DTextRenderer::SidebarRenderInfo sidebar;
+
     // Resize overlay state
     bool resizeOverlayVisible = false;
     int resizeOverlayCols = 0;
@@ -160,6 +163,10 @@ struct D3DTextRenderer::Impl {
     // Profile dropdown overlay (implemented in D3DCellBuilderProfileDropdown.cpp)
     void buildProfileDropdownOverlay(float cellW, float cellH,
                                      float ascent, float fontSize);
+
+    // Sidebar overlay (implemented in D3DCellBuilderSidebar.cpp)
+    void buildSidebarOverlay(float cellW, float cellH,
+                             float ascent, float fontSize);
 };
 
 } // namespace termcore

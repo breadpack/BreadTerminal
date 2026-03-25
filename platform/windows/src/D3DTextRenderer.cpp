@@ -545,6 +545,11 @@ void D3DTextRenderer::setProfileDropdown(const ProfileDropdownInfo& info) {
     impl_->profileDropdown = info;
 }
 
+void D3DTextRenderer::setSidebar(const SidebarRenderInfo& info) {
+    impl_->sidebar = info;
+    impl_->contentDirty = true;
+}
+
 } // namespace termcore
 
 #endif // _WIN32
