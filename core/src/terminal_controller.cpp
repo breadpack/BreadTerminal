@@ -568,6 +568,7 @@ bool TerminalController::isTabBarVisible() const {
 void TerminalController::recalcGrid() {
     if (!fontMgr_ || lastPixelW_ <= 0 || lastPixelH_ <= 0) return;
 
+    int effectiveW = lastPixelW_;
     int effectiveH = lastPixelH_;
     if (isTabBarVisible()) {
         float tabBarH = fontMgr_->cellHeight() * kTabBarHeightScale;
@@ -575,8 +576,15 @@ void TerminalController::recalcGrid() {
         if (effectiveH < 1) effectiveH = 1;
     }
 
+    // Subtract sidebar width when visible
+    if (config_.sidebar_visible) {
+        int sidebarW = config_.sidebar_width > 0 ? config_.sidebar_width : 220;
+        effectiveW -= sidebarW;
+        if (effectiveW < 1) effectiveW = 1;
+    }
+
     int rows = 0, cols = 0;
-    fontMgr_->recalcGrid(lastPixelW_, effectiveH, rows, cols);
+    fontMgr_->recalcGrid(effectiveW, effectiveH, rows, cols);
 
     if (rows != termRows_ || cols != termCols_) {
         termRows_ = rows;
@@ -1095,6 +1103,17 @@ void TerminalController::handleAction(Action action) {
 
         case Action::ToggleBroadcast:
             toggleBroadcast();
+            break;
+
+        case Action::ToggleSidebar:
+            config_.sidebar_visible = !config_.sidebar_visible;
+            needsRender_ = true;
+            // Trigger resize so grid columns adjust for sidebar width
+            if (host_) {
+                int vpW = 0, vpH = 0;
+                host_->getViewportSize(vpW, vpH);
+                if (vpW > 0 && vpH > 0) onResize(vpW, vpH);
+            }
             break;
 
         case Action::OpenCommandPalette:

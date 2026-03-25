@@ -145,7 +145,7 @@ struct D3DTextRenderer::Impl {
     const D3DTextRenderer::UrlHighlight* urlHighlightAt(int row, int col) const;
     void buildCellBuffer(const Screen& screen);
     void appendCursorInstances(const Screen& screen, float cellW, float cellH,
-                               float gridOffsetY);
+                               float gridOffsetX, float gridOffsetY);
     void patchCursorOnly(const Screen& screen);
 
     // Overlay passes (implemented in D3DCellBuilderOverlays.cpp)
@@ -167,6 +167,10 @@ struct D3DTextRenderer::Impl {
     // Sidebar overlay (implemented in D3DCellBuilderSidebar.cpp)
     void buildSidebarOverlay(float cellW, float cellH,
                              float ascent, float fontSize);
+    float renderSidebarText(const std::string& text,
+                            float startX, float baseY, float ascent,
+                            float cellW, float fontSize,
+                            uint32_t color, float maxX);
 };
 
 } // namespace termcore

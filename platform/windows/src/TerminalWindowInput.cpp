@@ -115,6 +115,9 @@ void TerminalWindowState::handleChar(WPARAM wParam) {
 void TerminalWindowState::handleMouseDown(int x, int y) {
     if (!controller) return;
 
+    // Sidebar click interception
+    if (handleSidebarClick(x, y)) return;
+
     termcore::InputMouseEvent me;
     me.type = termcore::InputMouseEvent::Press;
     me.x = x;
