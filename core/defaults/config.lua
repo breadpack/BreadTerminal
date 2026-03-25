@@ -36,7 +36,7 @@ terminal.config({
     window_padding = 0,
     minimum_contrast = 1.0,
 
-    sidebar_visible = true,
+    sidebar_visible = false,
     sidebar_width = 220,
 
     tmux_compat_enabled = true,
