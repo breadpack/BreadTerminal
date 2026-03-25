@@ -39,6 +39,10 @@ int main(int argc, char* argv[]) {
     // Connect to server
     bread::CliClient client;
     if (!client.connect(args.socket_path, args.timeout_ms)) {
+        if (args.method == "hook.event") {
+            std::cerr << "Warning: BreadTerminal not running, hook event skipped\n";
+            return 0;  // Don't break hook chain
+        }
         std::cerr << "Error: " << client.lastError() << "\n";
         return 1;
     }

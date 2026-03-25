@@ -336,6 +336,26 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         return result;
     }
 
+    // Check for hook-event (RemoteRPC, not local)
+    if (positional[0] == "hook-event") {
+        result.type = CommandType::RemoteRPC;
+        result.method = "hook.event";
+        // Find --json flag and parse its value from original argv
+        for (int i = 2; i < argc; ++i) {
+            if (std::string(argv[i]) == "--json" && i + 1 < argc) {
+                result.params = nlohmann::json::parse(argv[i + 1], nullptr, false);
+                if (result.params.is_discarded()) {
+                    result.valid = false;
+                    result.error = "Invalid JSON in --json argument";
+                    return result;
+                }
+                break;
+            }
+        }
+        result.valid = true;
+        return result;
+    }
+
     // Check for local commands first
     if (positional[0] == "hooks") {
         if (positional.size() >= 2 && positional[1] == "install") {
