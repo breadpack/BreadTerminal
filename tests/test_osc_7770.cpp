@@ -10,7 +10,7 @@ using namespace termcore;
 class Osc7770Test : public ::testing::Test {
 protected:
     Screen screen{24, 80};
-    VtParser parser;
+    VtParser parser{screen};
     nlohmann::json last_event;
     bool callback_fired = false;
 
@@ -19,11 +19,10 @@ protected:
             last_event = nlohmann::json::parse(json_str, nullptr, false);
             callback_fired = true;
         });
-        parser.setHandler(&screen);
     }
 
     void feed(const std::string& data) {
-        parser.feed(data);
+        parser.feed(data.c_str(), data.size());
     }
 };
 
