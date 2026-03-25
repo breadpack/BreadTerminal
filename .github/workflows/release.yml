@@ -31,6 +31,14 @@ jobs:
       - name: Run tests
         run: cd build && ctest --output-on-failure
 
+      - name: Upload debug symbols to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          npx @sentry/cli debug-files upload --include-sources build/
+
       - name: Package DMG
         run: |
           APP_PATH="build/platform/macos/BreadTerminal.app"
@@ -72,6 +80,14 @@ jobs:
 
       - name: Run tests
         run: cd build && ctest --output-on-failure
+
+      - name: Upload debug symbols to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          npx @sentry/cli debug-files upload --include-sources build/
 
       - name: Package
         run: |
@@ -153,6 +169,15 @@ jobs:
       - name: Run tests
         run: cd build && ctest --output-on-failure -C Release
 
+      - name: Upload debug symbols to Sentry
+        shell: pwsh
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          npx @sentry/cli debug-files upload --include-sources build\
+
       - name: Install WiX Toolset
         run: dotnet tool install --global wix
 
@@ -193,6 +218,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Create Sentry release
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          npx @sentry/cli releases new "BreadTerminal@${GITHUB_REF_NAME#v}"
+          npx @sentry/cli releases set-commits "BreadTerminal@${GITHUB_REF_NAME#v}" --auto
+          npx @sentry/cli releases finalize "BreadTerminal@${GITHUB_REF_NAME#v}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

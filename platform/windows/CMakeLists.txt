@@ -2,6 +2,16 @@ if(NOT WIN32)
     return()
 endif()
 
+# --- Sentry Native SDK (crash reporting) ---
+include(FetchContent)
+FetchContent_Declare(sentry_native
+    GIT_REPOSITORY https://github.com/getsentry/sentry-native.git
+    GIT_TAG 0.9.1
+)
+set(SENTRY_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(SENTRY_BACKEND "crashpad" CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(sentry_native)
+
 # --- WebView2 SDK (optional) ---
 set(HAS_WEBVIEW2 OFF)
 find_path(WEBVIEW2_INCLUDE_DIR WebView2.h
@@ -83,7 +93,14 @@ add_executable(BreadTerminal WIN32
     src/QuickTerminalWindow.cpp
     resources/BreadTerminal.rc
 )
-target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus)
+target_link_libraries(BreadTerminal PRIVATE termcore_windows comctl32 shell32 gdiplus sentry::sentry)
+
+# Copy crashpad_handler.exe next to BreadTerminal.exe (required by Sentry crashpad backend)
+add_custom_command(TARGET BreadTerminal POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:crashpad_handler>"
+        "$<TARGET_FILE_DIR:BreadTerminal>/crashpad_handler.exe"
+)
 
 # Copy theme_index.json to output directory
 add_custom_command(TARGET BreadTerminal POST_BUILD
