@@ -7,6 +7,7 @@
 #include "termcore/search_controller.h"
 #include "termcore/vi_copy_mode.h"
 #include "termcore/url_highlight.h"
+#include "termcore/completion_manager.h"
 #include "termcore/mouse.h"
 #include <cstdint>
 #include <string>
@@ -36,6 +37,7 @@ public:
         std::function<float()> cellHeight;
         std::function<bool&()> needsRender;
         std::function<UrlHighlightManager*()> urlHighlight;
+        std::function<CompletionManager*()> getCompletionManager;
     };
 
     explicit InputHandler(Deps deps);

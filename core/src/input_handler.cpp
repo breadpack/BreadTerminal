@@ -39,7 +39,54 @@ void InputHandler::onKeyEvent(const KeyEvent& e) {
         return;
     }
 
-    // 3. Keybinding lookup
+    // 3. Ghost text acceptance
+    if (d_.getCompletionManager) {
+        auto* compMgr = d_.getCompletionManager();
+        if (compMgr && compMgr->hasGhostText()) {
+            Screen* screen = d_.activeScreen();
+            bool cursorAtEnd = false;
+            if (screen && screen->promptState() == PromptState::Input) {
+                int curCol = screen->cursorCol();
+                bool hasTextAfter = false;
+                for (int c = curCol; c < screen->cols(); ++c) {
+                    const auto& cell = screen->cellAt(screen->cursorRow(), c);
+                    if (cell.codepoint != ' ' && cell.codepoint != 0) {
+                        hasTextAfter = true;
+                        break;
+                    }
+                }
+                cursorAtEnd = !hasTextAfter;
+            }
+
+            // Right Arrow: accept ghost text (Ctrl+Right = word, Right = full)
+            if (cursorAtEnd && e.keycode == 0xF703) {
+                if (e.modifiers & ModCtrl) {
+                    std::string text = compMgr->acceptWord();
+                    if (!text.empty()) {
+                        d_.sendPtyData(text.c_str(), text.size());
+                        d_.needsRender() = true;
+                        return;
+                    }
+                } else if (e.modifiers == 0) {
+                    std::string text = compMgr->acceptFull();
+                    if (!text.empty()) {
+                        d_.sendPtyData(text.c_str(), text.size());
+                        d_.needsRender() = true;
+                        return;
+                    }
+                }
+            }
+
+            // Escape clears ghost text (0xF70A is the platform Escape keycode)
+            if (e.keycode == 0xF70A && !d_.searchCtrl->isActive()) {
+                compMgr->clear();
+                d_.needsRender() = true;
+                return;
+            }
+        }
+    }
+
+    // 5. Keybinding lookup
     if (d_.keybindings) {
         KeyCombo combo{e.keycode, e.modifiers};
         Action action = d_.keybindings->lookup(combo);
@@ -57,7 +104,7 @@ void InputHandler::onKeyEvent(const KeyEvent& e) {
         }
     }
 
-    // 4. Send VT key sequence for special keys
+    // 6. Send VT key sequence for special keys
     sendVtKey(e.keycode);
 }
 
