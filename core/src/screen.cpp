@@ -511,6 +511,9 @@ void Screen::onOscDispatch(int osc_number,
     case 1337: // iTerm2 inline image protocol
         handleOscItermImage(osc_string);
         break;
+    case 7770: // BreadTerminal hook event protocol
+        handleOscHookEvent(osc_string);
+        break;
     default:
         break;
     }

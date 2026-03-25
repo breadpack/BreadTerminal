@@ -87,6 +87,7 @@ add_executable(termcore_tests
     test_lua_defaults.cpp
     test_agent_tree_tracker.cpp
     test_hook_bridge.cpp
+    test_osc_7770.cpp
     test_provider_registry.cpp
     test_sidebar_model.cpp
 )

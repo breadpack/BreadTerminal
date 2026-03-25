@@ -138,6 +138,10 @@ public:
     using NotificationCallback = std::function<void(const TermNotification&)>;
     void setNotificationCallback(NotificationCallback cb) { notification_callback_ = std::move(cb); }
 
+    // --- OSC hook event callback (OSC 7770) ---
+    using OscHookCallback = std::function<void(const std::string&)>;
+    void setOscHookCallback(OscHookCallback cb) { osc_hook_callback_ = std::move(cb); }
+
     // --- Clipboard event callback ---
     struct ClipboardEvent {
         char selection = 'c';  // 'c' for clipboard, 'p' for primary
@@ -303,6 +307,7 @@ private:
     DynamicColorCallback dynamic_color_callback_;
     CommandFinishCallback command_finish_callback_;
     std::function<void(const std::string&)> onCommandCapture_;
+    OscHookCallback osc_hook_callback_;
 
     // Command execution timing (for completion notifications)
     std::chrono::steady_clock::time_point command_start_time_;
@@ -388,6 +393,7 @@ private:
     void handleOscDynamicColor(int osc_number, const std::string& str);
     void handleOscResetColor(int osc_number, const std::string& str);
     void handleOscItermImage(const std::string& str);
+    void handleOscHookEvent(const std::string& str);
 
     // Alt screen helpers
     void switchToAltScreen(bool save_cursor);

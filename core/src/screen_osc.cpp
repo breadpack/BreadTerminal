@@ -619,4 +619,11 @@ void Screen::handleOscItermImage(const std::string& str) {
     markAllDirty();
 }
 
+// --- OSC 7770: BreadTerminal hook event ---
+void Screen::handleOscHookEvent(const std::string& str) {
+    if (!osc_hook_callback_ || str.empty()) return;
+    if (str.front() != '{') return;
+    osc_hook_callback_(str);
+}
+
 } // namespace termcore
