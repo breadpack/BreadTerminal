@@ -289,6 +289,10 @@ void TerminalWindowState::initTerminal() {
         this, std::move(config), fontCollection.get());
     controller->initTerminal();
 
+    // Wire agent auto-detection to provider registry for install notifications
+    agentTracker->setProviderRegistry(&controller->providerRegistry());
+    agentTracker->setNotificationStore(notifications.get());
+
     // Initialize UI Automation accessibility provider
     accessibilityProvider = new TerminalAccessibilityProvider(hwnd);
     accessibilityProvider->setScreen(controller->activeScreen());

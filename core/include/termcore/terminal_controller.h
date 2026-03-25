@@ -72,6 +72,9 @@ public:
     std::vector<TabController::TabInfo> tabBarInfo() const;
     int tabCount() const;
 
+    // Provider registry (for auto-detection wiring)
+    ProviderRegistry& providerRegistry() { return providerRegistry_; }
+
     // URL detection
     const std::vector<DetectedUrl>& detectedUrls() const { return detectedUrls_; }
 

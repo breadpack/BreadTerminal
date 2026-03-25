@@ -329,6 +329,10 @@
     // Initialize terminal (creates Mux, TabController, spawns PTY via platform host)
     _impl->controller->initTerminal();
 
+    // Wire agent auto-detection to provider registry for install notifications
+    _impl->agentTracker->setProviderRegistry(&_impl->controller->providerRegistry());
+    _impl->agentTracker->setNotificationStore(_impl->notifications.get());
+
     // Wire response callback so Screen can write back to PTY (DA, DSR, DECRPM, etc.)
     __weak TerminalView* weakSelf = self;
     termcore::Screen* scr = _impl->controller->activeScreen();
