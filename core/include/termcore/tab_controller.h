@@ -1,6 +1,7 @@
 #ifndef TERMCORE_TAB_CONTROLLER_H
 #define TERMCORE_TAB_CONTROLLER_H
 
+#include "termcore/agent.h"
 #include "termcore/config.h"
 #include "termcore/mux.h"
 #include "termcore/profile.h"
@@ -67,6 +68,8 @@ public:
         bool active = false;
         bool has_unread = false;     // unread output in background tab
         bool needs_attention = false; // process requesting attention
+        AgentState agent_state = AgentState::Inactive;  // agent lifecycle state
+        float progress_value = -1.0f;                   // -1 = hidden, 0.0-1.0 = percentage
     };
     std::vector<TabInfo> tabBarInfo() const;
     int tabCount() const;
@@ -90,6 +93,7 @@ public:
     WorkspaceId workspaceId() const { return wsId_; }
 
     void setProfileManager(ProfileManager* mgr) { profileMgr_ = mgr; }
+    void setAgentTracker(const AgentTracker* tracker) { agent_tracker_ = tracker; }
 
     // Callback invoked after each new pane's Screen is created.
     using OnPaneCreatedFn = std::function<void(Screen*)>;
@@ -115,6 +119,7 @@ private:
     WorkspaceId wsId_;
     PtyFactory ptyFactory_;
     ProfileManager* profileMgr_ = nullptr;
+    const AgentTracker* agent_tracker_ = nullptr;
     std::string pendingProfileId_;
 
     std::unordered_map<PaneId, std::unique_ptr<PaneState>> panes_;

@@ -183,6 +183,14 @@ std::vector<TabController::TabInfo> TabController::tabBarInfo() const {
         ti.icon_name = iconName;
         ti.process_name = processName;
 
+        // Agent state for tab bar rendering
+        if (agent_tracker_) {
+            auto* agent = agent_tracker_->getAgent(activePane);
+            if (agent) {
+                ti.agent_state = agent->state;
+            }
+        }
+
         info.push_back(std::move(ti));
     }
     return info;
