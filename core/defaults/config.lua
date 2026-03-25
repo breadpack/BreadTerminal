@@ -39,6 +39,8 @@ terminal.config({
     sidebar_visible = true,
     sidebar_width = 220,
 
+    tmux_compat_enabled = true,
+
     quick_terminal_height = 0.4,
     quick_terminal_animation_ms = 150,
     quick_terminal_position = "top",

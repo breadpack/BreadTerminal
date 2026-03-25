@@ -16,11 +16,13 @@ struct PaneEnvironment {
     WorkspaceId workspace_id = kInvalidWorkspace;
     TabId tab_id = kInvalidTab;
     PaneId pane_id = kInvalidPane;
+    bool tmux_compat_enabled = true;
+    std::string bread_cli_path;
 
     /// Convert to a list of key=value pairs suitable for PTY spawn.
     std::vector<std::pair<std::string, std::string>> toEnvVars() const {
         std::vector<std::pair<std::string, std::string>> vars;
-        vars.reserve(6);
+        vars.reserve(8);
 
         vars.emplace_back("BREADTERMINAL", "1");
         vars.emplace_back("TERM_PROGRAM", "BreadTerminal");
@@ -39,6 +41,11 @@ struct PaneEnvironment {
         if (pane_id != kInvalidPane) {
             vars.emplace_back("BREADTERMINAL_PANE_ID",
                               std::to_string(pane_id));
+        }
+
+        if (tmux_compat_enabled && !bread_cli_path.empty()) {
+            vars.emplace_back("TMUX", "bread//" + std::to_string(pane_id));
+            vars.emplace_back("TMUX_PROGRAM", bread_cli_path + " --tmux");
         }
 
         return vars;

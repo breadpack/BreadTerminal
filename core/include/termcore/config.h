@@ -87,6 +87,9 @@ struct Config {
     bool sidebar_visible = false;          // unset
     int sidebar_width = 0;                 // unset
 
+    // TMUX compatibility (for Agent Team support)
+    bool tmux_compat_enabled = true;
+
     // Theme
     std::string theme;
 
