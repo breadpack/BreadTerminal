@@ -1,6 +1,7 @@
 #include "termcore/agent.h"
 #include "termcore/provider_registry.h"
 #include "termcore/notification.h"
+#include "termcore/string_utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,21 +16,6 @@
 namespace termcore {
 
 namespace {
-
-/// Case-insensitive substring search
-bool containsIgnoreCase(const std::string& haystack, const std::string& needle) {
-    if (needle.empty()) return false;
-    if (needle.size() > haystack.size()) return false;
-
-    auto it = std::search(
-        haystack.begin(), haystack.end(),
-        needle.begin(), needle.end(),
-        [](char a, char b) {
-            return std::tolower(static_cast<unsigned char>(a)) ==
-                   std::tolower(static_cast<unsigned char>(b));
-        });
-    return it != haystack.end();
-}
 
 /// Check if a process with given PID is still alive
 bool isProcessAlive(int pid) {
