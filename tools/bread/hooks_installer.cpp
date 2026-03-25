@@ -22,6 +22,18 @@ static const char* kPostToolHookScript = R"(#!/bin/bash
 bread notify send --title "Tool: $CLAUDE_TOOL_NAME" --body "Completed" --urgency low
 )";
 
+static const char* kSubagentStartHookScript = R"(#!/bin/bash
+# BreadTerminal subagent-start hook for Claude Code
+# Install: bread hooks install
+bread hook-event --json '{"event":"SubagentStart","agent_id":"'"$CLAUDE_AGENT_ID"'","agent_type":"'"$CLAUDE_AGENT_TYPE"'","description":"'"$CLAUDE_AGENT_DESCRIPTION"'","pane_id":"'"$BREADTERMINAL_PANE_ID"'"}'
+)";
+
+static const char* kSubagentStopHookScript = R"(#!/bin/bash
+# BreadTerminal subagent-stop hook for Claude Code
+# Install: bread hooks install
+bread hook-event --json '{"event":"SubagentStop","agent_id":"'"$CLAUDE_AGENT_ID"'","pane_id":"'"$BREADTERMINAL_PANE_ID"'"}'
+)";
+
 static bool writeScript(const std::filesystem::path& path, const char* content) {
     std::ofstream ofs(path);
     if (!ofs) {
@@ -60,6 +72,8 @@ static void updateSettings(const std::filesystem::path& settings_path,
     // Register hooks in settings
     auto notification_path = (hooks_dir / "notification.sh").string();
     auto post_tool_path = (hooks_dir / "post-tool.sh").string();
+    auto subagent_start_path = (hooks_dir / "subagent-start.sh").string();
+    auto subagent_stop_path = (hooks_dir / "subagent-stop.sh").string();
 
     if (!settings.contains("hooks")) {
         settings["hooks"] = nlohmann::json::object();
@@ -73,6 +87,15 @@ static void updateSettings(const std::filesystem::path& settings_path,
     // Post-tool hook
     settings["hooks"]["post-tool"] = nlohmann::json::array({
         {{"command", post_tool_path}, {"type", "command"}}
+    });
+
+    // Subagent lifecycle hooks
+    settings["hooks"]["subagent-start"] = nlohmann::json::array({
+        {{"command", subagent_start_path}, {"type", "command"}}
+    });
+
+    settings["hooks"]["subagent-stop"] = nlohmann::json::array({
+        {{"command", subagent_stop_path}, {"type", "command"}}
     });
 
     std::ofstream ofs(settings_path);
@@ -106,6 +129,8 @@ int installHooks() {
     bool ok = true;
     ok &= writeScript(hooks_dir / "notification.sh", kNotificationHookScript);
     ok &= writeScript(hooks_dir / "post-tool.sh", kPostToolHookScript);
+    ok &= writeScript(hooks_dir / "subagent-start.sh", kSubagentStartHookScript);
+    ok &= writeScript(hooks_dir / "subagent-stop.sh", kSubagentStopHookScript);
 
     if (!ok) {
         return 1;
@@ -118,8 +143,10 @@ int installHooks() {
     updateSettings(settings_path, hooks_dir);
 
     std::cout << "\nDone! Claude Code hooks installed.\n"
-              << "  notification.sh — triggers BreadTerminal notification on Claude messages\n"
-              << "  post-tool.sh   — notifies when a tool completes\n"
+              << "  notification.sh    — triggers BreadTerminal notification on Claude messages\n"
+              << "  post-tool.sh       — notifies when a tool completes\n"
+              << "  subagent-start.sh  — reports subagent spawn to HookBridge\n"
+              << "  subagent-stop.sh   — reports subagent exit to HookBridge\n"
               << "\nTo verify, run: cat " << settings_path << "\n";
 
     return 0;

@@ -125,6 +125,7 @@ set(TERMCORE_SOURCES
     src/history_provider.cpp
     src/completion_manager.cpp
     src/agent_tree_tracker.cpp
+    src/hook_bridge.cpp
     src/sidebar_model.cpp
 )
 
