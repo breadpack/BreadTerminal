@@ -126,6 +126,7 @@ set(TERMCORE_SOURCES
     src/completion_manager.cpp
     src/agent_tree_tracker.cpp
     src/hook_bridge.cpp
+    src/provider_registry.cpp
     src/sidebar_model.cpp
 )
 
