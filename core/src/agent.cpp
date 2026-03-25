@@ -1,4 +1,6 @@
 #include "termcore/agent.h"
+#include "termcore/provider_registry.h"
+#include "termcore/notification.h"
 
 #include <algorithm>
 #include <cctype>
@@ -135,6 +137,38 @@ void AgentTracker::reportStart(uint32_t pane_id, AgentType type, int pid) {
 
     if (callback_) {
         callback_(pane_id, info);
+    }
+
+    // Check if provider has uninstalled hooks — notify user
+    if (provider_registry_ && notification_store_) {
+        // Convert AgentType to string for registry lookup
+        std::string agent_type_str;
+        switch (type) {
+            case AgentType::ClaudeCode: agent_type_str = "ClaudeCode"; break;
+            case AgentType::Codex: agent_type_str = "Codex"; break;
+            case AgentType::GeminiCli: agent_type_str = "GeminiCli"; break;
+            case AgentType::Aider: agent_type_str = "Aider"; break;
+            case AgentType::OpenCode: agent_type_str = "OpenCode"; break;
+            case AgentType::Goose: agent_type_str = "Goose"; break;
+            case AgentType::Amp: agent_type_str = "Amp"; break;
+            case AgentType::Cline: agent_type_str = "Cline"; break;
+            default: break;
+        }
+        if (!agent_type_str.empty()) {
+            auto* provider = provider_registry_->findByAgentType(agent_type_str);
+            if (provider && !provider->hooks.empty()
+                && !provider_registry_->isInstalled(provider->id)
+                && notified_providers_.count(provider->id) == 0) {
+                notified_providers_.insert(provider->id);
+                notification_store_->add(
+                    pane_id,
+                    NotificationSource::System,
+                    NotificationUrgency::Critical,
+                    provider->display_name + " detected",
+                    "Install hooks for subagent tracking and notifications: "
+                    "bread hooks install --provider " + provider->id);
+            }
+        }
     }
 }
 

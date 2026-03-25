@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -108,6 +109,9 @@ public:
     /// Set callback for agent state changes
     void setStateCallback(AgentStateCallback cb) { callback_ = std::move(cb); }
 
+    void setProviderRegistry(class ProviderRegistry* registry) { provider_registry_ = registry; }
+    void setNotificationStore(class NotificationStore* store) { notification_store_ = store; }
+
     /// Get registered agent patterns count
     size_t registeredCount() const { return patterns_.size(); }
 
@@ -140,6 +144,9 @@ private:
     std::unordered_map<uint32_t, AgentInfo> agents_;  // pane_id -> AgentInfo
     AgentStateCallback callback_;
     std::vector<AgentStatePattern> state_patterns_;
+    ProviderRegistry* provider_registry_ = nullptr;
+    NotificationStore* notification_store_ = nullptr;
+    std::set<std::string> notified_providers_;
 
     void initDefaultPatterns();
     void initDefaultStatePatterns();
