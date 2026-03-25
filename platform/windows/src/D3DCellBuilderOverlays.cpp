@@ -525,6 +525,35 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 }
             }
 
+            // Agent state dot indicator (8x8 px near tab icon area)
+            {
+                uint32_t stateColor = 0;
+                switch (tab.agent_state) {
+                    case 3: /* Running */  stateColor = 0xEAB308; break;
+                    case 4: /* Thinking */ stateColor = 0xEAB308; break;
+                    case 5: /* ToolUse */  stateColor = 0xF97316; break;
+                    case 6: /* Waiting */  stateColor = 0x3B82F6; break;
+                    case 7: /* Error */    stateColor = 0xEF4444; break;
+                    case 2: /* Idle */     stateColor = 0x22C55E; break;
+                    default: break;
+                }
+                if (stateColor != 0) {
+                    float dotSize = 8.0f;
+                    float dotX = tabX + tabPadX - dotSize - 2.0f;
+                    float dotY = tabY + (tabH - dotSize) * 0.5f;
+                    // Clamp to tab left boundary
+                    if (dotX < tabX + 4.0f) dotX = tabX + 4.0f;
+                    D3DCellInstance stateDot = {};
+                    stateDot.position[0] = dotX;
+                    stateDot.position[1] = dotY;
+                    stateDot.atlas_size[0] = dotSize;
+                    stateDot.atlas_size[1] = dotSize;
+                    colorFromRGBA(stateColor | 0xFF000000, stateDot.bg_color);
+                    stateDot.flags = 8;
+                    cellInstances.push_back(stateDot);
+                }
+            }
+
             // Unread dot indicator
             if (tab.has_unread && !tab.active) {
                 float dotR = 3.0f;
@@ -538,6 +567,21 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
                 colorFromRGBA(tabBar.accent_color | 0xFF000000, dot.bg_color);
                 dot.flags = 8;
                 cellInstances.push_back(dot);
+            }
+
+            // Progress bar at tab bottom (2px height)
+            if (tab.progress_value >= 0.0f) {
+                float barW = tabW * tab.progress_value;
+                if (barW > 0.0f) {
+                    D3DCellInstance bar = {};
+                    bar.position[0] = tabX;
+                    bar.position[1] = tabY + tabH - 2.0f;
+                    bar.atlas_size[0] = barW;
+                    bar.atlas_size[1] = 2.0f;
+                    colorFromRGBA(tabBar.accent_color | 0xFF000000, bar.bg_color);
+                    bar.flags = 8;
+                    cellInstances.push_back(bar);
+                }
             }
         }
 

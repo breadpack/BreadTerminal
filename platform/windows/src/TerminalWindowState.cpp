@@ -470,6 +470,8 @@ void TerminalWindowState::updateTabBar() {
         ti.active = tabs[i].active;
         ti.has_unread = tabs[i].has_unread;
         ti.needs_attention = tabs[i].needs_attention;
+        ti.agent_state = static_cast<int>(tabs[i].agent_state);
+        ti.progress_value = tabs[i].progress_value;
         tabInfo.tabs.push_back(ti);
     }
 
