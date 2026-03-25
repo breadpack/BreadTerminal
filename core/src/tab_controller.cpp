@@ -277,6 +277,16 @@ bool TabController::pollAllPtys() {
     return dataRead;
 }
 
+std::vector<void*> TabController::collectReadHandles() const {
+    std::vector<void*> handles;
+    for (const auto& [id, ps] : panes_) {
+        if (!ps->pty || !ps->pty->isAlive()) continue;
+        void* h = ps->pty->nativeReadHandle();
+        if (h) handles.push_back(h);
+    }
+    return handles;
+}
+
 bool TabController::cleanupDeadPanes() {
     std::vector<PaneId> deadPanes;
     for (auto& [id, ps] : panes_) {

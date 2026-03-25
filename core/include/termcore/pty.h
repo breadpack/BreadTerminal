@@ -40,6 +40,10 @@ public:
     /// Get the PTY file descriptor for polling (Unix).
     virtual int fd() const = 0;
 
+    /// Get the native read handle for event-driven polling (Windows).
+    /// Returns nullptr on platforms that use fd() instead.
+    virtual void* nativeReadHandle() const { return nullptr; }
+
     /// Wait for child process to exit. Returns exit code.
     virtual int waitForExit() = 0;
 

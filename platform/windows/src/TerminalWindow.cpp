@@ -87,7 +87,6 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_TIMER:
             if (wParam == kRenderTimerId && state) {
-                state->pollPty();
                 // Auto-hide resize overlay after 1 second
                 if (state->showResizeOverlay) {
                     auto elapsed = std::chrono::steady_clock::now()
@@ -97,10 +96,6 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                         state->needsRender = true;
                         if (state->renderer) state->renderer->markContentDirty();
                     }
-                }
-                if (state->needsRender) {
-                    state->needsRender = false;
-                    state->renderFrame();
                 }
             } else if (wParam == kCursorBlinkTimerId && state) {
                 state->cursorBlinkOn = !state->cursorBlinkOn;
@@ -440,10 +435,42 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
+    // Event-driven message loop: wake on PTY data OR Windows messages
+    // This eliminates the 0-16ms polling delay for PTY output.
     MSG msg = {};
-    while (GetMessageW(&msg, nullptr, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+    bool running = true;
+    while (running) {
+        // Collect PTY read handles for event-driven wakeup
+        std::vector<HANDLE> handles;
+        if (state->controller && state->controller->tabs()) {
+            auto ptrs = state->controller->tabs()->collectReadHandles();
+            for (void* p : ptrs)
+                handles.push_back(static_cast<HANDLE>(p));
+        }
+
+        DWORD count = static_cast<DWORD>(handles.size());
+        DWORD result = MsgWaitForMultipleObjects(
+            count, count > 0 ? handles.data() : nullptr,
+            FALSE, 16, QS_ALLINPUT);
+
+        // Process all pending Windows messages
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                running = false;
+                break;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        // If PTY handle was signaled or timeout, poll PTY
+        if (running && state->controller) {
+            state->pollPty();
+            if (state->needsRender) {
+                state->needsRender = false;
+                state->renderFrame();
+            }
+        }
     }
 
     return static_cast<int>(msg.wParam);

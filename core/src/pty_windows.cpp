@@ -194,6 +194,10 @@ public:
         return -1;  // Not applicable on Windows
     }
 
+    void* nativeReadHandle() const override {
+        return pipe_out_;
+    }
+
     int waitForExit() override {
         if (process_ == INVALID_HANDLE_VALUE) return -1;
         WaitForSingleObject(process_, INFINITE);

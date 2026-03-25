@@ -83,6 +83,9 @@ public:
     // Poll all PTYs, returns true if any data was read
     bool pollAllPtys();
 
+    // Collect native read handles from all alive PTYs (for event-driven polling)
+    std::vector<void*> collectReadHandles() const;
+
     // Resize all panes
     void resizeAllPanes(int rows, int cols);
 
