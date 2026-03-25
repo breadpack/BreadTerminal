@@ -169,7 +169,7 @@ std::vector<TabController::TabInfo> TabController::tabBarInfo() const {
             luaInfo.tab_index = static_cast<int>(i);
             luaInfo.process_name = processName;
             luaInfo.working_dir = cwd;
-            luaInfo.title = ti.title;
+            luaInfo.title = screenTitle;
             luaInfo.is_active = ti.active;
             inTitleFormat_ = true;
             auto custom = titleFormatFn_(luaInfo);

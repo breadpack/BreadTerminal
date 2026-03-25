@@ -24,13 +24,15 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
     tab.set_function("on_title_format",
         [this, luaPtr](sol::protected_function fn) {
             auto luaFn = std::make_shared<sol::protected_function>(std::move(fn));
-            titleFormatFn_ = [luaFn, luaPtr](const TabTitleInfo& info) -> std::string {
+            titleFormatFn_ = [this, luaFn, luaPtr](const TabTitleInfo& info) -> std::string {
                 sol::table tbl = luaPtr->create_table();
                 tbl["tab_index"] = info.tab_index;
                 tbl["process"] = info.process_name;
                 tbl["cwd"] = info.working_dir;
                 tbl["title"] = info.title;
                 tbl["is_active"] = info.is_active;
+                auto ct = tabCtrl_->customTitle(info.tab_index);
+                if (!ct.empty()) tbl["custom_title"] = ct;
 
                 auto result = (*luaFn)(tbl);
                 if (result.valid()) {
@@ -41,6 +43,10 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
                 }
                 return "";  // fallback: use C++ default
             };
+            // Connect to TabController so the callback is actually used
+            if (tabCtrl_) {
+                tabCtrl_->setTitleFormatCallback(titleFormatFn_);
+            }
         });
 
     // terminal.tab.set_title(tab_id, title)

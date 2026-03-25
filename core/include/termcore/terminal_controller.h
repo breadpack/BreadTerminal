@@ -133,8 +133,14 @@ private:
 
     int termRows_ = 24;
     int termCols_ = 80;
+    int lastPixelW_ = 0;
+    int lastPixelH_ = 0;
     bool needsRender_ = false;
     bool urlScanPending_ = false;
+
+    static constexpr float kTabBarHeightScale = 1.4f;
+    bool isTabBarVisible() const;
+    void recalcGrid();
 
     void initInputHandler();
     void saveSearchHistory();

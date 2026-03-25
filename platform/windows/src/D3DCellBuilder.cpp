@@ -2,6 +2,7 @@
 
 #include "D3DTextRendererImpl.h"
 #include "termcore/font/box_drawing.h"
+#include <cmath>
 
 namespace termcore {
 
@@ -225,13 +226,15 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             bool isBoxDrawing = !isPowerline && is_box_drawing(cp);
 
             if (isBoxDrawing) {
+                // Render box bitmap at ceil() dimensions so it covers the full cell,
+                // then set quad size to exact cell dimensions to eliminate gaps.
+                int bitmapW = static_cast<int>(std::ceil(cellW));
+                int bitmapH = static_cast<int>(std::ceil(cellH));
                 GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
                 auto boxInfo = glyphCache->get(boxKey);
                 if (!boxInfo) {
                     BoxGlyphBitmap boxBitmap = render_box_glyph(
-                        cp,
-                        static_cast<int>(cellW),
-                        static_cast<int>(cellH));
+                        cp, bitmapW, bitmapH);
                     if (!boxBitmap.bitmap.empty()) {
                         RasterizedGlyph rg;
                         rg.bitmap = std::move(boxBitmap.bitmap);
@@ -258,8 +261,9 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                     inst.position[1] = row * cellH + gridOffsetY;
                     inst.atlas_uv[0] = static_cast<float>(boxInfo->region.x);
                     inst.atlas_uv[1] = static_cast<float>(boxInfo->region.y);
-                    inst.atlas_size[0] = static_cast<float>(boxInfo->region.width);
-                    inst.atlas_size[1] = static_cast<float>(boxInfo->region.height);
+                    // Use exact cell dimensions for quad size so box lines fill cells seamlessly
+                    inst.atlas_size[0] = cellW;
+                    inst.atlas_size[1] = cellH;
 
                     colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
                     colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);

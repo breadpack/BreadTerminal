@@ -27,6 +27,7 @@
 #include "lua_bindings/lua_settings_module.h"
 #include "lua_bindings/lua_vi_module.h"
 #include "lua_bindings/lua_quick_module.h"
+#include "lua_bindings/lua_config_api_module.h"
 
 namespace termcore {
 
@@ -235,6 +236,10 @@ void TerminalController::initTerminal() {
     luaEngine_->registerModule(std::make_shared<LuaSettingsModule>(nullptr));
     luaEngine_->registerModule(std::make_shared<LuaViModule>(nullptr));
 
+    // Config API module: exposes terminal.config(), terminal.keymap(), terminal.colorscheme()
+    // Must be registered before loadDefaults() so embedded Lua scripts can use them.
+    luaEngine_->registerModule(std::make_shared<LuaConfigApiModule>(&config_, keybindings_.get()));
+
     luaEngine_->initializeModules();
 
     // Register terminal.action() to dispatch C++ actions from Lua
@@ -266,10 +271,12 @@ void TerminalController::pollPty() {
     }
 
     // Cleanup dead panes
+    bool wasVisible = isTabBarVisible();
     if (tabCtrl_->cleanupDeadPanes()) {
         if (host_) host_->closeWindow();
         return;
     }
+    if (wasVisible && !isTabBarVisible()) recalcGrid();
 }
 
 void TerminalController::flushPendingUrlScan() {
@@ -356,7 +363,9 @@ void TerminalController::onKeyEvent(const KeyEvent& e) {
             std::string profileId = profileDropdown_.selectedProfileId();
             profileDropdown_.close();
             if (!profileId.empty() && tabCtrl_) {
+                bool wasVisible = isTabBarVisible();
                 tabCtrl_->createTab(termRows_, termCols_, profileId);
+                if (!wasVisible && isTabBarVisible()) recalcGrid();
             }
             needsRender_ = true;
             return;
@@ -369,7 +378,9 @@ void TerminalController::onKeyEvent(const KeyEvent& e) {
                 std::string profileId = items[idx].id;
                 profileDropdown_.close();
                 if (!profileId.empty() && tabCtrl_) {
+                    bool wasVisible = isTabBarVisible();
                     tabCtrl_->createTab(termRows_, termCols_, profileId);
+                    if (!wasVisible && isTabBarVisible()) recalcGrid();
                 }
                 needsRender_ = true;
             }
@@ -526,10 +537,22 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
     }
 }
 
-void TerminalController::onResize(int pixelW, int pixelH) {
-    if (!fontMgr_) return;
+bool TerminalController::isTabBarVisible() const {
+    return tabCtrl_ && tabCtrl_->tabCount() > 1;
+}
+
+void TerminalController::recalcGrid() {
+    if (!fontMgr_ || lastPixelW_ <= 0 || lastPixelH_ <= 0) return;
+
+    int effectiveH = lastPixelH_;
+    if (isTabBarVisible()) {
+        float tabBarH = fontMgr_->cellHeight() * kTabBarHeightScale;
+        effectiveH -= static_cast<int>(tabBarH);
+        if (effectiveH < 1) effectiveH = 1;
+    }
+
     int rows = 0, cols = 0;
-    fontMgr_->recalcGrid(pixelW, pixelH, rows, cols);
+    fontMgr_->recalcGrid(lastPixelW_, effectiveH, rows, cols);
 
     if (rows != termRows_ || cols != termCols_) {
         termRows_ = rows;
@@ -542,6 +565,12 @@ void TerminalController::onResize(int pixelW, int pixelH) {
         }
     }
     needsRender_ = true;
+}
+
+void TerminalController::onResize(int pixelW, int pixelH) {
+    lastPixelW_ = pixelW;
+    lastPixelH_ = pixelH;
+    recalcGrid();
 }
 
 // --- Search ---
@@ -866,7 +895,9 @@ void TerminalController::handleAction(Action action) {
         // Tab operations
         case Action::NewTab:
             if (tabCtrl_) {
+                bool wasVisible = isTabBarVisible();
                 tabCtrl_->createTab(termRows_, termCols_);
+                if (!wasVisible && isTabBarVisible()) recalcGrid();
                 needsRender_ = true;
             }
             break;
@@ -876,7 +907,9 @@ void TerminalController::handleAction(Action action) {
                 if (tabCtrl_->tabCount() <= 1) {
                     if (host_) host_->closeWindow();
                 } else {
+                    bool wasVisible = isTabBarVisible();
                     tabCtrl_->closeTab();
+                    if (wasVisible && !isTabBarVisible()) recalcGrid();
                     needsRender_ = true;
                 }
             }
@@ -1013,7 +1046,9 @@ void TerminalController::handleAction(Action action) {
                 int idx = static_cast<int>(action) - static_cast<int>(Action::NewTabProfile1);
                 auto visible = profileMgr_->visibleProfiles();
                 if (idx >= 0 && idx < static_cast<int>(visible.size())) {
+                    bool wasVisible = isTabBarVisible();
                     tabCtrl_->createTab(termRows_, termCols_, visible[idx]->id);
+                    if (!wasVisible && isTabBarVisible()) recalcGrid();
                     needsRender_ = true;
                 }
             }
