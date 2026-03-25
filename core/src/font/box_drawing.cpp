@@ -2,6 +2,7 @@
 #include "box_drawing_util.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 using termcore::detail::fill_rect;
 
@@ -67,22 +68,13 @@ static BoxGlyphBitmap render_block_element(char32_t cp, int w, int h) {
     case 0x2590: // ▐ right half
         fill(w / 2, 0, w, h); break;
     case 0x2591: // ░ light shade (25%)
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x)
-                if ((x + y) % 4 == 0)
-                    result.bitmap[y * w + x] = 255;
+        std::memset(result.bitmap.data(), 64, w * h);
         break;
     case 0x2592: // ▒ medium shade (50%)
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x)
-                if ((x + y) % 2 == 0)
-                    result.bitmap[y * w + x] = 255;
+        std::memset(result.bitmap.data(), 128, w * h);
         break;
     case 0x2593: // ▓ dark shade (75%)
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x)
-                if ((x + y) % 4 != 0)
-                    result.bitmap[y * w + x] = 255;
+        std::memset(result.bitmap.data(), 191, w * h);
         break;
     case 0x2594: // ▔ upper 1/8
         fill(0, 0, w, h / 8); break;
@@ -159,7 +151,26 @@ static BoxGlyphBitmap render_braille(char32_t cp, int w, int h) {
             int row = dot_row[bit];
             int dx = margin_x + col * spacing_x;
             int dy = margin_y + row * spacing_y;
-            fill_rect(result.bitmap, w, h, dx, dy, dx + dot_w, dy + dot_h, 255);
+            // Draw anti-aliased circle for each braille dot
+            float cx = dx + dot_w / 2.0f;
+            float cy = dy + dot_h / 2.0f;
+            float r = std::min(dot_w, dot_h) / 2.0f;
+            int x0 = std::max(0, dx);
+            int y0 = std::max(0, dy);
+            int x1 = std::min(w, dx + dot_w);
+            int y1 = std::min(h, dy + dot_h);
+            for (int py = y0; py < y1; ++py) {
+                for (int px = x0; px < x1; ++px) {
+                    float dist = std::sqrt((px + 0.5f - cx) * (px + 0.5f - cx) +
+                                           (py + 0.5f - cy) * (py + 0.5f - cy));
+                    if (dist <= r - 0.5f) {
+                        result.bitmap[py * w + px] = 255;
+                    } else if (dist <= r + 0.5f) {
+                        uint8_t alpha = static_cast<uint8_t>((r + 0.5f - dist) * 255.0f);
+                        result.bitmap[py * w + px] = std::max(result.bitmap[py * w + px], alpha);
+                    }
+                }
+            }
         }
     }
 
@@ -177,34 +188,82 @@ static BoxGlyphBitmap render_powerline(char32_t cp, int w, int h) {
     bool filled = (cp == 0xE0B0 || cp == 0xE0B2);
     bool right_pointing = (cp == 0xE0B0 || cp == 0xE0B1);
 
-    for (int y = 0; y < h; ++y) {
-        // Triangle scanline
-        float progress = static_cast<float>(y) / static_cast<float>(h);
-        int edge_x;
-        if (progress <= 0.5f)
-            edge_x = static_cast<int>(progress * 2.0f * w);
-        else
-            edge_x = static_cast<int>((1.0f - progress) * 2.0f * w);
+    // Triangle vertices
+    // Right-pointing: apex at (w, h/2), top-left (0,0), bottom-left (0,h)
+    // Left-pointing:  apex at (0, h/2), top-right (w,0), bottom-right (w,h)
+    double apex_x, apex_y, top_x, top_y, bot_x, bot_y;
+    if (right_pointing) {
+        apex_x = w; apex_y = h / 2.0;
+        top_x = 0;  top_y = 0;
+        bot_x = 0;  bot_y = h;
+    } else {
+        apex_x = 0; apex_y = h / 2.0;
+        top_x = w;  top_y = 0;
+        bot_x = w;  bot_y = h;
+    }
 
-        if (right_pointing) {
+    // Perpendicular distance from point to infinite line through (ax,ay)-(bx,by)
+    auto dist_to_line = [](double px, double py,
+                           double ax, double ay, double bx, double by) -> double {
+        double dx = bx - ax, dy = by - ay;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return std::sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+        return std::abs((px - ax) * (-dy / len) + (py - ay) * (dx / len));
+    };
+
+    // Signed distance: positive = left of directed line a->b
+    auto signed_dist = [](double px, double py,
+                          double ax, double ay, double bx, double by) -> double {
+        double dx = bx - ax, dy = by - ay;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return 0.0;
+        return (px - ax) * (-dy / len) + (py - ay) * (dx / len);
+    };
+
+    double half_thickness = std::max(1.0, static_cast<double>(std::max(1, w / 10))) * 0.75;
+
+    for (int py = 0; py < h; ++py) {
+        for (int px = 0; px < w; ++px) {
+            double x = px + 0.5;
+            double y = py + 0.5;
+
+            double d_top = dist_to_line(x, y, top_x, top_y, apex_x, apex_y);
+            double d_bot = dist_to_line(x, y, apex_x, apex_y, bot_x, bot_y);
+
             if (filled) {
-                for (int x = 0; x < edge_x && x < w; ++x)
-                    result.bitmap[y * w + x] = 255;
+                // Signed distances to determine inside/outside
+                double s_top = signed_dist(x, y, top_x, top_y, apex_x, apex_y);
+                double s_bot = signed_dist(x, y, apex_x, apex_y, bot_x, bot_y);
+
+                // Determine inside direction based on triangle orientation
+                double inside_top, inside_bot;
+                if (right_pointing) {
+                    inside_top = s_top;
+                    inside_bot = s_bot;
+                } else {
+                    inside_top = -s_top;
+                    inside_bot = -s_bot;
+                }
+
+                // Anti-aliased coverage with smooth step at edges
+                double alpha_top = std::clamp(inside_top + 0.5, 0.0, 1.0);
+                double alpha_bot = std::clamp(inside_bot + 0.5, 0.0, 1.0);
+                double alpha = alpha_top * alpha_bot * 255.0;
+
+                if (alpha > 0.5) {
+                    uint8_t val = static_cast<uint8_t>(std::min(255.0, alpha));
+                    result.bitmap[py * w + px] = std::max(result.bitmap[py * w + px], val);
+                }
             } else {
-                // outline only
-                if (edge_x > 0 && edge_x <= w)
-                    result.bitmap[y * w + std::min(edge_x - 1, w - 1)] = 255;
-            }
-        } else {
-            // left-pointing
-            if (filled) {
-                for (int x = w - edge_x; x < w; ++x)
-                    if (x >= 0)
-                        result.bitmap[y * w + x] = 255;
-            } else {
-                int ox = w - edge_x;
-                if (ox >= 0 && ox < w)
-                    result.bitmap[y * w + ox] = 255;
+                // Outline: anti-aliased lines along both diagonal edges
+                double alpha_top = 255.0 * std::max(0.0, std::min(1.0, half_thickness - d_top + 0.5));
+                double alpha_bot = 255.0 * std::max(0.0, std::min(1.0, half_thickness - d_bot + 0.5));
+                double alpha = std::max(alpha_top, alpha_bot);
+
+                if (alpha > 0.5) {
+                    uint8_t val = static_cast<uint8_t>(std::min(255.0, alpha));
+                    result.bitmap[py * w + px] = std::max(result.bitmap[py * w + px], val);
+                }
             }
         }
     }

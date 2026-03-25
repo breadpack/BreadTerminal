@@ -1,7 +1,8 @@
+#define _USE_MATH_DEFINES
+#include <cmath>
 #include "termcore/font/box_drawing.h"
 #include "box_drawing_util.h"
 #include <algorithm>
-#include <cmath>
 
 using termcore::detail::fill_rect;
 
@@ -171,58 +172,128 @@ static void set_pixel_max(std::vector<uint8_t>& bmp, int bw, int bh,
         bmp[y * bw + x] = std::max(bmp[y * bw + x], val);
 }
 
-// Render rounded corners (╭╮╯╰)
+// Render rounded corners (╭╮╯╰) using the Windows Terminal approach:
+// Draw a rounded rectangle occupying half the cell, showing only the
+// quarter-arc corner. Uses parametric sampling of the arc portion for
+// uniform thickness, with the corner radius matching WT's formula.
 static void render_rounded_corner(std::vector<uint8_t>& bmp, int w, int h,
                                    char32_t cp, int thickness) {
     int cx = w / 2;
     int cy = h / 2;
     int t = thickness;
+    double half_t = t / 2.0;
 
-    // Draw the straight segments first
+    // Line spine: center of the thickness band, matching standard box drawing
+    // Standard │ fills [cx, cx+t), so its center is at cx + t/2.
+    // Standard ─ fills [cy, cy+t), so its center is at cy + t/2.
+    double lx = cx + half_t; // vertical line spine x
+    double ly = cy + half_t; // horizontal line spine y
+
+    // WT formula: cornerRadius = min(lineWidth * 5, min(rectW, rectH) * 0.5)
+    double rectW = static_cast<double>(w - cx);
+    double rectH = static_cast<double>(h - cy);
+    double cr = std::min(t * 5.0, std::min(rectW, rectH) * 0.5);
+    if (cr < 1.0) cr = 1.0;
+
+    // Arc center: offset from line spine by corner radius
+    double acx, acy;
     switch (cp) {
-    case 0x256D: // ╭ down and right
-        fill_rect(bmp, w, h, cx, cy, cx + t, h, 255);   // down
-        fill_rect(bmp, w, h, cx, cy, w, cy + t, 255);    // right
+    case 0x256D: acx = lx + cr; acy = ly + cr; break;
+    case 0x256E: acx = lx - cr; acy = ly + cr; break;
+    case 0x256F: acx = lx - cr; acy = ly - cr; break;
+    case 0x2570: acx = lx + cr; acy = ly - cr; break;
+    default: return;
+    }
+
+    // 1) Draw straight segments with fill_rect (matches standard box lines exactly)
+    int acy_i = static_cast<int>(std::round(acy));
+    int acx_i = static_cast<int>(std::round(acx));
+    switch (cp) {
+    case 0x256D: // ╭ down + right
+        fill_rect(bmp, w, h, cx, acy_i, cx + t, h, 255);
+        fill_rect(bmp, w, h, acx_i, cy, w, cy + t, 255);
         break;
-    case 0x256E: // ╮ down and left
-        fill_rect(bmp, w, h, cx, cy, cx + t, h, 255);   // down
-        fill_rect(bmp, w, h, 0, cy, cx + t, cy + t, 255);// left
+    case 0x256E: // ╮ down + left
+        fill_rect(bmp, w, h, cx, acy_i, cx + t, h, 255);
+        fill_rect(bmp, w, h, 0, cy, acx_i + t, cy + t, 255);
         break;
-    case 0x256F: // ╯ up and left
-        fill_rect(bmp, w, h, cx, 0, cx + t, cy + t, 255);// up
-        fill_rect(bmp, w, h, 0, cy, cx + t, cy + t, 255);// left
+    case 0x256F: // ╯ up + left
+        fill_rect(bmp, w, h, cx, 0, cx + t, acy_i + t, 255);
+        fill_rect(bmp, w, h, 0, cy, acx_i + t, cy + t, 255);
         break;
-    case 0x2570: // ╰ up and right
-        fill_rect(bmp, w, h, cx, 0, cx + t, cy + t, 255);// up
-        fill_rect(bmp, w, h, cx, cy, w, cy + t, 255);    // right
+    case 0x2570: // ╰ up + right
+        fill_rect(bmp, w, h, cx, 0, cx + t, acy_i + t, 255);
+        fill_rect(bmp, w, h, acx_i, cy, w, cy + t, 255);
         break;
+    }
+
+    // 2) Draw arc using exact circular distance (no sampling needed)
+    //    Distance to circular arc = |dist_to_center - cr|
+    //    Use minimal AA (0.7px) to match fill_rect's hard edges
+    for (int py = 0; py < h; ++py) {
+        for (int px = 0; px < w; ++px) {
+            double x = px + 0.5;
+            double y = py + 0.5;
+
+            // Check if pixel is in the arc quadrant
+            bool in_arc_zone = false;
+            switch (cp) {
+            case 0x256D: in_arc_zone = (x <= acx && y <= acy); break;
+            case 0x256E: in_arc_zone = (x >= acx && y <= acy); break;
+            case 0x256F: in_arc_zone = (x >= acx && y >= acy); break;
+            case 0x2570: in_arc_zone = (x <= acx && y >= acy); break;
+            }
+            if (!in_arc_zone) continue;
+
+            double dx = x - acx;
+            double dy = y - acy;
+            double dist_to_center = std::sqrt(dx * dx + dy * dy);
+            double dist_to_arc = std::abs(dist_to_center - cr);
+
+            double edge_dist = dist_to_arc - half_t;
+            uint8_t alpha;
+            if (edge_dist <= 0.0) {
+                alpha = 255;
+            } else if (edge_dist < 0.7) {
+                alpha = static_cast<uint8_t>(255.0 * (1.0 - edge_dist / 0.7));
+            } else {
+                continue;
+            }
+
+            set_pixel_max(bmp, w, h, px, py, alpha);
+        }
     }
 }
 
-// Render diagonal lines (╱╲╳)
+// Render diagonal lines (╱╲╳) with anti-aliasing
 static void render_diagonal(std::vector<uint8_t>& bmp, int w, int h,
                               char32_t cp, int thickness) {
-    auto draw_line = [&](int x0, int y0, int x1, int y1) {
-        // Bresenham with thickness
-        int dx = std::abs(x1 - x0), dy = std::abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-        while (true) {
-            for (int t = 0; t < thickness; ++t) {
-                set_pixel_max(bmp, w, h, x0 + t, y0, 255);
-                set_pixel_max(bmp, w, h, x0, y0 + t, 255);
+    auto draw_aa_line = [&](double x0, double y0, double x1, double y1) {
+        double dx = x1 - x0;
+        double dy = y1 - y0;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return;
+        // Normal vector (perpendicular to line direction)
+        double nx = -dy / len;
+        double ny = dx / len;
+        double half_t = thickness / 2.0;
+        for (int py = 0; py < h; ++py) {
+            for (int px = 0; px < w; ++px) {
+                // Perpendicular distance from pixel center to the ideal line
+                double dist = std::abs((px - x0) * nx + (py - y0) * ny);
+                // Anti-aliased alpha: smooth falloff over 0.5px at the edge
+                double alpha = 255.0 * std::max(0.0, std::min(1.0, half_t - dist + 0.5));
+                if (alpha > 0.0) {
+                    set_pixel_max(bmp, w, h, px, py, static_cast<uint8_t>(alpha));
+                }
             }
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
         }
     };
 
     if (cp == 0x2571 || cp == 0x2573) // ╱ or ╳
-        draw_line(w - 1, 0, 0, h - 1);
+        draw_aa_line(w - 1, 0, 0, h - 1);
     if (cp == 0x2572 || cp == 0x2573) // ╲ or ╳
-        draw_line(0, 0, w - 1, h - 1);
+        draw_aa_line(0, 0, w - 1, h - 1);
 }
 
 // Render dashed lines
@@ -253,24 +324,22 @@ static void render_dashed(std::vector<uint8_t>& bmp, int w, int h,
     int t = (style == 2) ? std::max(2, thickness * 2) : thickness;
 
     if (horizontal) {
-        int seg_len = w / (2 * dashes);
-        if (seg_len < 1) seg_len = 1;
-        int gap = (w - seg_len * dashes) / (dashes);
-        if (gap < 1) gap = 1;
-        int x = 0;
-        for (int d = 0; d < dashes && x < w; ++d) {
-            fill_rect(bmp, w, h, x, cy - t / 2, x + seg_len, cy - t / 2 + t, 255);
-            x += seg_len + gap;
+        float slot = (float)w / dashes;
+        for (int d = 0; d < dashes; ++d) {
+            int slot_start = (int)(d * slot);
+            int slot_end = (int)((d + 1) * slot);
+            int slot_len = slot_end - slot_start;
+            int seg = std::max(1, slot_len / 2);
+            fill_rect(bmp, w, h, slot_start, cy - t / 2, slot_start + seg, cy - t / 2 + t, 255);
         }
     } else {
-        int seg_len = h / (2 * dashes);
-        if (seg_len < 1) seg_len = 1;
-        int gap = (h - seg_len * dashes) / (dashes);
-        if (gap < 1) gap = 1;
-        int y = 0;
-        for (int d = 0; d < dashes && y < h; ++d) {
-            fill_rect(bmp, w, h, cx - t / 2, y, cx - t / 2 + t, y + seg_len, 255);
-            y += seg_len + gap;
+        float slot = (float)h / dashes;
+        for (int d = 0; d < dashes; ++d) {
+            int slot_start = (int)(d * slot);
+            int slot_end = (int)((d + 1) * slot);
+            int slot_len = slot_end - slot_start;
+            int seg = std::max(1, slot_len / 2);
+            fill_rect(bmp, w, h, cx - t / 2, slot_start, cx - t / 2 + t, slot_start + seg, 255);
         }
     }
 }
@@ -358,15 +427,18 @@ BoxGlyphBitmap render_box_lines(char32_t cp, int cell_width, int cell_height, in
         }
     };
 
-    // Draw center block for light connections
-    if (e.right == 1 || e.left == 1 || e.up == 1 || e.down == 1)
-        fill_rect(result.bitmap, w, h, cx, cy, cx + t, cy + t, 255);
+    // Draw center block: use heavy size if any heavy edge exists, otherwise light
+    bool has_light = (e.right == 1 || e.left == 1 || e.up == 1 || e.down == 1);
+    bool has_heavy = (e.right == 2 || e.left == 2 || e.up == 2 || e.down == 2);
 
-    // Draw center block for heavy connections
-    if (e.right == 2 || e.left == 2 || e.up == 2 || e.down == 2) {
+    if (has_heavy) {
+        // Heavy center block covers both heavy and light connections
         int ht = t2;
         int off = ht / 2;
         fill_rect(result.bitmap, w, h, cx - off, cy - off, cx - off + ht, cy - off + ht, 255);
+    } else if (has_light) {
+        // Light-only center block
+        fill_rect(result.bitmap, w, h, cx, cy, cx + t, cy + t, 255);
     }
 
     draw_segment(true, true, e.right);    // right
