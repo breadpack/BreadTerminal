@@ -1,4 +1,5 @@
 #include "arg_parser.h"
+#include "tmux_compat.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -311,6 +312,11 @@ bool parseRefId(const std::string& ref, nlohmann::json& params) {
 }
 
 ParsedArgs parseArgs(int argc, char* argv[]) {
+    // Intercept --tmux mode before any other parsing
+    if (argc >= 2 && std::string(argv[1]) == "--tmux") {
+        return parseTmuxArgs(argc - 2, argv + 2);
+    }
+
     ParsedArgs result;
     result.valid = false;
 
@@ -333,6 +339,26 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
     if (positional.empty()) {
         result.error = "No command specified";
         printUsage();
+        return result;
+    }
+
+    // Check for hook-event (RemoteRPC, not local)
+    if (positional[0] == "hook-event") {
+        result.type = CommandType::RemoteRPC;
+        result.method = "hook.event";
+        // Find --json flag and parse its value from original argv
+        for (int i = 2; i < argc; ++i) {
+            if (std::string(argv[i]) == "--json" && i + 1 < argc) {
+                result.params = nlohmann::json::parse(argv[i + 1], nullptr, false);
+                if (result.params.is_discarded()) {
+                    result.valid = false;
+                    result.error = "Invalid JSON in --json argument";
+                    return result;
+                }
+                break;
+            }
+        }
+        result.valid = true;
         return result;
     }
 
