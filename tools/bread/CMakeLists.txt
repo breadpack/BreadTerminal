@@ -6,6 +6,7 @@ add_executable(bread
     output_formatter.cpp
     hooks_installer.cpp
     local_commands.cpp
+    osc_emitter.cpp
 )
 
 target_compile_features(bread PRIVATE cxx_std_20)

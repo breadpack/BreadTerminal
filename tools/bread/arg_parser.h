@@ -18,7 +18,9 @@ enum class LocalCmd {
     HooksInstall,
     Identify,
     Capabilities,
-    GetText
+    GetText,
+    OscEmit,
+    HooksStatus
 };
 
 /// Parsed CLI arguments ready for JSON-RPC dispatch.

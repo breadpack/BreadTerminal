@@ -363,7 +363,25 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
     }
 
     // Check for local commands first
+    if (positional[0] == "osc") {
+        if (positional.size() >= 2 && positional[1] == "emit") {
+            result.type = CommandType::LocalCommand;
+            result.local_cmd = LocalCmd::OscEmit;
+            result.valid = true;
+            return result;
+        }
+        result.valid = false;
+        result.error = "Unknown osc subcommand. Try: bread osc emit <type>";
+        return result;
+    }
+
     if (positional[0] == "hooks") {
+        if (positional.size() >= 2 && positional[1] == "status") {
+            result.type = CommandType::LocalCommand;
+            result.local_cmd = LocalCmd::HooksStatus;
+            result.valid = true;
+            return result;
+        }
         if (positional.size() >= 2 && positional[1] == "install") {
             result.type = CommandType::LocalCommand;
             result.local_cmd = LocalCmd::HooksInstall;

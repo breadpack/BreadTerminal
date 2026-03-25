@@ -2,6 +2,7 @@
 #include "cli_client.h"
 #include "hooks_installer.h"
 #include "local_commands.h"
+#include "osc_emitter.h"
 #include "output_formatter.h"
 
 #include <iostream>
@@ -27,6 +28,12 @@ int main(int argc, char* argv[]) {
                 return bread::cmdCapabilities(args);
             case bread::LocalCmd::GetText:
                 return bread::cmdGetText(args);
+            case bread::LocalCmd::OscEmit:
+                return bread::emitOsc(argc - 3, argv + 3);  // skip "bread osc emit"
+            case bread::LocalCmd::HooksStatus:
+                // Will be implemented in Task 9
+                std::cout << "hooks status: not yet implemented\n";
+                return 0;
             case bread::LocalCmd::None:
                 break;
         }

@@ -90,6 +90,7 @@ add_executable(termcore_tests
     test_osc_7770.cpp
     test_provider_registry.cpp
     test_sidebar_model.cpp
+    test_osc_emitter.cpp
 )
 
 target_link_libraries(termcore_tests
