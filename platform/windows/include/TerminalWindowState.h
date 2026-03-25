@@ -156,6 +156,11 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     bool handleTabBarClick(int x, int y);
     void handleTabBarHover(int x, int y);
 
+    // --- Sidebar ---
+    bool handleSidebarClick(int x, int y);
+    void handleSidebarHover(int x, int y);
+    void handleSidebarWheel(int delta);
+
     // --- IPlatformHost interface ---
     void invalidate() override;
     void getViewportSize(int& w, int& h) override;
@@ -193,6 +198,17 @@ private:
     void updateCommandPalette();
     // Helper: update profile dropdown on renderer from controller state
     void updateProfileDropdown();
+    // Helper: update sidebar on renderer from controller/agent state
+    void updateSidebar();
+
+    // Notification ring animation state per pane
+    struct PaneRingState {
+        float intensity = 0.0f;
+        uint32_t color = 0x007acc;
+        std::chrono::steady_clock::time_point triggered;
+    };
+    std::unordered_map<uint32_t, PaneRingState> pane_ring_states_;
+    std::chrono::steady_clock::time_point last_frame_time_;
 };
 
 #endif // _WIN32

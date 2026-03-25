@@ -259,6 +259,31 @@ void TerminalWindowState::initTerminal() {
     notifications = std::make_unique<termcore::NotificationStore>();
     agentTracker = std::make_unique<termcore::AgentTracker>();
 
+    // Wire notification ring trigger
+    notifications->setCallback([this](const termcore::Notification& n) {
+        auto& ring = pane_ring_states_[n.pane_id];
+        ring.intensity = 1.0f;
+        ring.color = (n.urgency == termcore::NotificationUrgency::Critical)
+                     ? 0xEF4444u : 0x3B82F6u;
+        ring.triggered = std::chrono::steady_clock::now();
+    });
+
+    // Wire agent state change ring trigger
+    agentTracker->setStateCallback([this](uint32_t pane_id, const termcore::AgentInfo& info) {
+        auto& ring = pane_ring_states_[pane_id];
+        switch (info.state) {
+            case termcore::AgentState::Waiting:
+            case termcore::AgentState::NeedsInput:
+                ring.intensity = 1.0f; ring.color = 0x3B82F6u; break;
+            case termcore::AgentState::Error:
+                ring.intensity = 1.0f; ring.color = 0xEF4444u; break;
+            case termcore::AgentState::Exited:
+                ring.intensity = 0.8f; ring.color = 0x22C55Eu; break;
+            default: return;
+        }
+        ring.triggered = std::chrono::steady_clock::now();
+    });
+
     // Create controller with this as the IPlatformHost
     controller = std::make_unique<termcore::TerminalController>(
         this, std::move(config), fontCollection.get());
@@ -301,8 +326,27 @@ void TerminalWindowState::renderFrame() {
     termcore::Screen* screen = controller->activeScreen();
     if (!screen) return;
 
-    // Update tab bar and selection on renderer
+    // Decay notification ring intensities
+    {
+        auto now = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float>(now - last_frame_time_).count();
+        if (dt > 0.5f) dt = 0.016f; // clamp on first frame or long pauses
+        last_frame_time_ = now;
+
+        bool anyRingActive = false;
+        for (auto& [pane, ring] : pane_ring_states_) {
+            if (ring.intensity > 0.0f) {
+                ring.intensity -= dt * 0.33f;
+                if (ring.intensity < 0.0f) ring.intensity = 0.0f;
+                if (ring.intensity > 0.0f) anyRingActive = true;
+            }
+        }
+        if (anyRingActive) needsRender = true;
+    }
+
+    // Update tab bar, sidebar, and selection on renderer
     updateTabBar();
+    updateSidebar();
     updateRendererSelection();
 
     // Update command palette state on renderer
@@ -525,6 +569,89 @@ void TerminalWindowState::updateProfileDropdown() {
     }
 
     renderer->setProfileDropdown(info);
+}
+
+void TerminalWindowState::updateSidebar() {
+    if (!renderer || !controller) return;
+
+    const auto& config = controller->config();
+    termcore::D3DTextRenderer::SidebarRenderInfo info;
+    info.visible = config.sidebar_visible;
+    info.width = config.sidebar_width > 0 ? config.sidebar_width : 220;
+
+    if (!info.visible) {
+        renderer->setSidebar(info);
+        return;
+    }
+
+    // Style from config colors
+    info.bg_color = config.background;
+    info.fg_color = config.foreground;
+    info.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+    // Separator is a blend toward foreground
+    {
+        uint32_t bg = config.background;
+        uint32_t fg = config.foreground;
+        auto blend = [](uint32_t base, uint32_t target, float t) -> uint32_t {
+            int bR = (base >> 16) & 0xFF, bG = (base >> 8) & 0xFF, bB = base & 0xFF;
+            int tR = (target >> 16) & 0xFF, tG = (target >> 8) & 0xFF, tB = target & 0xFF;
+            return ((uint32_t)(bR + (tR - bR) * t) << 16) |
+                   ((uint32_t)(bG + (tG - bG) * t) << 8) |
+                    (uint32_t)(bB + (tB - bB) * t);
+        };
+        info.separator_color = blend(bg, fg, 0.15f);
+    }
+
+    // Build entries from tab controller data
+    auto tabs = controller->tabBarInfo();
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        termcore::D3DTextRenderer::SidebarRenderEntry entry;
+        entry.pane_id = static_cast<uint32_t>(i);
+        entry.title = tabs[i].title;
+        entry.active = tabs[i].active;
+        entry.has_unread = tabs[i].has_unread;
+
+        // Agent state from tab info if available
+        entry.agent_state = static_cast<int>(tabs[i].agent_state);
+
+        info.entries.push_back(std::move(entry));
+    }
+
+    renderer->setSidebar(info);
+}
+
+bool TerminalWindowState::handleSidebarClick(int x, int y) {
+    if (!controller || !renderer) return false;
+    const auto& config = controller->config();
+    if (!config.sidebar_visible) return false;
+
+    int sidebarW = config.sidebar_width > 0 ? config.sidebar_width : 220;
+    if (x >= sidebarW) return false;
+
+    // Determine which entry was clicked based on Y position
+    // For now, use the tab index as a simple mapping
+    auto tabs = controller->tabBarInfo();
+    float cellH = controller->cellHeight();
+    float tabBarH = cellH * termcore::D3DTextRenderer::kTabBarHeightScale;
+    float topY = (tabs.size() > 1) ? tabBarH : 0.0f;
+    float entryH = cellH * 2.5f; // approximate entry height
+
+    int entryIdx = static_cast<int>((y - topY) / entryH);
+    if (entryIdx >= 0 && entryIdx < static_cast<int>(tabs.size())) {
+        controller->tabs()->switchToTab(entryIdx);
+        needsRender = true;
+    }
+    return true;
+}
+
+void TerminalWindowState::handleSidebarHover(int x, int y) {
+    // Basic hover tracking - could be expanded later
+    (void)x; (void)y;
+}
+
+void TerminalWindowState::handleSidebarWheel(int delta) {
+    // Could scroll sidebar if many entries
+    (void)delta;
 }
 
 void TerminalWindowState::updateRendererSelection() {

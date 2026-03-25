@@ -2,6 +2,8 @@
 
 #include "D3DTextRendererImpl.h"
 
+#include <chrono>
+#include <cmath>
 #include <string>
 
 namespace termcore {
@@ -663,13 +665,23 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             inst.flags = 8;  // is_cursor (solid color rect)
             cellInstances.push_back(inst);
 
-            // Notification glow border: 2px wide overlay in ring_color
-            // with pulsing alpha when agent needs attention.
-            if (seg.needs_attention && seg.ring_intensity > 0.0f) {
-                float glowThickness = 2.0f;
+            // Notification ring glow: pulsing overlay on border segments.
+            // Triggers from notification callbacks or agent state changes.
+            if (seg.ring_intensity > 0.0f) {
+                // Compute pulsing alpha using sine wave
+                auto now = std::chrono::steady_clock::now();
+                float time_sec = std::chrono::duration<float>(now.time_since_epoch()).count();
+                float pulse = 0.5f + 0.5f * sinf(time_sec * 4.0f);
+                float alpha = seg.ring_intensity * pulse;
+                float glowThickness = 2.0f + 4.0f * seg.ring_intensity;
+
                 float glowColor[4];
                 colorFromRGBA(seg.ring_color | 0xFF000000, glowColor);
-                glowColor[3] = seg.ring_intensity; // pulse alpha
+                // Apply premultiplied alpha
+                glowColor[0] *= alpha;
+                glowColor[1] *= alpha;
+                glowColor[2] *= alpha;
+                glowColor[3] = alpha;
 
                 // Outer glow on each side of the border segment.
                 if (seg.width >= seg.height) {
@@ -736,6 +748,9 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
             }
         }
     }
+
+    // Pass 10: Sidebar panel
+    buildSidebarOverlay(cellW, cellH, ascent, fontSize);
 }
 
 } // namespace termcore
