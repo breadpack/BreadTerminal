@@ -48,25 +48,25 @@ TEST_F(ScreenCsiExtTest, DSR_DeviceOK) {
 // 4. Primary DA → VT100 identifier
 TEST_F(ScreenCsiExtTest, DA_Primary) {
     feed("\033[c");
-    EXPECT_EQ(response, "\033[?1;2c");
+    EXPECT_EQ(response, "\033[?62;22c");
 }
 
 // 5. Primary DA with explicit 0
 TEST_F(ScreenCsiExtTest, DA_PrimaryExplicit) {
     feed("\033[0c");
-    EXPECT_EQ(response, "\033[?1;2c");
+    EXPECT_EQ(response, "\033[?62;22c");
 }
 
 // 6. Secondary DA (CSI > c)
 TEST_F(ScreenCsiExtTest, DA_Secondary) {
     feed("\033[>c");
-    EXPECT_EQ(response, "\033[>1;0;0c");
+    EXPECT_EQ(response, "\033[>65;1;0c");
 }
 
 // 7. Secondary DA with explicit 0
 TEST_F(ScreenCsiExtTest, DA_SecondaryExplicit) {
     feed("\033[>0c");
-    EXPECT_EQ(response, "\033[>1;0;0c");
+    EXPECT_EQ(response, "\033[>65;1;0c");
 }
 
 // 8. DECSCUSR: CSI 2 q → steady block

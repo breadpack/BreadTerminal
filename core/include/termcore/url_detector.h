@@ -18,7 +18,8 @@ struct DetectedUrl {
 /// Detects URLs in terminal text
 class UrlDetector {
 public:
-    UrlDetector() = default;
+    UrlDetector();
+
     ~UrlDetector() = default;
 
     /// Detect URLs in a single line of text.
@@ -44,6 +45,7 @@ private:
     /// Find the end position of a URL starting at pos
     static size_t findUrlEnd(const std::string& text, size_t pos);
 
+    std::vector<std::string> builtinSchemes_;
     std::vector<std::string> customSchemes_;
 };
 

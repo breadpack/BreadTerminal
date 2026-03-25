@@ -1440,14 +1440,18 @@ static const Theme kBuiltinThemes[] = {
 } // namespace
 
 const Theme* getBuiltinTheme(const std::string& name) {
-    // Themes are now registered via Lua (defaults/themes.lua)
-    (void)name;
+    for (const auto& t : kBuiltinThemes) {
+        if (t.name == name) return &t;
+    }
     return nullptr;
 }
 
 std::vector<std::string> listBuiltinThemes() {
-    // Themes are now registered via Lua (defaults/themes.lua)
-    return {};
+    std::vector<std::string> names;
+    for (const auto& t : kBuiltinThemes) {
+        names.push_back(t.name);
+    }
+    return names;
 }
 
 } // namespace termcore

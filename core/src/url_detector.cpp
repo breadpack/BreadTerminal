@@ -5,8 +5,10 @@
 
 namespace termcore {
 
-// Built-in URL schemes are now defined in Lua (defaults/url.lua).
-// Only customSchemes_ (populated via Lua) is used for scheme detection.
+UrlDetector::UrlDetector()
+    : builtinSchemes_{"https://", "http://", "ftp://", "file://", "ssh://", "git://"}
+{
+}
 
 static bool isUrlTerminator(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -66,8 +68,8 @@ std::vector<DetectedUrl> UrlDetector::detectInLine(const std::string& text, int 
     for (size_t i = 0; i < text.size(); ) {
         bool found = false;
 
-        // Check for scheme URLs (from Lua-registered custom schemes)
-        for (const auto& scheme : customSchemes_) {
+        // Check for scheme URLs (built-in + Lua-registered custom schemes)
+        auto checkScheme = [&](const std::string& scheme) -> bool {
             if (i + scheme.size() <= text.size()
                 && text.compare(i, scheme.size(), scheme) == 0) {
                 size_t start = i;
@@ -81,9 +83,18 @@ std::vector<DetectedUrl> UrlDetector::detectInLine(const std::string& text, int 
                     });
                     i = end;
                     found = true;
+                    return true;
                 }
-                break;
             }
+            return false;
+        };
+
+        for (const auto& scheme : builtinSchemes_) {
+            if (checkScheme(scheme)) break;
+        }
+
+        if (!found) for (const auto& scheme : customSchemes_) {
+            if (checkScheme(scheme)) break;
         }
 
         // Check for www. URLs

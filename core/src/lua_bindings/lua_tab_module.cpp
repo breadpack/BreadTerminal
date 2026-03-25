@@ -31,8 +31,10 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
                 tbl["cwd"] = info.working_dir;
                 tbl["title"] = info.title;
                 tbl["is_active"] = info.is_active;
-                auto ct = tabCtrl_->customTitle(info.tab_index);
-                if (!ct.empty()) tbl["custom_title"] = ct;
+                if (tabCtrl_) {
+                    auto ct = tabCtrl_->customTitle(info.tab_index);
+                    if (!ct.empty()) tbl["custom_title"] = ct;
+                }
 
                 auto result = (*luaFn)(tbl);
                 if (result.valid()) {

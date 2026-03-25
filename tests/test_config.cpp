@@ -25,7 +25,7 @@ TEST(ConfigTest, DefaultConfigValues) {
     EXPECT_TRUE(config.keybindings.empty());
     EXPECT_TRUE(config.font_features.empty());
     EXPECT_FLOAT_EQ(config.background_opacity, 1.0f);
-    EXPECT_EQ(config.background_blur, 0);
+    EXPECT_FLOAT_EQ(config.background_blur, 0.5f);
     EXPECT_EQ(config.clipboard_paste_protection, "multiline");
     EXPECT_TRUE(config.clipboard_paste_bracketed_safe);
     EXPECT_FALSE(config.allow_clipboard_write);
