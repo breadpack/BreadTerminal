@@ -32,7 +32,8 @@ static void printUsage() {
         << "  log --level {info|success|warning|error} MESSAGE\n"
         << "  notify --title TITLE --body BODY\n"
         << "\nLocal commands:\n"
-        << "  hooks install                         Install Claude Code hook scripts\n"
+        << "  hooks install [--provider ID] [--all]  Install AI CLI hook scripts\n"
+        << "  hooks status                          Show hook installation status\n"
         << "  identify [--json]                     Print terminal name and version\n"
         << "  capabilities [--json]                 List supported features\n"
         << "\nLow-level (resource.action):\n"
@@ -385,6 +386,17 @@ ParsedArgs parseArgs(int argc, char* argv[]) {
         if (positional.size() >= 2 && positional[1] == "install") {
             result.type = CommandType::LocalCommand;
             result.local_cmd = LocalCmd::HooksInstall;
+            // Check for --provider flag
+            for (int i = 0; i < argc; ++i) {
+                if (std::string(argv[i]) == "--provider" && i + 1 < argc) {
+                    result.params = {{"provider", argv[i + 1]}};
+                    break;
+                }
+                if (std::string(argv[i]) == "--all") {
+                    result.params = {{"all", true}};
+                    break;
+                }
+            }
             result.valid = true;
             return result;
         }

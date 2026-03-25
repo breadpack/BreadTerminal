@@ -20,8 +20,16 @@ int main(int argc, char* argv[]) {
     // Handle local commands that don't need server connection
     if (args.type == bread::CommandType::LocalCommand) {
         switch (args.local_cmd) {
-            case bread::LocalCmd::HooksInstall:
-                return bread::installHooks();
+            case bread::LocalCmd::HooksInstall: {
+                if (args.params.contains("provider")) {
+                    return bread::installHooksForProvider(
+                        args.params["provider"].get<std::string>());
+                }
+                if (args.params.contains("all")) {
+                    return bread::installAllHooks();
+                }
+                return bread::installHooks();  // legacy: Claude Code only
+            }
             case bread::LocalCmd::Identify:
                 return bread::cmdIdentify(args);
             case bread::LocalCmd::Capabilities:
@@ -31,9 +39,7 @@ int main(int argc, char* argv[]) {
             case bread::LocalCmd::OscEmit:
                 return bread::emitOsc(argc - 3, argv + 3);  // skip "bread osc emit"
             case bread::LocalCmd::HooksStatus:
-                // Will be implemented in Task 9
-                std::cout << "hooks status: not yet implemented\n";
-                return 0;
+                return bread::showHooksStatus();
             case bread::LocalCmd::None:
                 break;
         }
