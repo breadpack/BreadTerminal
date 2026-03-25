@@ -124,6 +124,8 @@ set(TERMCORE_SOURCES
     src/tmux_integration.cpp
     src/history_provider.cpp
     src/completion_manager.cpp
+    src/agent_tree_tracker.cpp
+    src/sidebar_model.cpp
 )
 
 if(UNIX)
