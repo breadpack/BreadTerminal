@@ -92,8 +92,18 @@ void Screen::onCsiDispatch(char32_t final_char,
     case 'u':  // Kitty keyboard protocol
         if (intermediates == ">") {
             kitty_keyboard_.pushMode(paramOr(params, 0, 0));
+            // ConPTY on Windows filters out CSI ?1049h (alt screen) but TUI apps
+            // that enable kitty keyboard always use alt screen. Detect this and
+            // switch to alt screen internally so old content is cleared.
+            if (!alt_screen_active_) {
+                switchToAltScreen(true);
+            }
         } else if (intermediates == "<") {
             kitty_keyboard_.popMode(paramOr(params, 0, 1));
+            // TUI app is exiting — restore primary screen
+            if (kitty_keyboard_.currentFlags() == 0 && alt_screen_active_) {
+                switchToPrimaryScreen(true);
+            }
         } else if (intermediates == "?") {
             if (response_callback_) {
                 response_callback_("\033[?" +

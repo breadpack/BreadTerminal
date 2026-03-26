@@ -435,25 +435,24 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
-    // Event-driven message loop: wake on PTY data OR Windows messages
-    // This eliminates the 0-16ms polling delay for PTY output.
+    // Event-driven message loop with render throttling.
+    // Anonymous pipe handles (PIPE_NOWAIT) are not reliably waitable, so we
+    // use MsgWaitForMultipleObjects with a short timeout for PTY polling.
+    // Rendering is throttled to ~60fps; PTY reads happen every wakeup.
     MSG msg = {};
     bool running = true;
+    auto lastRender = std::chrono::steady_clock::now();
+    constexpr auto kFrameInterval = std::chrono::milliseconds(16);
+    bool lastPollHadData = false;
+
     while (running) {
-        // Collect PTY read handles for event-driven wakeup
-        std::vector<HANDLE> handles;
-        if (state->controller && state->controller->tabs()) {
-            auto ptrs = state->controller->tabs()->collectReadHandles();
-            for (void* p : ptrs)
-                handles.push_back(static_cast<HANDLE>(p));
-        }
+        // When data was flowing, poll immediately (waitMs=0).
+        // Otherwise sleep up to 1ms to avoid busy-waiting.
+        DWORD waitMs = lastPollHadData ? 0 : 1;
 
-        DWORD count = static_cast<DWORD>(handles.size());
-        DWORD result = MsgWaitForMultipleObjects(
-            count, count > 0 ? handles.data() : nullptr,
-            FALSE, 16, QS_ALLINPUT);
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, waitMs, QS_ALLINPUT);
 
-        // Process all pending Windows messages
+        // 1. Process all pending Windows messages (input priority)
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
                 running = false;
@@ -462,14 +461,26 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        if (!running) break;
 
-        // If PTY handle was signaled or timeout, poll PTY
-        if (running && state->controller) {
+        // 2. Poll PTY (fast: reads data into screen buffer, sets needsRender)
+        lastPollHadData = false;
+        if (state->controller) {
+            bool hadRender = state->needsRender;
             state->pollPty();
+            if (!hadRender && state->needsRender) {
+                lastPollHadData = true;
+            }
+        }
+
+        // 3. Render at most once per frame interval (~60fps)
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastRender >= kFrameInterval) {
             if (state->needsRender) {
                 state->needsRender = false;
                 state->renderFrame();
             }
+            lastRender = now;
         }
     }
 

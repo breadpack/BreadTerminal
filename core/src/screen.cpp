@@ -32,7 +32,7 @@ const TermCell& Screen::cellAt(int row, int col) const {
     if (row < 0 || row >= rows_ || col < 0 || col >= cols_)
         return empty;
 
-    if (viewport_offset_ > 0) {
+    if (viewport_offset_ > 0 && !alt_screen_active_) {
         // When scrolled up, the top `viewport_offset_` rows come from scrollback
         // and the remaining rows come from the grid (shifted)
         int scrollback_rows_visible = std::min(viewport_offset_, rows_);
@@ -709,6 +709,7 @@ std::string Screen::currentInputText() const {
 void Screen::switchToAltScreen(bool save_cursor) {
     if (alt_screen_active_) return;
 
+
     // Save primary state
     saved_primary_.grid = std::move(grid_);
     saved_primary_.cursor = cursor_;
@@ -718,6 +719,9 @@ void Screen::switchToAltScreen(bool save_cursor) {
     saved_primary_.autowrap = autowrap_;
     saved_primary_.wrap_pending = wrap_pending_;
     saved_primary_.origin_mode = origin_mode_;
+
+    // Save viewport offset so we can restore when returning to primary screen
+    saved_primary_.viewport_offset = viewport_offset_;
 
     // Create fresh alt screen
     grid_.clear();
@@ -730,6 +734,7 @@ void Screen::switchToAltScreen(bool save_cursor) {
     scroll_top_ = 0;
     scroll_bottom_ = rows_ - 1;
     wrap_pending_ = false;
+    viewport_offset_ = 0;  // Alt screen has no scrollback
     alt_screen_active_ = true;
     markAllDirty();
 }
@@ -746,6 +751,7 @@ void Screen::switchToPrimaryScreen(bool restore_cursor) {
     autowrap_ = saved_primary_.autowrap;
     wrap_pending_ = saved_primary_.wrap_pending;
     origin_mode_ = saved_primary_.origin_mode;
+    viewport_offset_ = saved_primary_.viewport_offset;
 
     if (restore_cursor) {
         cursor_ = saved_cursor_;

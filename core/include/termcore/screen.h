@@ -328,6 +328,7 @@ private:
         Pen pen;
         int scroll_top = 0;
         int scroll_bottom = 0;
+        int viewport_offset = 0;
         bool autowrap = true;
         bool wrap_pending = false;
         bool origin_mode = false;

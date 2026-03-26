@@ -263,11 +263,12 @@ bool TabController::pollAllPtys() {
 
         bool wasAtBottom = ps->screen ? ps->screen->isViewportAtBottom() : true;
 
+        // Read only one chunk per call so the main loop can process
+        // keyboard input between reads (avoids input lag during heavy output).
         int n = ps->pty->read(buf, sizeof(buf));
-        while (n > 0) {
+        if (n > 0) {
             ps->parser->feed(buf, static_cast<size_t>(n));
             dataRead = true;
-            n = ps->pty->read(buf, sizeof(buf));
         }
 
         if (dataRead && wasAtBottom && ps->screen) {
