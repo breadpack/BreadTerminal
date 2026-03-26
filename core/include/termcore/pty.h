@@ -57,6 +57,15 @@ public:
     /// Get the current working directory of the foreground process.
     /// Returns empty string if not available.
     virtual std::string foregroundCwd() const { return {}; }
+
+    /// Returns true if the shell process (initial child) is the foreground
+    /// process, i.e. no TUI app or command is running as a child.
+    /// Used on Windows to infer mouse mode when ConPTY filters mode sequences.
+    virtual bool isShellForeground() const { return true; }
+
+    /// Returns true if using a ConPTY that passes VT sequences through
+    /// without filtering (e.g. Windows Terminal's OpenConsole.exe).
+    virtual bool isFullVtPassthrough() const { return false; }
 };
 
 /// Factory function

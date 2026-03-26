@@ -290,6 +290,9 @@ int tc_pane_spawn(TermPane* pane, const char* command) {
     int rows = pane->screen->rows();
     int cols = pane->screen->cols();
     bool ok = pane->pty->spawn(cmd, {}, "", rows, cols);
+    if (ok) {
+        pane->screen->setFullVtPassthrough(pane->pty->isFullVtPassthrough());
+    }
     return ok ? 0 : -1;
 }
 

@@ -120,3 +120,21 @@ add_custom_command(TARGET BreadTerminal POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/BreadTerminal.ico"
         "$<TARGET_FILE_DIR:BreadTerminal>/BreadTerminal.ico"
 )
+
+# Copy Windows Terminal ConPTY binaries (conpty.dll + OpenConsole.exe)
+# These provide full VT passthrough for mouse, alt screen, and sync update
+# sequences that system ConPTY (conhost.exe) filters out.
+# Source: NuGet package Microsoft.Windows.Console.ConPTY (MIT license)
+#
+set(CONPTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/conpty/x64")
+if(EXISTS "${CONPTY_DIR}/conpty.dll")
+    add_custom_command(TARGET BreadTerminal POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CONPTY_DIR}/conpty.dll"
+            "$<TARGET_FILE_DIR:BreadTerminal>/conpty.dll"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CONPTY_DIR}/OpenConsole.exe"
+            "$<TARGET_FILE_DIR:BreadTerminal>/OpenConsole.exe"
+        COMMENT "Copying ConPTY binaries (conpty.dll + OpenConsole.exe)"
+    )
+endif()

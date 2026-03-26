@@ -23,7 +23,10 @@ void Screen::initTabStops() {
 }
 
 Screen::Row Screen::makeRow() const {
-    return Row(cols_);
+    Row row;
+    row.cells.resize(cols_);
+    row.occ = 0;
+    return row;
 }
 
 const TermCell& Screen::cellAt(int row, int col) const {
@@ -66,7 +69,7 @@ TermCell& Screen::mutableCellAt(int row, int col) {
     if (row >= gridRows) {
         // Ensure grid has enough rows (recover from size mismatch)
         while (static_cast<int>(grid_.size()) <= row) {
-            grid_.push_back(Row(cols_));
+            grid_.push_back(makeRow());
         }
     }
     return grid_[row][col];
@@ -123,7 +126,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
         for (int i = 0; i < count; ++i) {
             if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_) {
                 CompressedRow compressed;
-                compressed.compress(grid_.front());
+                compressed.compress(grid_.front().cells);
                 scrollback_.push_back(std::move(compressed));
                 if (scrollback_.size() > max_scrollback_) {
                     scrollback_.pop_front();
@@ -139,7 +142,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
     for (int i = 0; i < count; ++i) {
         if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
             CompressedRow compressed;
-            compressed.compress(grid_[top]);
+            compressed.compress(grid_[top].cells);
             scrollback_.push_back(std::move(compressed));
             if (scrollback_.size() > max_scrollback_) {
                 scrollback_.pop_front();
@@ -289,6 +292,7 @@ void Screen::onPrint(char32_t codepoint) {
                     cont.extra_count = 0;
                     cont.underline_style = prev.underline_style;
                     cont.underline_color = prev.underline_color;
+                    grid_[grapheme_row_].markOccupied(prev_col + 1);
                 }
             }
             markRowDirty(grapheme_row_);
@@ -332,6 +336,7 @@ void Screen::onPrint(char32_t codepoint) {
             row.insert(row.begin() + cursor_.col, TermCell{});
         }
         row.resize(cols_);
+        row.occ = std::min(row.occ + shift, cols_);
     }
 
     TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
@@ -343,6 +348,9 @@ void Screen::onPrint(char32_t codepoint) {
     cell.underline_style = pen_.underline_style;
     cell.underline_color = pen_.underline_color;
     cell.extra_count = 0;
+
+    // Track occupancy for fast row clearing
+    grid_[cursor_.row].markOccupied(cursor_.col + char_width - 1);
 
     grapheme_row_ = cursor_.row;
     grapheme_col_ = cursor_.col + char_width;
@@ -578,6 +586,33 @@ void Screen::onDcsDispatch(char32_t final_char,
     }
 }
 
+// --- onApcDispatch: Kitty graphics protocol ---
+void Screen::onApcDispatch(const std::string& data) {
+    // Kitty graphics protocol: APC content starts with 'G'
+    // Format: G<control>;<payload>  or  G<control>
+    if (data.empty() || data[0] != 'G') return;
+
+    // Split into control (key=value pairs) and payload (base64 data)
+    std::string control;
+    std::string payload;
+    auto semicolonPos = data.find(';', 1);
+    if (semicolonPos != std::string::npos) {
+        control = data.substr(1, semicolonPos - 1);
+        payload = data.substr(semicolonPos + 1);
+    } else {
+        control = data.substr(1);
+    }
+
+    std::string response = kitty_graphics_.processCommand(control, payload);
+
+    // Send response back to PTY if needed (e.g. for query commands)
+    if (!response.empty() && response_callback_) {
+        // Wrap response in APC: ESC _ G<response> ESC backslash
+        std::string apc_response = "\033_G" + response + "\033\\";
+        response_callback_(apc_response);
+    }
+}
+
 // --- resize ---
 void Screen::resize(int rows, int cols) {
     if (rows <= 0 || cols <= 0) return;
@@ -591,7 +626,10 @@ void Screen::resize(int rows, int cols) {
     int currentGridRows = static_cast<int>(grid_.size());
     if (rows > currentGridRows) {
         for (int i = currentGridRows; i < rows; ++i) {
-            grid_.push_back(Row(cols));
+            Row row;
+            row.cells.resize(cols);
+            row.occ = 0;
+            grid_.push_back(std::move(row));
         }
     } else if (rows < currentGridRows) {
         grid_.resize(rows);
@@ -622,7 +660,10 @@ void Screen::resize(int rows, int cols) {
         int savedRows = static_cast<int>(saved_primary_.grid.size());
         if (rows > savedRows) {
             for (int i = savedRows; i < rows; ++i) {
-                saved_primary_.grid.push_back(Row(cols));
+                Row row;
+                row.cells.resize(cols);
+                row.occ = 0;
+                saved_primary_.grid.push_back(std::move(row));
             }
         } else if (rows < savedRows) {
             saved_primary_.grid.resize(rows);
@@ -709,7 +750,6 @@ std::string Screen::currentInputText() const {
 void Screen::switchToAltScreen(bool save_cursor) {
     if (alt_screen_active_) return;
 
-
     // Save primary state
     saved_primary_.grid = std::move(grid_);
     saved_primary_.cursor = cursor_;
@@ -763,9 +803,10 @@ void Screen::switchToPrimaryScreen(bool restore_cursor) {
 }
 
 void Screen::clearScreen() {
+    TermCell defaultCell;
+    eraseCell(defaultCell);
     for (int r = 0; r < rows_; ++r)
-        for (int c = 0; c < cols_; ++c)
-            eraseCell(mutableCellAt(r, c));
+        grid_[r].clear(defaultCell);
     markAllDirty();
 }
 

@@ -252,6 +252,12 @@ void VtParser::processByte(uint8_t byte) {
             state_ = VtParserState::Escape;
             return;
         }
+        if (state_ == VtParserState::SosPmApcString && apc_active_) {
+            // In APC string, ESC might be the start of ST (ESC \).
+            apc_pending_ = true;
+            state_ = VtParserState::Escape;
+            return;
+        }
         // ESC
         clear();
         state_ = VtParserState::Escape;
@@ -374,6 +380,25 @@ void VtParser::handleEscape(uint8_t byte) {
         // Fall through to normal escape handling for this byte.
     }
 
+    // If an APC string was in progress, ESC was the start of ST (ESC \).
+    if (apc_pending_) {
+        apc_pending_ = false;
+        if (byte == '\\') {
+            // ST received: dispatch the collected APC sequence.
+            if (apc_active_ && !apc_string_.empty()) {
+                handler_.onApcDispatch(apc_string_);
+            }
+            apc_string_.clear();
+            apc_active_ = false;
+            state_ = VtParserState::Ground;
+            return;
+        }
+        // Not ST — the ESC was part of something else. Discard the APC.
+        apc_string_.clear();
+        apc_active_ = false;
+        // Fall through to normal escape handling for this byte.
+    }
+
     if (byte < 0x20) {
         // C0 in escape - execute
         executeC0(byte);
@@ -395,8 +420,15 @@ void VtParser::handleEscape(uint8_t byte) {
         // DCS
         clear();
         state_ = VtParserState::DcsEntry;
-    } else if (byte == 'X' || byte == '^' || byte == '_') {
-        // SOS, PM, APC
+    } else if (byte == '_') {
+        // APC - buffer content for Kitty graphics protocol
+        apc_string_.clear();
+        apc_pending_ = false;
+        apc_active_ = true;
+        state_ = VtParserState::SosPmApcString;
+    } else if (byte == 'X' || byte == '^') {
+        // SOS, PM - consume and discard
+        apc_active_ = false;
         state_ = VtParserState::SosPmApcString;
     } else if (byte >= 0x20 && byte <= 0x2F) {
         // Intermediate byte
@@ -504,13 +536,13 @@ void VtParser::handleOscString(uint8_t byte) {
         state_ = VtParserState::Ground;
         return;
     }
-    // ST (ESC \) is handled by the ESC anywhere transition + ground
-    // But we also need to handle the 0x9C (8-bit ST)
-    if (byte == 0x9C) {
-        oscDispatch();
-        state_ = VtParserState::Ground;
-        return;
-    }
+    // ST (ESC \) is handled by the ESC anywhere transition + handleEscape.
+    // 0x9C is the 8-bit ST, but in UTF-8 mode it conflicts with continuation
+    // bytes (0x80-0xBF).  For example, ✳ (U+2733) encodes as E2 9C B3 —
+    // treating 0x9C as ST would prematurely terminate the OSC string and leak
+    // the remaining bytes (e.g. " Claude Code") as visible text.
+    // Modern terminals (WezTerm, Ghostty, kitty, VTE) disable C1 controls in
+    // UTF-8 mode.  We do the same: only honour BEL and ESC\ as OSC terminators.
     // Collect OSC data
     if (!osc_number_done_) {
         if (byte >= '0' && byte <= '9') {
@@ -589,29 +621,9 @@ void VtParser::handleDcsIntermediate(uint8_t byte) {
 }
 
 void VtParser::handleDcsPassthrough(uint8_t byte) {
-    // ST (0x9C) or ESC \ terminates
-    if (byte == 0x9C) {
-        // Push last param
-        if (param_started_ || in_sub_param_ || !current_subs_.empty()) {
-            if (in_sub_param_) {
-                current_subs_.push_back(param_started_ ? current_param_ : -1);
-                in_sub_param_ = false;
-            }
-            VtParam vp;
-            if (!current_subs_.empty()) {
-                vp.value = current_subs_[0];
-                vp.sub.assign(current_subs_.begin() + 1, current_subs_.end());
-            } else {
-                vp.value = current_param_;
-            }
-            params_.push_back(std::move(vp));
-            current_subs_.clear();
-            param_started_ = false;
-        }
-        handler_.onDcsDispatch(dcs_final_char_, params_, intermediates_, dcs_data_);
-        state_ = VtParserState::Ground;
-        return;
-    }
+    // ST (ESC \) terminates — handled by ESC anywhere transition.
+    // 0x9C (8-bit ST) disabled in UTF-8 mode to avoid conflict with
+    // UTF-8 continuation bytes (see handleOscString comment).
     if (byte < 0x20 && byte != 0x1B) {
         // Ignore most C0 in passthrough
         return;
@@ -626,9 +638,17 @@ void VtParser::handleDcsPassthrough(uint8_t byte) {
 }
 
 void VtParser::handleSosPmApcString(uint8_t byte) {
-    // Just consume until ST (ESC \ handled by ESC anywhere, 0x9C here)
-    if (byte == 0x9C) {
-        state_ = VtParserState::Ground;
+    // ST (ESC \) handled by ESC anywhere transition.
+    // 0x9C (8-bit ST) disabled in UTF-8 mode (see handleOscString comment).
+    // Buffer APC content (for Kitty graphics protocol)
+    if (apc_active_) {
+        apc_string_.push_back(static_cast<char>(byte));
+        // Guard against unbounded growth (50 MB cap for image data)
+        if (apc_string_.size() > 50 * 1024 * 1024) {
+            apc_string_.clear();
+            apc_active_ = false;
+            state_ = VtParserState::Ground;
+        }
     }
 }
 

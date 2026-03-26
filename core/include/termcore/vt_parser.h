@@ -59,6 +59,12 @@ public:
         (void)intermediates;
         (void)data;
     }
+
+    /// Called when an APC sequence is complete.
+    /// data contains everything between ESC _ and ST.
+    virtual void onApcDispatch(const std::string& data) {
+        (void)data;
+    }
 };
 
 /// Parser states based on the Paul Faint Williams VT parser state machine.
@@ -152,6 +158,11 @@ private:
     int osc_pending_number_ = -1;
     bool osc_pending_number_done_ = false;
     std::string osc_pending_string_;
+
+    // APC collection
+    std::string apc_string_;
+    bool apc_pending_ = false;  // ESC received during APC
+    bool apc_active_ = false;   // Currently in APC (not SOS/PM)
 
     // UTF-8 collection
     char32_t utf8_codepoint_ = 0;

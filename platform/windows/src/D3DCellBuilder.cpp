@@ -92,10 +92,12 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     // Offset grid right when sidebar is visible
     float gridOffsetX = sidebar.visible ? static_cast<float>(sidebar.width) : 0.0f;
 
+
     // Pass 1: Background quads (cell-sized)
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
+
 
             D3DCellInstance inst = {};
             inst.position[0] = col * cellW + gridOffsetX;

@@ -115,6 +115,12 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // IME composition (preedit) text for inline rendering
     std::wstring imeCompositionText;
 
+    // --- Message loop state (event-driven wait + output coalescing) ---
+    int consecutiveBurstPolls = 0;       // consecutive polls that returned data
+    bool lastPollHadData = false;         // whether the most recent poll had data
+    std::chrono::steady_clock::time_point lastDataTime;  // last time PTY data arrived
+    std::chrono::steady_clock::time_point lastRenderTime; // last render timestamp
+
     // --- D3D / terminal lifecycle ---
     bool initD3D(HWND hWnd);
     void createRenderTarget();

@@ -5,6 +5,7 @@
 
 #include "D3DTextRenderer.h"
 #include "D3DAtlasUploader.h"
+#include "D3DImageRenderer.h"
 #include "termcore/dynamic_colors.h"
 
 #include <d3d11.h>
@@ -118,6 +119,9 @@ struct D3DTextRenderer::Impl {
 
     // Atlas uploader
     std::unique_ptr<D3DAtlasUploader> atlasUploader;
+
+    // Kitty graphics image renderer
+    D3DImageRenderer imageRenderer;
 
     // Viewport
     float viewportWidth = 0;

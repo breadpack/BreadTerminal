@@ -285,6 +285,7 @@ void D3DTextRenderer::Impl::cleanup() {
     if (constantBuffer) { constantBuffer->Release(); constantBuffer = nullptr; }
     if (pixelShader) { pixelShader->Release(); pixelShader = nullptr; }
     if (vertexShader) { vertexShader->Release(); vertexShader = nullptr; }
+    imageRenderer.cleanup();
 }
 
 // --- Public API ---
@@ -306,6 +307,9 @@ bool D3DTextRenderer::initialize(ID3D11Device* device,
 
     if (!impl_->buildShaders()) return false;
     if (!impl_->createResources()) return false;
+
+    impl_->imageRenderer.initialize(device, context);
+
     return true;
 }
 
@@ -434,6 +438,16 @@ void D3DTextRenderer::render(const Screen& screen) {
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     impl_->context->DrawInstanced(6, count, 0, 0);
+
+    // Render Kitty graphics images on top of text cells
+    const auto& gfx = screen.kittyGraphics();
+    if (!gfx.placements().empty()) {
+        impl_->imageRenderer.syncImages(gfx);
+        impl_->imageRenderer.renderPlacements(
+            gfx, constants.cell_size[0], constants.cell_size[1],
+            impl_->viewportWidth, impl_->viewportHeight,
+            impl_->rtv);
+    }
 }
 
 void D3DTextRenderer::resize(float width, float height) {

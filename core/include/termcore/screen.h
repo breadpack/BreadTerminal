@@ -105,6 +105,12 @@ public:
     std::chrono::steady_clock::time_point syncStartTime() const { return sync_start_time_; }
     KittyKeyboardState& kittyKeyboard() { return kitty_keyboard_; }
 
+    // --- ConPTY passthrough mode ---
+    /// When true, the ConPTY passes all VT sequences through without filtering
+    /// (OpenConsole). Disables workarounds designed for system ConPTY (conhost).
+    void setFullVtPassthrough(bool v) { full_vt_passthrough_ = v; }
+    bool isFullVtPassthrough() const { return full_vt_passthrough_; }
+
     // --- OSC state accessors ---
     const std::string& title() const { return title_; }
     const std::string& iconName() const { return icon_name_; }
@@ -215,9 +221,67 @@ public:
                        const std::vector<VtParam>& params,
                        const std::string& intermediates,
                        const std::string& data) override;
+    void onApcDispatch(const std::string& data) override;
 
 private:
-    using Row = std::vector<TermCell>;
+    /// Row wrapper with occupancy tracking for fast clearing.
+    /// `occ` is a conservative upper bound: the index past the last non-default cell.
+    /// It may overcount (safe) but must never undercount (would leave stale data).
+    struct TermRow {
+        std::vector<TermCell> cells;
+        int occ = 0;  // Index of last non-default cell + 1 (0 = empty row)
+
+        // Element access
+        TermCell& operator[](int col) { return cells[col]; }
+        const TermCell& operator[](int col) const { return cells[col]; }
+        size_t size() const { return cells.size(); }
+
+        // Resize (clamp occupancy to new size)
+        void resize(size_t n) {
+            cells.resize(n);
+            int ni = static_cast<int>(n);
+            if (occ > ni) occ = ni;
+        }
+        void resize(size_t n, const TermCell& val) {
+            cells.resize(n, val);
+            int ni = static_cast<int>(n);
+            if (occ > ni) occ = ni;
+        }
+
+        // STL-like access for insert/erase compatibility
+        auto begin() { return cells.begin(); }
+        auto end() { return cells.end(); }
+        auto begin() const { return cells.begin(); }
+        auto end() const { return cells.end(); }
+        void insert(typename std::vector<TermCell>::iterator pos, const TermCell& val) {
+            cells.insert(pos, val);
+            int sz = static_cast<int>(cells.size());
+            if (occ + 1 < sz) occ = occ + 1; else occ = sz;
+        }
+        void erase(typename std::vector<TermCell>::iterator first,
+                    typename std::vector<TermCell>::iterator last) {
+            cells.erase(first, last);
+            int sz = static_cast<int>(cells.size());
+            if (occ > sz) occ = sz;
+        }
+
+        // Reset only the occupied portion of the row
+        void clear(const TermCell& default_cell) {
+            int sz = static_cast<int>(cells.size());
+            int limit = (occ < sz) ? occ : sz;
+            for (int i = 0; i < limit; ++i) {
+                cells[i] = default_cell;
+            }
+            occ = 0;
+        }
+
+        // Update occupancy when writing to a cell
+        void markOccupied(int col) {
+            if (col + 1 > occ) occ = col + 1;
+        }
+    };
+
+    using Row = TermRow;
 
     // Grid
     int rows_;
@@ -257,8 +321,15 @@ private:
     MouseMode mouse_mode_ = MouseMode::None;
     MouseEncoding mouse_encoding_ = MouseEncoding::Default;
 
+    // Saved mouse state before kitty keyboard workaround (for restore on pop)
+    MouseMode saved_mouse_mode_ = MouseMode::None;
+    MouseEncoding saved_mouse_enc_ = MouseEncoding::Default;
+
     // Kitty keyboard protocol
     KittyKeyboardState kitty_keyboard_;
+
+    // ConPTY passthrough mode (OpenConsole)
+    bool full_vt_passthrough_ = false;
 
     // OSC state
     std::string title_;

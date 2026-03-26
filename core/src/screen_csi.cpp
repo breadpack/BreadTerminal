@@ -31,7 +31,10 @@ void Screen::onCsiDispatch(char32_t final_char,
         handleEraseLine(params);
         break;
     case 'm':
-        handleSGR(params);
+        // CSI > 4 ; 2 m is modifyOtherKeys, not SGR — skip sequences with intermediates
+        if (intermediates.empty()) {
+            handleSGR(params);
+        }
         break;
     case 'r':
         handleScrollRegion(params);
@@ -92,17 +95,29 @@ void Screen::onCsiDispatch(char32_t final_char,
     case 'u':  // Kitty keyboard protocol
         if (intermediates == ">") {
             kitty_keyboard_.pushMode(paramOr(params, 0, 0));
-            // ConPTY on Windows filters out CSI ?1049h (alt screen) but TUI apps
-            // that enable kitty keyboard always use alt screen. Detect this and
-            // switch to alt screen internally so old content is cleared.
+            // ConPTY (both system conhost and OpenConsole) filters alt screen
+            // sequences — CSI ?1049h never reaches us. Auto-switch to alt screen
+            // when kitty keyboard is pushed, since TUI apps always use alt screen.
             if (!alt_screen_active_) {
                 switchToAltScreen(true);
             }
+            // Force-enable mouse mode for TUI apps. ConPTY filters mouse mode
+            // sequences, so we need this workaround for both system and OpenConsole.
+            if (mouse_mode_ == MouseMode::None) {
+                saved_mouse_mode_ = mouse_mode_;
+                saved_mouse_enc_ = mouse_encoding_;
+                mouse_mode_ = MouseMode::AnyEvent;
+                mouse_encoding_ = MouseEncoding::SGR;
+            }
         } else if (intermediates == "<") {
             kitty_keyboard_.popMode(paramOr(params, 0, 1));
-            // TUI app is exiting — restore primary screen
+            // TUI app is exiting — restore primary screen and mouse mode
             if (kitty_keyboard_.currentFlags() == 0 && alt_screen_active_) {
                 switchToPrimaryScreen(true);
+            }
+            if (kitty_keyboard_.currentFlags() == 0) {
+                mouse_mode_ = saved_mouse_mode_;
+                mouse_encoding_ = saved_mouse_enc_;
             }
         } else if (intermediates == "?") {
             if (response_callback_) {
@@ -159,31 +174,41 @@ void Screen::handleEraseDisplay(const std::vector<VtParam>& params) {
     // When param is -1 (default), treat as 0
     if (params.empty() || params[0].value <= 0) mode = 0;
 
+    // Build the default (erased) cell from current pen
+    TermCell defaultCell;
+    eraseCell(defaultCell);
+
     switch (mode) {
     case 0: // Erase below (from cursor to end)
-        for (int c = cursor_.col; c < cols_; ++c)
-            eraseCell(mutableCellAt(cursor_.row, c));
+        // Partial row at cursor: erase from cursor col to end, using occ to limit
+        {
+            auto& curRow = grid_[cursor_.row];
+            int limit = std::max(curRow.occ, cursor_.col + 1);
+            limit = std::min(limit, cols_);
+            for (int c = cursor_.col; c < limit; ++c)
+                curRow[c] = defaultCell;
+            curRow.occ = (cursor_.col > 0) ? cursor_.col : 0;
+        }
         markRowDirty(cursor_.row);
+        // Full rows below: use occ-based clear
         for (int r = cursor_.row + 1; r < rows_; ++r) {
-            for (int c = 0; c < cols_; ++c)
-                eraseCell(mutableCellAt(r, c));
+            grid_[r].clear(defaultCell);
             markRowDirty(r);
         }
         break;
     case 1: // Erase above (from start to cursor)
         for (int r = 0; r < cursor_.row; ++r) {
-            for (int c = 0; c < cols_; ++c)
-                eraseCell(mutableCellAt(r, c));
+            grid_[r].clear(defaultCell);
             markRowDirty(r);
         }
         for (int c = 0; c <= cursor_.col; ++c)
-            eraseCell(mutableCellAt(cursor_.row, c));
+            grid_[cursor_.row][c] = defaultCell;
+        // occ might still be valid beyond cursor_.col, so keep it
         markRowDirty(cursor_.row);
         break;
-    case 2: // Erase all
+    case 2: // Erase all — use occ-based clear for each row
         for (int r = 0; r < rows_; ++r)
-            for (int c = 0; c < cols_; ++c)
-                eraseCell(mutableCellAt(r, c));
+            grid_[r].clear(defaultCell);
         markAllDirty();
         break;
     case 3: // Erase scrollback
@@ -199,20 +224,28 @@ void Screen::handleEraseLine(const std::vector<VtParam>& params) {
     int mode = paramOr(params, 0, 0);
     if (params.empty() || params[0].value <= 0) mode = 0;
 
+    TermCell defaultCell;
+    eraseCell(defaultCell);
+
     switch (mode) {
-    case 0: // Erase right
-        for (int c = cursor_.col; c < cols_; ++c)
-            eraseCell(mutableCellAt(cursor_.row, c));
+    case 0: { // Erase right — use occ to limit iteration
+        auto& row = grid_[cursor_.row];
+        int limit = std::max(row.occ, cursor_.col + 1);
+        limit = std::min(limit, cols_);
+        for (int c = cursor_.col; c < limit; ++c)
+            row[c] = defaultCell;
+        row.occ = (cursor_.col > 0) ? cursor_.col : 0;
         markRowDirty(cursor_.row);
         break;
+    }
     case 1: // Erase left
         for (int c = 0; c <= cursor_.col; ++c)
-            eraseCell(mutableCellAt(cursor_.row, c));
+            grid_[cursor_.row][c] = defaultCell;
+        // occ may still be valid beyond cursor_.col
         markRowDirty(cursor_.row);
         break;
-    case 2: // Erase entire line
-        for (int c = 0; c < cols_; ++c)
-            eraseCell(mutableCellAt(cursor_.row, c));
+    case 2: // Erase entire line — use occ-based clear
+        grid_[cursor_.row].clear(defaultCell);
         markRowDirty(cursor_.row);
         break;
     default:
@@ -512,11 +545,15 @@ void Screen::handleInsertDeleteChars(char32_t final_char,
             row.insert(row.begin() + cursor_.col, TermCell{});
         }
         row.resize(cols_);
+        // After insert, occupancy shifts right and may extend to end
+        row.occ = std::min(row.occ + n, cols_);
     } else { // 'P' - DCH - delete characters
         n = std::min(n, cols_ - cursor_.col);
         row.erase(row.begin() + cursor_.col,
                   row.begin() + cursor_.col + n);
         row.resize(cols_);
+        // After delete, occupancy may shrink
+        row.occ = std::max(row.occ - n, 0);
     }
     markRowDirty(cursor_.row);
 }

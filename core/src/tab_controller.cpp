@@ -227,6 +227,9 @@ PaneId TabController::createPaneState(int rows, int cols) {
 
     if (ptyFactory_) {
         ps->pty = ptyFactory_(profile, rows, cols);
+        if (ps->pty) {
+            ps->screen->setFullVtPassthrough(ps->pty->isFullVtPassthrough());
+        }
     }
 
     Screen* screenPtr = ps->screen.get();

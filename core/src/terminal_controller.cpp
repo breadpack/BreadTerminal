@@ -433,10 +433,53 @@ void TerminalController::onCharInput(const std::string& utf8) {
 void TerminalController::onMouseEvent(const InputMouseEvent& e) {
     Screen* scr = activeScreen();
 
-    // Check mouse protocol
-    if (scr && scr->mouseMode() != MouseMode::None) {
+    // --- Mouse mode detection (self-managed) ---
+    // ConPTY on Windows filters mouse mode sequences (?1000h/?1003h/?1006h)
+    // from the output, so Screen::mouseMode() may report None even when
+    // the child app has enabled mouse tracking.  We work around this by
+    // inferring mouse-forwarding state from the foreground process:
+    //   - Shell is foreground  → no mouse forwarding → viewport scrollback
+    //   - Child app is running → forward mouse as SGR to PTY
+    // Shift bypasses forwarding so the user can always select/scroll locally.
+
+    bool forwardMouse = (scr && scr->mouseMode() != MouseMode::None);
+
+#if defined(_WIN32)
+    if (!forwardMouse && scr && tabCtrl_) {
+        auto* pane = tabCtrl_->activePane();
+        if (pane && pane->pty && !pane->pty->isShellForeground()) {
+            forwardMouse = true;
+        }
+    }
+#endif
+
+    // Shift overrides: let user select text / scroll viewport even in TUI apps
+    if (forwardMouse && (e.modifiers & ModShift) != 0) {
+        forwardMouse = false;
+    }
+
+    if (forwardMouse) {
+        int offsetY = 0;
+        if (tabCtrl_ && tabCtrl_->tabCount() > 1) {
+            offsetY = static_cast<int>(cellHeight());
+        }
         int gridCol = static_cast<int>(e.x / cellWidth());
-        int gridRow = static_cast<int>(e.y / cellHeight());
+        int gridRow = static_cast<int>((e.y - offsetY) / cellHeight());
+        if (gridCol < 0) gridCol = 0;
+        if (gridRow < 0) gridRow = 0;
+        if (scr) {
+            if (gridCol >= scr->cols()) gridCol = scr->cols() - 1;
+            if (gridRow >= scr->rows()) gridRow = scr->rows() - 1;
+        }
+
+        // Use the actual mouse mode if known, otherwise assume AnyEvent+SGR
+        // (modern TUI apps almost universally use these).
+        MouseMode mode = scr->mouseMode();
+        MouseEncoding enc = scr->mouseEncoding();
+        if (mode == MouseMode::None) {
+            mode = MouseMode::AnyEvent;
+            enc = MouseEncoding::SGR;
+        }
 
         termcore::MouseEvent me;
         me.col = gridCol;
@@ -470,7 +513,22 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
                 return;
         }
 
-        std::string seq = encodeMouseEvent(me, scr->mouseMode(), scr->mouseEncoding());
+        // For scroll events, batch all lines into a single PTY write
+        if (e.type == InputMouseEvent::ScrollUp || e.type == InputMouseEvent::ScrollDown) {
+            int lines = e.scrollLines > 0 ? e.scrollLines : 3;
+            std::string scrollSeq = encodeMouseEvent(me, mode, enc);
+            if (!scrollSeq.empty()) {
+                std::string batch;
+                batch.reserve(scrollSeq.size() * lines);
+                for (int i = 0; i < lines; ++i) {
+                    batch += scrollSeq;
+                }
+                sendPtyData(batch.data(), batch.size());
+            }
+            return;
+        }
+
+        std::string seq = encodeMouseEvent(me, mode, enc);
         if (!seq.empty()) {
             sendPtyData(seq.data(), seq.size());
             return;
@@ -748,9 +806,11 @@ bool TerminalController::needsRender() const {
     if (!needsRender_) return false;
     const Screen* scr = tabCtrl_ ? tabCtrl_->activeScreen() : nullptr;
     if (scr && scr->syncUpdate()) {
-        // Safety timeout: if sync has been active too long, render anyway
+        // ConPTY may filter ?2026l (synchronized update end), leaving sync mode
+        // stuck permanently. Use a short timeout (50ms) instead of the previous
+        // 1-second timeout so rendering isn't blocked for too long.
         auto elapsed = std::chrono::steady_clock::now() - scr->syncStartTime();
-        if (elapsed < std::chrono::seconds(1)) return false;
+        if (elapsed < std::chrono::milliseconds(50)) return false;
     }
     return true;
 }

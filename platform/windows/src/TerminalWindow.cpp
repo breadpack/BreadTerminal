@@ -436,9 +436,9 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     UpdateWindow(hwnd);
 
     // Event-driven message loop with render throttling.
-    // Anonymous pipe handles (PIPE_NOWAIT) are not reliably waitable, so we
-    // use MsgWaitForMultipleObjects with a short timeout for PTY polling.
-    // Rendering is throttled to ~60fps; PTY reads happen every wakeup.
+    // PTY data_event_ handles are not used in MsgWaitForMultipleObjects because
+    // they remain signaled while the ring buffer has data, defeating the timeout.
+    // Instead we use a short timeout for polling.
     MSG msg = {};
     bool running = true;
     auto lastRender = std::chrono::steady_clock::now();

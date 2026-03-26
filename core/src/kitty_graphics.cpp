@@ -100,8 +100,11 @@ std::string KittyGraphicsManager::processCommand(
     } else if (action == "d") {
         handleDelete(params);
     } else if (action == "q") {
-        // Query: respond with OK
-        return "\033_Gok\033\\";
+        // Don't respond to Kitty graphics queries — our image placement
+        // support is incomplete (no cursor advancement, no virtual placement).
+        // Responding "OK" causes apps like Claude Code to attempt image-based
+        // rendering, which produces broken layouts.
+        return "";
     }
 
     return "";

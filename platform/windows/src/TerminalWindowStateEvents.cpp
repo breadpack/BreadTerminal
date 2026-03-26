@@ -310,11 +310,10 @@ std::unique_ptr<termcore::Pty> TerminalWindowState::createPty(
     auto pty = termcore::createPty();
     std::vector<std::pair<std::string, std::string>> env_vars = {
         {"TERM_PROGRAM", "BreadTerminal"},
+        {"TERM_PROGRAM_VERSION", "0.1.0"},
         {"COLORTERM", "truecolor"},
         {"TERM", "xterm-256color"},
-        // Signal Windows Terminal compatibility so prompt tools (oh-my-posh,
-        // starship) enable full powerline / Nerd Font rendering.
-        {"WT_SESSION", "BreadTerminal"},
+        {"BREADTERMINAL", "1"},
     };
     if (!pty->spawn(profile.command, profile.args, profile.working_dir, rows, cols, env_vars)) {
         OutputDebugStringW(L"BreadTerminal: failed to spawn shell for pane\n");
