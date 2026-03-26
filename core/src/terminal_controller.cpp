@@ -458,6 +458,15 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
         forwardMouse = false;
     }
 
+    // In alt screen, scroll events go to viewport scrollback (like Windows Terminal)
+    // instead of being forwarded to the app.  The user can scroll up to see
+    // content that scrolled off the alt screen.  Other mouse events (click,
+    // move, drag) are still forwarded so TUI apps remain interactive.
+    if (forwardMouse && scr && scr->altScreenActive()
+        && (e.type == InputMouseEvent::ScrollUp || e.type == InputMouseEvent::ScrollDown)) {
+        forwardMouse = false;
+    }
+
     if (forwardMouse) {
         int offsetY = 0;
         if (tabCtrl_ && tabCtrl_->tabCount() > 1) {

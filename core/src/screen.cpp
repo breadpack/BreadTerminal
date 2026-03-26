@@ -35,7 +35,7 @@ const TermCell& Screen::cellAt(int row, int col) const {
     if (row < 0 || row >= rows_ || col < 0 || col >= cols_)
         return empty;
 
-    if (viewport_offset_ > 0 && !alt_screen_active_) {
+    if (viewport_offset_ > 0) {
         // When scrolled up, the top `viewport_offset_` rows come from scrollback
         // and the remaining rows come from the grid (shifted)
         int scrollback_rows_visible = std::min(viewport_offset_, rows_);
@@ -124,7 +124,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
     if (top == 0 && bottom == rows_ - 1) {
         for (int i = 0; i < count; ++i) {
-            if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_) {
+            if (top == scroll_top_ && bottom == scroll_bottom_) {
                 CompressedRow compressed;
                 compressed.compress(grid_.front().cells);
                 scrollback_.push_back(std::move(compressed));
@@ -140,7 +140,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
 
     // Slow path: partial scroll region — O(region) shift
     for (int i = 0; i < count; ++i) {
-        if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
+        if (top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
             CompressedRow compressed;
             compressed.compress(grid_[top].cells);
             scrollback_.push_back(std::move(compressed));
@@ -529,7 +529,7 @@ void Screen::onOscDispatch(int osc_number,
 
 // --- Viewport scrolling ---
 void Screen::scrollViewportUp(int lines) {
-    if (lines <= 0 || alt_screen_active_) return;
+    if (lines <= 0) return;
     int max_offset = static_cast<int>(scrollback_.size());
     viewport_offset_ = std::min(viewport_offset_ + lines, max_offset);
 }
@@ -540,7 +540,6 @@ void Screen::scrollViewportDown(int lines) {
 }
 
 void Screen::scrollViewportToTop() {
-    if (alt_screen_active_) return;
     viewport_offset_ = static_cast<int>(scrollback_.size());
 }
 
@@ -774,7 +773,7 @@ void Screen::switchToAltScreen(bool save_cursor) {
     scroll_top_ = 0;
     scroll_bottom_ = rows_ - 1;
     wrap_pending_ = false;
-    viewport_offset_ = 0;  // Alt screen has no scrollback
+    viewport_offset_ = 0;
     alt_screen_active_ = true;
     markAllDirty();
 }

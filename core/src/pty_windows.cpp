@@ -10,6 +10,7 @@
 #include <winternl.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstring>
 #include <mutex>
 #include <set>
@@ -374,6 +375,11 @@ public:
 
         size_t n = ring_.read(buf, buf_size);
 
+        // Wake reader thread if it was waiting for buffer space (back-pressure)
+        if (n > 0) {
+            buf_space_cv_.notify_one();
+        }
+
         // If the buffer is now empty, reset the event so WaitForMultipleObjects
         // will properly block until new data arrives.
         if (ring_.readAvailable() == 0) {
@@ -566,18 +572,21 @@ private:
                 break;
             }
 
-            // Copy into ring buffer
+            // Copy into ring buffer (back-pressure: wait for space instead of dropping)
             {
-                std::lock_guard<std::mutex> lock(buf_mutex_);
+                std::unique_lock<std::mutex> lock(buf_mutex_);
                 size_t offset = 0;
                 while (offset < bytes_read) {
                     size_t written = ring_.write(tmp + offset, bytes_read - offset);
                     offset += written;
-                    if (written == 0) {
-                        // Buffer full – overwrite oldest data by advancing read position.
-                        // In practice this should be rare with a 128 KB buffer.
-                        // We'll just drop the overflow.
-                        break;
+                    if (offset < bytes_read) {
+                        // Buffer full – wait for main thread to drain some data.
+                        // This applies natural back-pressure to the child process.
+                        buf_space_cv_.wait(lock, [this] {
+                            return ring_.readAvailable() < RingBuffer::kCapacity
+                                || !reader_running_.load(std::memory_order_relaxed);
+                        });
+                        if (!reader_running_.load(std::memory_order_relaxed)) break;
                     }
                 }
             }
@@ -728,12 +737,16 @@ private:
             hpc_ = INVALID_HANDLE_VALUE;
         }
 
-        // 2. Cancel any pending I/O on the read pipe so the reader thread wakes up.
+        // 2. Signal reader thread to stop (in case it's waiting on buffer space)
+        reader_running_.store(false, std::memory_order_release);
+        buf_space_cv_.notify_all();
+
+        // 3. Cancel any pending I/O on the read pipe so the reader thread wakes up.
         if (pipe_out_ != INVALID_HANDLE_VALUE) {
             CancelIoEx(pipe_out_, NULL);
         }
 
-        // 3. Join the reader thread
+        // 4. Join the reader thread
         if (reader_thread_.joinable()) {
             reader_thread_.join();
         }
@@ -789,6 +802,7 @@ private:
     std::thread reader_thread_;
     std::atomic<bool> reader_running_{false};
     std::mutex buf_mutex_;
+    std::condition_variable buf_space_cv_;  // signaled when ring buffer has space
     RingBuffer ring_;
 
     // Cached process info (expensive syscalls — refresh at most every 500ms)
