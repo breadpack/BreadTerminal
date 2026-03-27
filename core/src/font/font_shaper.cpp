@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <functional>
 
 namespace termcore {
 
@@ -25,6 +26,38 @@ FontShaper::FontEntry* FontShaper::findFont(FontFaceId id) {
         if (entry.id == id) return &entry;
     }
     return nullptr;
+}
+
+uint64_t FontShaper::hashCodepoints(const std::u32string& codepoints) {
+    // FNV-1a hash over the codepoint sequence
+    uint64_t hash = 14695981039346656037ULL; // FNV offset basis
+    for (char32_t cp : codepoints) {
+        hash ^= static_cast<uint64_t>(cp);
+        hash *= 1099511628211ULL; // FNV prime
+    }
+    return hash;
+}
+
+uint64_t FontShaper::hashShaperConfig(const ShaperConfig& config) {
+    uint64_t hash = 14695981039346656037ULL;
+    hash ^= config.enable_ligatures ? 1ULL : 0ULL;
+    hash *= 1099511628211ULL;
+    hash ^= config.enable_liga ? 1ULL : 0ULL;
+    hash *= 1099511628211ULL;
+    for (const auto& feat : config.extra_features) {
+        for (char c : feat) {
+            hash ^= static_cast<uint64_t>(c);
+            hash *= 1099511628211ULL;
+        }
+        // Separator between features
+        hash ^= 0xFFULL;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+void FontShaper::clearShaperCache() {
+    shaper_cache_.clear();
 }
 
 FontFaceId FontShaper::loadFont(const std::string& font_path, int face_index, float size) {
@@ -53,6 +86,7 @@ FontFaceId FontShaper::loadFont(const std::string& font_path, int face_index, fl
 
     FontFaceId id = next_id_++;
     fonts_.push_back(FontEntry{id, blob, face, font, size});
+    clearShaperCache();
     return id;
 }
 
@@ -63,6 +97,7 @@ void FontShaper::setFontSize(FontFaceId face_id, float size) {
     entry->size = size;
     int scale = static_cast<int>(size * 64.0f);
     hb_font_set_scale(entry->font, scale, scale);
+    clearShaperCache();
 }
 
 std::vector<ShapedGlyph> FontShaper::shape(FontFaceId face_id,
@@ -74,6 +109,20 @@ std::vector<ShapedGlyph> FontShaper::shape(FontFaceId face_id,
 
     FontEntry* entry = findFont(face_id);
     if (!entry) return result;
+
+    // --- Cache lookup ---
+    const uint64_t text_hash = hashCodepoints(codepoints);
+    const uint64_t config_hash = hashShaperConfig(config);
+    ShaperCacheKey cache_key{face_id, text_hash, config_hash};
+
+    auto cache_it = shaper_cache_.find(cache_key);
+    if (cache_it != shaper_cache_.end()) {
+        // Verify codepoints match (collision safety)
+        if (cache_it->second.codepoints == codepoints) {
+            return cache_it->second.result;
+        }
+    }
+    // --- End cache lookup ---
 
     // Create buffer
     hb_buffer_t* buf = hb_buffer_create();
@@ -131,6 +180,14 @@ std::vector<ShapedGlyph> FontShaper::shape(FontFaceId face_id,
     }
 
     hb_buffer_destroy(buf);
+
+    // --- Cache insertion ---
+    if (shaper_cache_.size() >= kMaxShaperCacheEntries) {
+        shaper_cache_.clear();
+    }
+    shaper_cache_[cache_key] = ShaperCacheEntry{codepoints, result};
+    // --- End cache insertion ---
+
     return result;
 }
 

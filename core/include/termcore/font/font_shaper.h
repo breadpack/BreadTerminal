@@ -4,6 +4,7 @@
 #include "font_metrics.h"
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Forward declare HarfBuzz types to avoid exposing in header
@@ -76,7 +77,39 @@ public:
     /// Check if a font has a glyph for a codepoint.
     bool hasGlyph(FontFaceId face_id, char32_t codepoint);
 
+    /// Clear the shaper result cache (e.g. after font changes).
+    void clearShaperCache();
+
 private:
+    // --- Shaper result cache ---
+    struct ShaperCacheKey {
+        FontFaceId face_id;
+        uint64_t text_hash;
+        uint64_t config_hash;
+
+        bool operator==(const ShaperCacheKey&) const = default;
+    };
+
+    struct ShaperCacheKeyHash {
+        size_t operator()(const ShaperCacheKey& k) const {
+            size_t h = std::hash<uint32_t>{}(k.face_id);
+            h ^= std::hash<uint64_t>{}(k.text_hash) + 0x9e3779b9 + (h << 6) + (h >> 2);
+            h ^= std::hash<uint64_t>{}(k.config_hash) + 0x9e3779b9 + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
+
+    struct ShaperCacheEntry {
+        std::u32string codepoints;       // for collision verification
+        std::vector<ShapedGlyph> result;
+    };
+
+    std::unordered_map<ShaperCacheKey, ShaperCacheEntry, ShaperCacheKeyHash> shaper_cache_;
+    static constexpr size_t kMaxShaperCacheEntries = 4096;
+
+    static uint64_t hashCodepoints(const std::u32string& codepoints);
+    static uint64_t hashShaperConfig(const ShaperConfig& config);
+    // --- End shaper result cache ---
     struct FontEntry {
         FontFaceId id;
         hb_blob_t* blob = nullptr;
