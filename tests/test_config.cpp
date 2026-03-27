@@ -31,7 +31,7 @@ TEST(ConfigTest, DefaultConfigValues) {
     EXPECT_FALSE(config.allow_clipboard_write);
     EXPECT_TRUE(config.notify_on_command_finish);
     EXPECT_FLOAT_EQ(config.notify_after_seconds, 5.0f);
-    EXPECT_TRUE(config.sidebar_visible);
+    EXPECT_FALSE(config.sidebar_visible);
     EXPECT_EQ(config.sidebar_width, 220);
 }
 

@@ -9,6 +9,7 @@ namespace {
 // Try multiple font paths for cross-platform compatibility
 static std::string findTestFont() {
     const char* candidates[] = {
+        "C:\\Windows\\Fonts\\consola.ttf",             // Windows (Consolas)
         "/System/Library/Fonts/Menlo.ttc",            // macOS
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",  // Ubuntu/Debian
         "/usr/share/fonts/TTF/DejaVuSansMono.ttf",   // Arch

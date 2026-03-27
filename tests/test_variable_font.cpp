@@ -8,6 +8,8 @@ namespace {
 // Helper: find a system variable font for testing
 std::string findVariableFont() {
     const char* candidates[] = {
+        "C:\\Windows\\Fonts\\bahnschrift.ttf",        // Windows (Bahnschrift)
+        "C:\\Windows\\Fonts\\CascadiaCode.ttf",       // Windows (Cascadia Code)
         "/System/Library/Fonts/SFNS.ttf",
         "/System/Library/Fonts/SFNSText.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -25,6 +27,8 @@ std::string findVariableFont() {
 // Helper: find a system non-variable font for testing
 std::string findNonVariableFont() {
     const char* candidates[] = {
+        "C:\\Windows\\Fonts\\consola.ttf",            // Windows (Consolas)
+        "C:\\Windows\\Fonts\\cour.ttf",               // Windows (Courier New)
         "/System/Library/Fonts/Courier.dfont",
         "/System/Library/Fonts/Supplemental/Courier New.ttf",
         "/System/Library/Fonts/Monaco.ttf",

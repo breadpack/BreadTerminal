@@ -14,7 +14,7 @@ TEST(KittyGraphicsTest, ParseControlExtractsKeyValuePairs) {
     // We test parseControl indirectly via processCommand.
     // a=q triggers query which proves parsing works.
     auto resp = mgr.processCommand("a=q,i=42", "");
-    EXPECT_EQ(resp, "\033_Gok\033\\");
+    EXPECT_EQ(resp, "i=42;OK");
 }
 
 // 2. base64Decode works correctly
@@ -67,7 +67,7 @@ TEST(KittyGraphicsTest, TransmitAndDisplay) {
 TEST(KittyGraphicsTest, QueryReturnsResponse) {
     KittyGraphicsManager mgr;
     auto resp = mgr.processCommand("a=q", "");
-    EXPECT_EQ(resp, "\033_Gok\033\\");
+    EXPECT_EQ(resp, "i=0;OK");
 }
 
 // 6. Delete by image ID

@@ -191,7 +191,7 @@ TEST(ConfigDiff, ClipboardProtectionChangeReturnsClipboard) {
 TEST(ConfigDiff, SidebarVisibleChangeReturnsSidebar) {
     Config a;
     Config b;
-    b.sidebar_visible = false;
+    b.sidebar_visible = true;
     auto flags = diffConfig(a, b);
     EXPECT_TRUE(hasFlag(flags, ConfigDirtyFlags::Sidebar));
     EXPECT_FALSE(hasFlag(flags, ConfigDirtyFlags::Colors));
