@@ -108,6 +108,10 @@ public:
 
     void pasteText(const std::string& text);
 
+    // Direct PTY write — thread-safe, no Screen access.
+    // Used by platform layer to bypass the render lock for char input.
+    void sendPtyData(const char* data, size_t len);
+
     // Broadcast input
     void broadcastWrite(const std::string& data);
     void toggleBroadcast();
@@ -115,7 +119,6 @@ public:
 
 private:
     void handleAction(Action action);
-    void sendPtyData(const char* data, size_t len);
 
     IPlatformHost* host_;
     Config config_;

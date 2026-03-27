@@ -82,6 +82,10 @@ public:
     Tab* activeTab(WorkspaceId ws_id);
     void setActiveTab(WorkspaceId ws_id, TabId tab_id);
 
+    /// Move a tab to a new position within the workspace.
+    /// newIndex is clamped to [0, tabs.size()-1].
+    void moveTab(WorkspaceId ws_id, TabId tab_id, int newIndex);
+
     PaneId splitPane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id,
                      SplitDirection direction, int rows = 24, int cols = 80);
     void closePane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id);

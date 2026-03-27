@@ -39,6 +39,8 @@ public:
     void nextTab();
     void prevTab();
     void switchToTab(int index);
+    void moveTabLeft();
+    void moveTabRight();
 
     // Pane operations
     void splitRight(int rows, int cols, const std::string& profile_id = "");

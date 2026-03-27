@@ -69,6 +69,24 @@ void TabController::switchToTab(int index) {
     syncActivePointers();
 }
 
+void TabController::moveTabLeft() {
+    auto* ws = mux_->getWorkspace(wsId_);
+    if (!ws || ws->tabs.size() <= 1) return;
+    int cur = static_cast<int>(ws->active_tab_index);
+    if (cur <= 0) return;
+    mux_->moveTab(wsId_, ws->tabs[cur]->id, cur - 1);
+    syncActivePointers();
+}
+
+void TabController::moveTabRight() {
+    auto* ws = mux_->getWorkspace(wsId_);
+    if (!ws || ws->tabs.size() <= 1) return;
+    int cur = static_cast<int>(ws->active_tab_index);
+    if (cur >= static_cast<int>(ws->tabs.size()) - 1) return;
+    mux_->moveTab(wsId_, ws->tabs[cur]->id, cur + 1);
+    syncActivePointers();
+}
+
 // --- Pane operations ---
 
 void TabController::splitRight(int rows, int cols, const std::string& profile_id) {
@@ -259,7 +277,7 @@ void TabController::syncActivePointers() {
 
 bool TabController::pollAllPtys() {
     bool dataRead = false;
-    char buf[8192];
+    char buf[2048];
 
     for (auto& [id, ps] : panes_) {
         if (!ps->pty) continue;

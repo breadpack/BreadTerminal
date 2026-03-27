@@ -22,7 +22,7 @@ enum KeyMod : uint8_t {
 enum class Action : uint16_t {
     None,
     // Tab/Pane
-    NewTab, CloseTab, NextTab, PrevTab,
+    NewTab, CloseTab, NextTab, PrevTab, MoveTabLeft, MoveTabRight,
     SplitRight, SplitDown, ClosePane,
     FocusUp, FocusDown, FocusLeft, FocusRight,
     // Clipboard

@@ -62,6 +62,7 @@ static const std::unordered_map<std::string, Action>& actionNameMap() {
         {"none", Action::None},
         {"new_tab", Action::NewTab}, {"close_tab", Action::CloseTab},
         {"next_tab", Action::NextTab}, {"prev_tab", Action::PrevTab},
+        {"move_tab_left", Action::MoveTabLeft}, {"move_tab_right", Action::MoveTabRight},
         {"split_right", Action::SplitRight}, {"split_down", Action::SplitDown},
         {"close_pane", Action::ClosePane},
         {"focus_up", Action::FocusUp}, {"focus_down", Action::FocusDown},
@@ -140,7 +141,8 @@ static uint32_t keyFromName(const std::string& name) {
 // --- KeybindingManager ---
 
 KeybindingManager::KeybindingManager() {
-    initDefaults();
+    // Keybindings are populated by Lua (keybindings.lua) at startup.
+    // No C++ defaults needed.
 }
 
 void KeybindingManager::bind(const KeyCombo& combo, Action action, const std::string& custom) {
@@ -238,7 +240,7 @@ void KeybindingManager::loadFromConfig(
 void KeybindingManager::loadPreset(KeymapPreset preset) {
     bindings_.clear();
     if (preset == KeymapPreset::Default) {
-        initDefaults();
+        // Default bindings come from Lua (keybindings.lua).
         return;
     }
     // Load preset bindings
@@ -256,93 +258,11 @@ void KeybindingManager::loadPreset(KeymapPreset preset) {
 
 void KeybindingManager::resetDefaults() {
     bindings_.clear();
-    initDefaults();
+    // Defaults are loaded from Lua (keybindings.lua), not C++.
 }
 
 void KeybindingManager::initDefaults() {
-    // Platform-adaptive modifier: super (Cmd) on macOS, ctrl on Windows/Linux
-#if defined(__APPLE__)
-    const char* mod = "super";
-#else
-    const char* mod = "ctrl";
-#endif
-
-    auto b = [&](const std::string& trigger, Action action) {
-        bind(parseCombo(trigger), action);
-    };
-
-    // Tab
-    b(std::string(mod) + "+t", Action::NewTab);
-    b(std::string(mod) + "+w", Action::CloseTab);
-    b(std::string(mod) + "+shift+]", Action::NextTab);
-    b(std::string(mod) + "+shift+[", Action::PrevTab);
-
-    // Pane
-    b(std::string(mod) + "+d", Action::SplitRight);
-    b(std::string(mod) + "+shift+d", Action::SplitDown);
-
-    // Tab switching 1-9
-    b(std::string(mod) + "+1", Action::SwitchTab1);
-    b(std::string(mod) + "+2", Action::SwitchTab2);
-    b(std::string(mod) + "+3", Action::SwitchTab3);
-    b(std::string(mod) + "+4", Action::SwitchTab4);
-    b(std::string(mod) + "+5", Action::SwitchTab5);
-    b(std::string(mod) + "+6", Action::SwitchTab6);
-    b(std::string(mod) + "+7", Action::SwitchTab7);
-    b(std::string(mod) + "+8", Action::SwitchTab8);
-    b(std::string(mod) + "+9", Action::SwitchTab9);
-
-    // Clipboard
-    b(std::string(mod) + "+c", Action::Copy);
-    b(std::string(mod) + "+v", Action::Paste);
-    b(std::string(mod) + "+shift+v", Action::PasteFromHistory);
-    b(std::string(mod) + "+a", Action::SelectAll);
-
-    // Search
-    b(std::string(mod) + "+f", Action::SearchOpen);
-    b(std::string(mod) + "+g", Action::SearchNext);
-    b(std::string(mod) + "+shift+g", Action::SearchPrev);
-
-    // Font
-    b(std::string(mod) + "+=", Action::FontIncrease);
-    b(std::string(mod) + "+-", Action::FontDecrease);
-    b(std::string(mod) + "+0", Action::FontReset);
-
-    // Scroll
-    b("shift+pageup", Action::ScrollPageUp);
-    b("shift+pagedown", Action::ScrollPageDown);
-    b("shift+home", Action::ScrollToTop);
-    b("shift+end", Action::ScrollToBottom);
-
-    // Window
-    b(std::string(mod) + "+n", Action::NewWindow);
-    b(std::string(mod) + "+enter", Action::ToggleFullscreen);
-
-    // Misc
-    b(std::string(mod) + "+k", Action::ClearScrollback);
-    b(std::string(mod) + "+up", Action::JumpPromptUp);
-    b(std::string(mod) + "+down", Action::JumpPromptDown);
-    b(std::string(mod) + "+shift+,", Action::ReloadConfig);
-    b(std::string(mod) + "+shift+x", Action::EnterCopyMode);
-    b(std::string(mod) + "+shift+b", Action::ToggleSidebar);
-
-    // Settings/UI
-    b(std::string(mod) + "+,", Action::OpenSettings);
-    b(std::string(mod) + "+shift+t", Action::OpenThemeHub);
-    b(std::string(mod) + "+shift+p", Action::OpenCommandPalette);
-    b(std::string(mod) + "+shift+f", Action::OpenFontHub);
-
-    // Profiles
-    b(std::string(mod) + "+shift+n", Action::ShowProfileDropdown);
-    b(std::string(mod) + "+shift+1", Action::NewTabProfile1);
-    b(std::string(mod) + "+shift+2", Action::NewTabProfile2);
-    b(std::string(mod) + "+shift+3", Action::NewTabProfile3);
-    b(std::string(mod) + "+shift+4", Action::NewTabProfile4);
-    b(std::string(mod) + "+shift+5", Action::NewTabProfile5);
-    b(std::string(mod) + "+shift+6", Action::NewTabProfile6);
-    b(std::string(mod) + "+shift+7", Action::NewTabProfile7);
-    b(std::string(mod) + "+shift+8", Action::NewTabProfile8);
-    b(std::string(mod) + "+shift+9", Action::NewTabProfile9);
+    // No-op: all default keybindings are defined in keybindings.lua.
 }
 
 } // namespace termcore

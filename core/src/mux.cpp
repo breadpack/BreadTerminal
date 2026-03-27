@@ -147,6 +147,49 @@ void Mux::setActiveTab(WorkspaceId ws_id, TabId tab_id) {
     }
 }
 
+void Mux::moveTab(WorkspaceId ws_id, TabId tab_id, int newIndex) {
+    auto* ws = getWorkspace(ws_id);
+    if (!ws || ws->tabs.size() <= 1) return;
+
+    // Find current position
+    int oldIndex = -1;
+    for (size_t i = 0; i < ws->tabs.size(); ++i) {
+        if (ws->tabs[i]->id == tab_id) {
+            oldIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    if (oldIndex < 0) return;
+
+    // Clamp newIndex
+    int maxIndex = static_cast<int>(ws->tabs.size()) - 1;
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex > maxIndex) newIndex = maxIndex;
+    if (newIndex == oldIndex) return;
+
+    // Move the tab
+    auto tab = std::move(ws->tabs[oldIndex]);
+    ws->tabs.erase(ws->tabs.begin() + oldIndex);
+    ws->tabs.insert(ws->tabs.begin() + newIndex, std::move(tab));
+
+    // Update active_tab_index to follow the active tab
+    if (ws->active_tab_index == static_cast<size_t>(oldIndex)) {
+        ws->active_tab_index = static_cast<size_t>(newIndex);
+    } else if (oldIndex < newIndex) {
+        if (ws->active_tab_index > static_cast<size_t>(oldIndex) &&
+            ws->active_tab_index <= static_cast<size_t>(newIndex)) {
+            ws->active_tab_index--;
+        }
+    } else {
+        if (ws->active_tab_index >= static_cast<size_t>(newIndex) &&
+            ws->active_tab_index < static_cast<size_t>(oldIndex)) {
+            ws->active_tab_index++;
+        }
+    }
+
+    fireOnChanged();
+}
+
 // --- Pane ---
 
 PaneId Mux::splitPane(WorkspaceId ws_id, TabId tab_id, PaneId pane_id,

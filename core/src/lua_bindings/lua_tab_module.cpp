@@ -105,6 +105,18 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
         [this](const std::string& process, const std::string& icon) {
             if (tabCtrl_) tabCtrl_->setProcessIcon(process, icon);
         });
+
+    // terminal.tab.move_left() -- move active tab one position to the left
+    tab.set_function("move_left",
+        [this]() {
+            if (tabCtrl_) tabCtrl_->moveTabLeft();
+        });
+
+    // terminal.tab.move_right() -- move active tab one position to the right
+    tab.set_function("move_right",
+        [this]() {
+            if (tabCtrl_) tabCtrl_->moveTabRight();
+        });
 }
 
 void LuaTabModule::clearCallbacks() {

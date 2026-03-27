@@ -15,10 +15,24 @@ using namespace termcore;
 class KeybindingTest : public ::testing::Test {
 protected:
     KeybindingManager mgr;
+
+    void SetUp() override {
+        // Simulate Lua keybindings.lua defaults for tests
+        auto b = [&](const std::string& trigger, Action action) {
+            mgr.bind(KeybindingManager::parseCombo(trigger), action);
+        };
+        std::string mod = PM;
+        b(mod + "+t", Action::NewTab);
+        b(mod + "+w", Action::CloseTab);
+        b(mod + "+shift+]", Action::NextTab);
+        b(mod + "+shift+[", Action::PrevTab);
+        b(mod + "+c", Action::Copy);
+        b(mod + "+v", Action::Paste);
+    }
 };
 
-// 1. Default bindings exist
-TEST_F(KeybindingTest, DefaultBindingsExist) {
+// 1. Bindings exist after setup
+TEST_F(KeybindingTest, BindingsExistAfterSetup) {
     EXPECT_GT(mgr.count(), 0u);
 }
 
@@ -101,13 +115,10 @@ TEST_F(KeybindingTest, LoadFromConfig) {
     EXPECT_EQ(mgr.lookup(combo2), Action::ResetTerminal);
 }
 
-// 13. resetDefaults -> restores defaults
+// 13. resetDefaults -> clears all bindings (defaults come from Lua)
 TEST_F(KeybindingTest, ResetDefaults) {
-    size_t defaultCount = mgr.count();
-    mgr.bind(KeybindingManager::parseCombo("ctrl+alt+z"), Action::NewWindow);
-    EXPECT_EQ(mgr.count(), defaultCount + 1);
     mgr.resetDefaults();
-    EXPECT_EQ(mgr.count(), defaultCount);
+    EXPECT_EQ(mgr.count(), 0u);
 }
 
 // 14. Override existing binding
@@ -224,14 +235,12 @@ TEST_F(KeybindingTest, LoadPresetWindowsTerminal) {
     EXPECT_EQ(mgr.lookup(comboS), Action::SplitRight);
 }
 
-// loadPreset: Default resets to initDefaults
+// loadPreset: Default clears bindings (Lua will repopulate)
 TEST_F(KeybindingTest, LoadPresetDefault) {
-    size_t defaultCount = mgr.count();
     mgr.loadPreset(KeymapPreset::Ghostty);
-    size_t ghosttyCount = mgr.count();
-    // May differ from default count
+    EXPECT_GT(mgr.count(), 0u);
     mgr.loadPreset(KeymapPreset::Default);
-    EXPECT_EQ(mgr.count(), defaultCount);
+    EXPECT_EQ(mgr.count(), 0u);
 }
 
 // loadPreset then loadFromConfig: custom overrides on top of preset
@@ -281,4 +290,11 @@ TEST_F(KeybindingTest, PresetResolvesProfileShortcuts) {
     EXPECT_EQ(mgr.lookup(combo), Action::NewTabProfile1);
     auto combo9 = KeybindingManager::parseCombo(std::string(PMS) + "+9");
     EXPECT_EQ(mgr.lookup(combo9), Action::NewTabProfile9);
+}
+
+// --- Tab move action tests ---
+
+TEST(ActionParseTest, MoveTabActions) {
+    EXPECT_EQ(KeybindingManager::parseAction("move_tab_left"), Action::MoveTabLeft);
+    EXPECT_EQ(KeybindingManager::parseAction("move_tab_right"), Action::MoveTabRight);
 }

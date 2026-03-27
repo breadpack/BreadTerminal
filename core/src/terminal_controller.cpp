@@ -40,6 +40,8 @@ static Action parseActionName(const std::string& name) {
         {"close_tab", Action::CloseTab},
         {"next_tab", Action::NextTab},
         {"prev_tab", Action::PrevTab},
+        {"move_tab_left", Action::MoveTabLeft},
+        {"move_tab_right", Action::MoveTabRight},
         {"split_right", Action::SplitRight},
         {"split_down", Action::SplitDown},
         {"close_pane", Action::ClosePane},
@@ -1024,6 +1026,14 @@ void TerminalController::handleAction(Action action) {
 
         case Action::PrevTab:
             if (tabCtrl_) { tabCtrl_->prevTab(); needsRender_ = true; }
+            break;
+
+        case Action::MoveTabLeft:
+            if (tabCtrl_) { tabCtrl_->moveTabLeft(); needsRender_ = true; }
+            break;
+
+        case Action::MoveTabRight:
+            if (tabCtrl_) { tabCtrl_->moveTabRight(); needsRender_ = true; }
             break;
 
         case Action::SwitchTab1: case Action::SwitchTab2: case Action::SwitchTab3:

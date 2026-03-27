@@ -8,6 +8,8 @@ terminal.keymap(mod .. "+t", "new_tab")
 terminal.keymap(mod .. "+w", "close_tab")
 terminal.keymap(mod .. "+shift+]", "next_tab")
 terminal.keymap(mod .. "+shift+[", "prev_tab")
+terminal.keymap(mod .. "+shift+left", "move_tab_left")
+terminal.keymap(mod .. "+shift+right", "move_tab_right")
 
 -- Pane
 terminal.keymap(mod .. "+d", "split_right")
