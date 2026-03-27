@@ -1,11 +1,18 @@
 #if defined(_WIN32)
 
 #include "D3DTextRendererImpl.h"
+#include <string>
 
 namespace termcore {
 
-// HLSL shader source — two-pass cell rendering (background + glyph + cursor).
-const char* kCellShaderSource = R"(
+// HLSL shader source — cell rendering with GPU box drawing and block elements.
+// Split into multiple string literals to stay under MSVC's 65535-byte limit.
+static std::string buildShaderSource();
+static std::string kShaderStorage = buildShaderSource();
+const char* kCellShaderSource = kShaderStorage.c_str();
+
+// Part 1: declarations, vertex shader, helpers
+static const char* kShaderPart1 = R"(
 cbuffer CellConstants : register(b0) {
     float2 viewport_size;
     float2 cell_size;
@@ -41,6 +48,9 @@ struct VS_OUTPUT {
     uint   extra_flags : BLENDINDICES1;
 };
 
+// Extract render mode from extra_flags bits 3-4
+uint getRenderMode(uint extra_flags) { return (extra_flags >> 3) & 0x3; }
+
 VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID) {
     VS_OUTPUT output;
 
@@ -54,8 +64,14 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
 
     bool is_bg = (cell.flags & 4u) != 0u;
     bool is_rounded = (cell.flags & 32u) != 0u;
+    uint render_mode = getRenderMode(cell.extra_flags);
 
-    float2 quad_size = is_bg ? cell_size : cell.atlas_size_px;
+    // GPU box/block drawing uses cell-sized quads with 0-1 UV
+    bool is_gpu_draw = (render_mode > 0u);
+
+    float2 quad_size = (is_bg || is_gpu_draw) ? cell_size : cell.atlas_size_px;
+    // For GPU draw, use atlas_size (which carries exact cell dimensions from CPU)
+    if (is_gpu_draw) quad_size = cell.atlas_size_px;
     float2 pixel_pos = cell.position + corner * quad_size;
 
     float2 ndc = (pixel_pos / viewport_size) * 2.0 - 1.0;
@@ -66,7 +82,13 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
     // Decode corner radius from upper 16 bits of extra_flags (fixed-point * 16)
     float radius = float(cell.extra_flags >> 16u) / 16.0;
 
-    if (is_rounded) {
+    if (is_gpu_draw) {
+        // Pass 0-1 UV for procedural rendering
+        output.texCoord = corner;
+        output.quad_size_px = quad_size;
+        // Pass codepoint as float bits via corner_radius (atlas_uv[0] holds codepoint bits)
+        output.corner_radius = cell.atlas_uv.x;
+    } else if (is_rounded) {
         // For rounded rects, pass normalized quad UV and pixel size
         output.texCoord = corner;
         output.quad_size_px = quad_size;
@@ -86,7 +108,1009 @@ VS_OUTPUT VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
     return output;
 }
 
+// SDF line segment: returns coverage for a line from start to end with given thickness
+float boxLine(float2 uv, float2 start, float2 end, float thickness) {
+    float2 d = end - start;
+    float t = saturate(dot(uv - start, d) / dot(d, d));
+    float dist = length(uv - (start + t * d));
+    return 1.0 - smoothstep(thickness * 0.5 - 0.007, thickness * 0.5 + 0.007, dist);
+}
+
+// SDF arc for rounded corners: quarter circle from startAngle
+float boxArc(float2 uv, float2 center, float radius, float thickness) {
+    float dist = abs(length(uv - center) - radius);
+    return 1.0 - smoothstep(thickness * 0.5 - 0.007, thickness * 0.5 + 0.007, dist);
+}
+)";
+
+// Part 2: renderBoxDrawing function
+static const char* kShaderPart2 = R"(
+float4 renderBoxDrawing(float2 uv, uint codepoint, float4 fg) {
+    float alpha = 0.0;
+    float t = 0.08;  // light line thickness (relative to cell)
+    float h = 0.16;  // heavy line thickness
+
+    // ── Light lines ──
+    // U+2500 ─ horizontal light
+    if (codepoint == 0x2500u) {
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), t);
+    }
+    // U+2501 ━ horizontal heavy
+    else if (codepoint == 0x2501u) {
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), h);
+    }
+    // U+2502 │ vertical light
+    else if (codepoint == 0x2502u) {
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), t);
+    }
+    // U+2503 ┃ vertical heavy
+    else if (codepoint == 0x2503u) {
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), h);
+    }
+
+    // ── Dashed lines ──
+    // U+2504 ┄ light triple dash horizontal
+    else if (codepoint == 0x2504u) {
+        float seg = frac(uv.x * 3.0);
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), t) * step(seg, 0.6);
+    }
+    // U+2505 ┅ heavy triple dash horizontal
+    else if (codepoint == 0x2505u) {
+        float seg = frac(uv.x * 3.0);
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), h) * step(seg, 0.6);
+    }
+    // U+2506 ┆ light triple dash vertical
+    else if (codepoint == 0x2506u) {
+        float seg = frac(uv.y * 3.0);
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), t) * step(seg, 0.6);
+    }
+    // U+2507 ┇ heavy triple dash vertical
+    else if (codepoint == 0x2507u) {
+        float seg = frac(uv.y * 3.0);
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), h) * step(seg, 0.6);
+    }
+    // U+2508 ┈ light quadruple dash horizontal
+    else if (codepoint == 0x2508u) {
+        float seg = frac(uv.x * 4.0);
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), t) * step(seg, 0.5);
+    }
+    // U+2509 ┉ heavy quadruple dash horizontal
+    else if (codepoint == 0x2509u) {
+        float seg = frac(uv.x * 4.0);
+        alpha = boxLine(uv, float2(0, 0.5), float2(1, 0.5), h) * step(seg, 0.5);
+    }
+    // U+250A ┊ light quadruple dash vertical
+    else if (codepoint == 0x250Au) {
+        float seg = frac(uv.y * 4.0);
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), t) * step(seg, 0.5);
+    }
+    // U+250B ┋ heavy quadruple dash vertical
+    else if (codepoint == 0x250Bu) {
+        float seg = frac(uv.y * 4.0);
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 1), h) * step(seg, 0.5);
+    }
+
+    // ── Corner pieces (light) ──
+    // U+250C ┌ down and right
+    else if (codepoint == 0x250Cu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+250D ┍ down light and right heavy
+    else if (codepoint == 0x250Du) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+250E ┎ down heavy and right light
+    else if (codepoint == 0x250Eu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+250F ┏ heavy down and right
+    else if (codepoint == 0x250Fu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2510 ┐ down and left
+    else if (codepoint == 0x2510u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2511 ┑ down light and left heavy
+    else if (codepoint == 0x2511u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2512 ┒ down heavy and left light
+    else if (codepoint == 0x2512u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2513 ┓ heavy down and left
+    else if (codepoint == 0x2513u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2514 └ up and right
+    else if (codepoint == 0x2514u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2515 ┕ up light and right heavy
+    else if (codepoint == 0x2515u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2516 ┖ up heavy and right light
+    else if (codepoint == 0x2516u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+2517 ┗ heavy up and right
+    else if (codepoint == 0x2517u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+2518 ┘ up and left
+    else if (codepoint == 0x2518u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2519 ┙ up light and left heavy
+    else if (codepoint == 0x2519u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+251A ┚ up heavy and left light
+    else if (codepoint == 0x251Au) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+251B ┛ heavy up and left
+    else if (codepoint == 0x251Bu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+
+    // ── T-pieces (light) ──
+    // U+251C ├ vertical light and right
+    else if (codepoint == 0x251Cu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+251D ┝ vertical light and right heavy
+    else if (codepoint == 0x251Du) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h));
+    }
+    // U+251E ┞ up heavy and right down light
+    else if (codepoint == 0x251Eu) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+251F ┟ down heavy and right up light
+    else if (codepoint == 0x251Fu) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+2520 ┠ vertical heavy and right light
+    else if (codepoint == 0x2520u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+2521 ┡ down light and right up heavy
+    else if (codepoint == 0x2521u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h));
+    }
+    // U+2522 ┢ up light and right down heavy
+    else if (codepoint == 0x2522u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h));
+    }
+    // U+2523 ┣ heavy vertical and right
+    else if (codepoint == 0x2523u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h));
+    }
+)";
+
+// Part 2a2: renderBoxDrawing continued (left T-pieces, top/bottom T, cross)
+static const char* kShaderPart2a2 = R"(
+    // U+2524 vertical light and left
+    else if (codepoint == 0x2524u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2525 ┥ vertical light and left heavy
+    else if (codepoint == 0x2525u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h));
+    }
+    // U+2526 ┦ up heavy and left down light
+    else if (codepoint == 0x2526u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2527 ┧ down heavy and left up light
+    else if (codepoint == 0x2527u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2528 ┨ vertical heavy and left light
+    else if (codepoint == 0x2528u) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2529 ┩ down light and left up heavy
+    else if (codepoint == 0x2529u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h));
+    }
+    // U+252A ┪ up light and left down heavy
+    else if (codepoint == 0x252Au) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h));
+    }
+    // U+252B ┫ heavy vertical and left
+    else if (codepoint == 0x252Bu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h));
+    }
+
+    // ── Top T-pieces ──
+    // U+252C ┬ light down and horizontal
+    else if (codepoint == 0x252Cu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+252D ┭ left heavy and right down light
+    else if (codepoint == 0x252Du) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+252E ┮ right heavy and left down light
+    else if (codepoint == 0x252Eu) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+252F ┯ down light and horizontal heavy
+    else if (codepoint == 0x252Fu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2530 ┰ down heavy and horizontal light
+    else if (codepoint == 0x2530u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2531 ┱ right light and left down heavy
+    else if (codepoint == 0x2531u) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2532 ┲ left light and right down heavy
+    else if (codepoint == 0x2532u) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+2533 ┳ heavy down and horizontal
+    else if (codepoint == 0x2533u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+
+    // ── Bottom T-pieces ──
+    // U+2534 ┴ light up and horizontal
+    else if (codepoint == 0x2534u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2535 ┵ left heavy and right up light
+    else if (codepoint == 0x2535u) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2536 ┶ right heavy and left up light
+    else if (codepoint == 0x2536u) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2537 ┷ up light and horizontal heavy
+    else if (codepoint == 0x2537u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2538 ┸ up heavy and horizontal light
+    else if (codepoint == 0x2538u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+2539 ┹ right light and left up heavy
+    else if (codepoint == 0x2539u) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+253A ┺ left light and right up heavy
+    else if (codepoint == 0x253Au) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+    // U+253B ┻ heavy up and horizontal
+    else if (codepoint == 0x253Bu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h));
+    }
+
+    // ── Cross pieces ──
+    // U+253C ┼ light vertical and horizontal
+    else if (codepoint == 0x253Cu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t));
+    }
+    // U+253D ┽ left heavy and right vertical light
+    else if (codepoint == 0x253Du) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t));
+    }
+    // U+253E ┾ right heavy and left vertical light
+    else if (codepoint == 0x253Eu) {
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t));
+    }
+    // U+253F ┿ vertical light and horizontal heavy
+    else if (codepoint == 0x253Fu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t));
+    }
+    // U+2540 ╀ up heavy and down horizontal light
+    else if (codepoint == 0x2540u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t));
+    }
+    // U+2541 ╁ down heavy and up horizontal light
+    else if (codepoint == 0x2541u) {
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h)),
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t));
+    }
+    // U+2542 ╂ vertical heavy and horizontal light
+    else if (codepoint == 0x2542u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h));
+    }
+    // U+254B ╋ heavy vertical and horizontal
+    else if (codepoint == 0x254Bu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), h),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), h));
+    }
+
+)";
+
+// Part 2b: renderBoxDrawing continued (double lines, rounded, diagonal, half)
+static const char* kShaderPart2b = R"(
+    // Double lines
+    // U+2550 double horizontal
+    else if (codepoint == 0x2550u) {
+        float gap = 0.06;
+        alpha = max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(1, 0.5 + gap), t));
+    }
+    // U+2551 ║ double vertical
+    else if (codepoint == 0x2551u) {
+        float gap = 0.06;
+        alpha = max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 1), t));
+    }
+    // U+2552 ╒ down single and right double
+    else if (codepoint == 0x2552u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0.5, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2553 ╓ down double and right single
+    else if (codepoint == 0x2553u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0.5), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0.5), float2(0.5 + gap, 1), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+2554 ╔ double down and right
+    else if (codepoint == 0x2554u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0.5 - gap, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 - gap, 0.5 - gap), float2(0.5 - gap, 1), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(0.5 + gap, 1), t));
+    }
+    // U+2555 ╕ down single and left double
+    else if (codepoint == 0x2555u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2556 ╖ down double and left single
+    else if (codepoint == 0x2556u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0.5), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0.5), float2(0.5 + gap, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2557 ╗ double down and left
+    else if (codepoint == 0x2557u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5 + gap, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5 - gap, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 - gap, 0.5 + gap), float2(0.5 - gap, 1), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5 - gap), float2(0.5 + gap, 1), t));
+    }
+    // U+2558 ╘ up single and right double
+    else if (codepoint == 0x2558u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0.5, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2559 ╙ up double and right single
+    else if (codepoint == 0x2559u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+255A ╚ double up and right
+    else if (codepoint == 0x255Au) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0.5 + gap, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 - gap, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5 - gap), t));
+    }
+    // U+255B ╛ up single and left double
+    else if (codepoint == 0x255Bu) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+255C ╜ up double and left single
+    else if (codepoint == 0x255Cu) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5), t)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+255D ╝ double up and left
+    else if (codepoint == 0x255Du) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5 - gap, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5 + gap, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5 - gap), t)),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5 + gap), t));
+    }
+    // U+255E ╞ vertical single and right double
+    else if (codepoint == 0x255Eu) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0.5, 0.5 - gap), float2(1, 0.5 - gap), t)),
+            boxLine(uv, float2(0.5, 0.5 + gap), float2(1, 0.5 + gap), t));
+    }
+    // U+255F ╟ vertical double and right single
+    else if (codepoint == 0x255Fu) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 1), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+2560 ╠ double vertical and right
+    else if (codepoint == 0x2560u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5 - gap), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(0.5 + gap, 1), t)),
+            max(boxLine(uv, float2(0.5 + gap, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(1, 0.5 + gap), t)));
+    }
+    // U+2561 ╡ vertical single and left double
+    else if (codepoint == 0x2561u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t),
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5, 0.5 - gap), t)),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5, 0.5 + gap), t));
+    }
+    // U+2562 ╢ vertical double and left single
+    else if (codepoint == 0x2562u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t));
+    }
+    // U+2563 ╣ double vertical and left
+    else if (codepoint == 0x2563u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 1), t),
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5 - gap), t)),
+            boxLine(uv, float2(0.5 - gap, 0.5 + gap), float2(0.5 - gap, 1), t)),
+            max(boxLine(uv, float2(0, 0.5 - gap), float2(0.5 - gap, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5 - gap, 0.5 + gap), t)));
+    }
+    // U+2564 ╤ down single and horizontal double
+    else if (codepoint == 0x2564u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+    // U+2565 ╥ down double and horizontal single
+    else if (codepoint == 0x2565u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5 - gap, 0.5), float2(0.5 - gap, 1), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5), float2(0.5 + gap, 1), t));
+    }
+    // U+2566 ╦ double down and horizontal
+    else if (codepoint == 0x2566u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(0.5 - gap, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            max(boxLine(uv, float2(0.5 - gap, 0.5 + gap), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(0.5 + gap, 1), t)));
+    }
+    // U+2567 ╧ up single and horizontal double
+    else if (codepoint == 0x2567u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t));
+    }
+    // U+2568 ╨ up double and horizontal single
+    else if (codepoint == 0x2568u) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t),
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5), t)),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5), t));
+    }
+    // U+2569 ╩ double up and horizontal
+    else if (codepoint == 0x2569u) {
+        float gap = 0.06;
+        alpha = max(max(max(
+            boxLine(uv, float2(0, 0.5 + gap), float2(1, 0.5 + gap), t),
+            boxLine(uv, float2(0, 0.5 - gap), float2(0.5 - gap, 0.5 - gap), t)),
+            boxLine(uv, float2(0.5 + gap, 0.5 - gap), float2(1, 0.5 - gap), t)),
+            max(boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5 - gap), t)));
+    }
+    // U+256A ╪ vertical single and horizontal double
+    else if (codepoint == 0x256Au) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0, 0.5 - gap), float2(1, 0.5 - gap), t),
+            boxLine(uv, float2(0, 0.5 + gap), float2(1, 0.5 + gap), t)),
+            boxLine(uv, float2(0.5, 0), float2(0.5, 1), t));
+    }
+    // U+256B ╫ vertical double and horizontal single
+    else if (codepoint == 0x256Bu) {
+        float gap = 0.06;
+        alpha = max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 1), t)),
+            boxLine(uv, float2(0, 0.5), float2(1, 0.5), t));
+    }
+    // U+256C ╬ double vertical and horizontal
+    else if (codepoint == 0x256Cu) {
+        float gap = 0.06;
+        alpha = max(max(max(max(
+            boxLine(uv, float2(0.5 - gap, 0), float2(0.5 - gap, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 + gap, 0), float2(0.5 + gap, 0.5 - gap), t)),
+            max(boxLine(uv, float2(0.5 - gap, 0.5 + gap), float2(0.5 - gap, 1), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(0.5 + gap, 1), t))),
+            max(boxLine(uv, float2(0, 0.5 - gap), float2(0.5 - gap, 0.5 - gap), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 - gap), float2(1, 0.5 - gap), t))),
+            max(boxLine(uv, float2(0, 0.5 + gap), float2(0.5 - gap, 0.5 + gap), t),
+            boxLine(uv, float2(0.5 + gap, 0.5 + gap), float2(1, 0.5 + gap), t)));
+    }
+
+    // ── Rounded corners ──
+    // U+256D ╭ arc down and right
+    else if (codepoint == 0x256Du) {
+        alpha = max(
+            boxArc(uv, float2(1, 1), 0.5, t),
+            0.0) * step(uv.x, 1.0) * step(uv.y, 1.0) * step(0.5, uv.x) * step(0.5, uv.y);
+        // Add straight extensions
+        alpha = max(alpha, boxLine(uv, float2(0.5, 1), float2(0.5, 1), t));
+    }
+    // U+256E ╮ arc down and left
+    else if (codepoint == 0x256Eu) {
+        alpha = boxArc(uv, float2(0, 1), 0.5, t)
+              * step(0.0, uv.x) * step(uv.x, 0.5) * step(0.5, uv.y);
+    }
+    // U+256F ╯ arc up and left
+    else if (codepoint == 0x256Fu) {
+        alpha = boxArc(uv, float2(0, 0), 0.5, t)
+              * step(0.0, uv.x) * step(uv.x, 0.5) * step(0.0, uv.y) * step(uv.y, 0.5);
+    }
+    // U+2570 ╰ arc up and right
+    else if (codepoint == 0x2570u) {
+        alpha = boxArc(uv, float2(1, 0), 0.5, t)
+              * step(0.5, uv.x) * step(uv.y, 0.5);
+    }
+
+    // ── Diagonal lines ──
+    // U+2571 ╱ diagonal upper right to lower left
+    else if (codepoint == 0x2571u) {
+        alpha = boxLine(uv, float2(1, 0), float2(0, 1), t);
+    }
+    // U+2572 ╲ diagonal upper left to lower right
+    else if (codepoint == 0x2572u) {
+        alpha = boxLine(uv, float2(0, 0), float2(1, 1), t);
+    }
+    // U+2573 ╳ diagonal cross
+    else if (codepoint == 0x2573u) {
+        alpha = max(
+            boxLine(uv, float2(0, 0), float2(1, 1), t),
+            boxLine(uv, float2(1, 0), float2(0, 1), t));
+    }
+
+    // ── Half lines ──
+    // U+2574 ╴ light left
+    else if (codepoint == 0x2574u) {
+        alpha = boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t);
+    }
+    // U+2575 ╵ light up
+    else if (codepoint == 0x2575u) {
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t);
+    }
+    // U+2576 ╶ light right
+    else if (codepoint == 0x2576u) {
+        alpha = boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t);
+    }
+    // U+2577 ╷ light down
+    else if (codepoint == 0x2577u) {
+        alpha = boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t);
+    }
+    // U+2578 ╸ heavy left
+    else if (codepoint == 0x2578u) {
+        alpha = boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h);
+    }
+    // U+2579 ╹ heavy up
+    else if (codepoint == 0x2579u) {
+        alpha = boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h);
+    }
+    // U+257A ╺ heavy right
+    else if (codepoint == 0x257Au) {
+        alpha = boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h);
+    }
+    // U+257B ╻ heavy down
+    else if (codepoint == 0x257Bu) {
+        alpha = boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h);
+    }
+    // U+257C ╼ light left and heavy right
+    else if (codepoint == 0x257Cu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), h));
+    }
+    // U+257D ╽ light up and heavy down
+    else if (codepoint == 0x257Du) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), t),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), h));
+    }
+    // U+257E ╾ heavy left and light right
+    else if (codepoint == 0x257Eu) {
+        alpha = max(
+            boxLine(uv, float2(0, 0.5), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(1, 0.5), t));
+    }
+    // U+257F ╿ heavy up and light down
+    else if (codepoint == 0x257Fu) {
+        alpha = max(
+            boxLine(uv, float2(0.5, 0), float2(0.5, 0.5), h),
+            boxLine(uv, float2(0.5, 0.5), float2(0.5, 1), t));
+    }
+
+    return float4(fg.rgb * alpha, fg.a * alpha);
+}
+)";
+
+// Part 3: renderBlockElement function
+static const char* kShaderPart3 = R"(
+float4 renderBlockElement(float2 uv, uint codepoint, float4 fg) {
+    // U+2580 upper half block
+    if (codepoint == 0x2580u) {
+        float a = 1.0 - smoothstep(0.49, 0.51, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2581 ▁ lower one eighth block
+    else if (codepoint == 0x2581u) {
+        float a = smoothstep(0.865, 0.885, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2582 ▂ lower one quarter block
+    else if (codepoint == 0x2582u) {
+        float a = smoothstep(0.74, 0.76, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2583 ▃ lower three eighths block
+    else if (codepoint == 0x2583u) {
+        float a = smoothstep(0.615, 0.635, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2584 ▄ lower half block
+    else if (codepoint == 0x2584u) {
+        float a = smoothstep(0.49, 0.51, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2585 ▅ lower five eighths block
+    else if (codepoint == 0x2585u) {
+        float a = smoothstep(0.365, 0.385, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2586 ▆ lower three quarters block
+    else if (codepoint == 0x2586u) {
+        float a = smoothstep(0.24, 0.26, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2587 ▇ lower seven eighths block
+    else if (codepoint == 0x2587u) {
+        float a = smoothstep(0.115, 0.135, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2588 █ full block
+    else if (codepoint == 0x2588u) {
+        return float4(fg.rgb * fg.a, fg.a);
+    }
+    // U+2589 ▉ left seven eighths block
+    else if (codepoint == 0x2589u) {
+        float a = 1.0 - smoothstep(0.865, 0.885, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258A ▊ left three quarters block
+    else if (codepoint == 0x258Au) {
+        float a = 1.0 - smoothstep(0.74, 0.76, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258B ▋ left five eighths block
+    else if (codepoint == 0x258Bu) {
+        float a = 1.0 - smoothstep(0.615, 0.635, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258C ▌ left half block
+    else if (codepoint == 0x258Cu) {
+        float a = 1.0 - smoothstep(0.49, 0.51, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258D ▍ left three eighths block
+    else if (codepoint == 0x258Du) {
+        float a = 1.0 - smoothstep(0.365, 0.385, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258E ▎ left one quarter block
+    else if (codepoint == 0x258Eu) {
+        float a = 1.0 - smoothstep(0.24, 0.26, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+258F ▏ left one eighth block
+    else if (codepoint == 0x258Fu) {
+        float a = 1.0 - smoothstep(0.115, 0.135, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2590 ▐ right half block
+    else if (codepoint == 0x2590u) {
+        float a = smoothstep(0.49, 0.51, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2591 ░ light shade (25%)
+    else if (codepoint == 0x2591u) {
+        return float4(fg.rgb * 0.25, fg.a * 0.25);
+    }
+    // U+2592 ▒ medium shade (50%)
+    else if (codepoint == 0x2592u) {
+        return float4(fg.rgb * 0.5, fg.a * 0.5);
+    }
+    // U+2593 ▓ dark shade (75%)
+    else if (codepoint == 0x2593u) {
+        return float4(fg.rgb * 0.75, fg.a * 0.75);
+    }
+    // U+2594 ▔ upper one eighth block
+    else if (codepoint == 0x2594u) {
+        float a = 1.0 - smoothstep(0.115, 0.135, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2595 ▕ right one eighth block
+    else if (codepoint == 0x2595u) {
+        float a = smoothstep(0.865, 0.885, uv.x);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2596 ▖ quadrant lower left
+    else if (codepoint == 0x2596u) {
+        float a = (1.0 - smoothstep(0.49, 0.51, uv.x)) * smoothstep(0.49, 0.51, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2597 ▗ quadrant lower right
+    else if (codepoint == 0x2597u) {
+        float a = smoothstep(0.49, 0.51, uv.x) * smoothstep(0.49, 0.51, uv.y);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2598 ▘ quadrant upper left
+    else if (codepoint == 0x2598u) {
+        float a = (1.0 - smoothstep(0.49, 0.51, uv.x)) * (1.0 - smoothstep(0.49, 0.51, uv.y));
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+2599 ▙ quadrant upper left and lower left and lower right
+    else if (codepoint == 0x2599u) {
+        float left = 1.0 - smoothstep(0.49, 0.51, uv.x);
+        float top = 1.0 - smoothstep(0.49, 0.51, uv.y);
+        float bot = smoothstep(0.49, 0.51, uv.y);
+        float a = max(left * top, bot);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259A ▚ quadrant upper left and lower right
+    else if (codepoint == 0x259Au) {
+        float ul = (1.0 - smoothstep(0.49, 0.51, uv.x)) * (1.0 - smoothstep(0.49, 0.51, uv.y));
+        float lr = smoothstep(0.49, 0.51, uv.x) * smoothstep(0.49, 0.51, uv.y);
+        float a = max(ul, lr);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259B ▛ quadrant upper left and upper right and lower left
+    else if (codepoint == 0x259Bu) {
+        float left = 1.0 - smoothstep(0.49, 0.51, uv.x);
+        float top = 1.0 - smoothstep(0.49, 0.51, uv.y);
+        float a = max(top, left);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259C ▜ quadrant upper left and upper right and lower right
+    else if (codepoint == 0x259Cu) {
+        float right = smoothstep(0.49, 0.51, uv.x);
+        float top = 1.0 - smoothstep(0.49, 0.51, uv.y);
+        float a = max(top, right);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259D ▝ quadrant upper right
+    else if (codepoint == 0x259Du) {
+        float a = smoothstep(0.49, 0.51, uv.x) * (1.0 - smoothstep(0.49, 0.51, uv.y));
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259E ▞ quadrant upper right and lower left
+    else if (codepoint == 0x259Eu) {
+        float ur = smoothstep(0.49, 0.51, uv.x) * (1.0 - smoothstep(0.49, 0.51, uv.y));
+        float ll = (1.0 - smoothstep(0.49, 0.51, uv.x)) * smoothstep(0.49, 0.51, uv.y);
+        float a = max(ur, ll);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+    // U+259F ▟ quadrant upper right and lower left and lower right
+    else if (codepoint == 0x259Fu) {
+        float right = smoothstep(0.49, 0.51, uv.x);
+        float bot = smoothstep(0.49, 0.51, uv.y);
+        float a = max(right, bot);
+        return float4(fg.rgb * a, fg.a * a);
+    }
+
+    return float4(0, 0, 0, 0);
+}
+)";
+
+// Part 4: PSMain function
+static const char* kShaderPart4 = R"(
 float4 PSMain(VS_OUTPUT input) : SV_Target {
+    // Early check: GPU box drawing / block element rendering
+    uint render_mode = getRenderMode(input.extra_flags);
+    if (render_mode == 1u) {
+        // Box drawing: codepoint passed as float bits via corner_radius
+        float2 cell_uv = input.texCoord;
+        uint codepoint = asuint(input.corner_radius);
+        return renderBoxDrawing(cell_uv, codepoint, input.fg_color);
+    }
+    if (render_mode == 2u) {
+        // Block element: codepoint passed as float bits via corner_radius
+        float2 cell_uv = input.texCoord;
+        uint codepoint = asuint(input.corner_radius);
+        return renderBlockElement(cell_uv, codepoint, input.fg_color);
+    }
+
     bool is_bg     = (input.flags & 4u) != 0u;
     bool has_glyph = (input.flags & 1u) != 0u;
     bool is_color  = (input.flags & 2u) != 0u;
@@ -163,6 +1187,17 @@ float4 PSMain(VS_OUTPUT input) : SV_Target {
     return color;
 }
 )";
+
+static std::string buildShaderSource() {
+    std::string s;
+    s += kShaderPart1;
+    s += kShaderPart2;
+    s += kShaderPart2a2;
+    s += kShaderPart2b;
+    s += kShaderPart3;
+    s += kShaderPart4;
+    return s;
+}
 
 // --- Impl: shader/resource setup ---
 

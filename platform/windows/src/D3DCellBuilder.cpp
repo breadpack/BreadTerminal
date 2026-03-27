@@ -5,6 +5,7 @@
 #include "termcore/font/unicode_width.h"
 #include "termcore/kitty_unicode_placeholder.h"
 #include <cmath>
+#include <cstring>
 
 namespace termcore {
 
@@ -376,8 +377,63 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             bool isBoxDrawing = !isPowerline && is_box_drawing(cp);
 
             if (isBoxDrawing) {
-                // Render box bitmap at ceil() dimensions so it covers the full cell,
-                // then set quad size to exact cell dimensions to eliminate gaps.
+                // GPU path for box drawing (U+2500-257F) and block elements (U+2580-259F)
+                bool isGpuBoxDraw = (cp >= 0x2500 && cp <= 0x257F);
+                bool isGpuBlock   = (cp >= 0x2580 && cp <= 0x259F);
+
+                if (isGpuBoxDraw || isGpuBlock) {
+                    // Render in pixel shader — no atlas needed
+                    uint32_t render_mode = isGpuBlock ? 2u : 1u;
+                    D3DCellInstance inst = {};
+                    inst.position[0] = col * cellW + gridOffsetX;
+                    inst.position[1] = row * cellH + gridOffsetY;
+
+                    // Pass codepoint as float bits via atlas_uv[0]
+                    // (VS forwards this to corner_radius for PS to read)
+                    uint32_t cpVal = static_cast<uint32_t>(cp);
+                    float cpAsFloat;
+                    memcpy(&cpAsFloat, &cpVal, sizeof(float));
+                    inst.atlas_uv[0] = cpAsFloat;
+                    inst.atlas_uv[1] = 0.0f;
+
+                    // Cell dimensions as quad size
+                    inst.atlas_size[0] = cellW;
+                    inst.atlas_size[1] = cellH;
+
+                    colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                    colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+                    if (cell.attributes & AttrInverse) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    if (isCellSelected(row, col)) {
+                        std::swap(inst.fg_color[0], inst.bg_color[0]);
+                        std::swap(inst.fg_color[1], inst.bg_color[1]);
+                        std::swap(inst.fg_color[2], inst.bg_color[2]);
+                        std::swap(inst.fg_color[3], inst.bg_color[3]);
+                    }
+                    if (cell.attributes & AttrDim) {
+                        inst.fg_color[0] *= 0.5f;
+                        inst.fg_color[1] *= 0.5f;
+                        inst.fg_color[2] *= 0.5f;
+                    }
+
+                    int sht2 = searchHighlightType(row, col);
+                    if (sht2 > 0) {
+                        inst.fg_color[0] = 0.0f; inst.fg_color[1] = 0.0f;
+                        inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
+                    }
+
+                    inst.flags = 1;  // has_glyph
+                    // Set render_mode in bits 3-4 of extra_flags
+                    inst.extra_flags = (render_mode << 3);
+                    cellInstances.push_back(inst);
+                    continue;
+                }
+
+                // CPU fallback path for Braille and other non-GPU box drawing chars
                 int bitmapW = static_cast<int>(std::ceil(cellW));
                 int bitmapH = static_cast<int>(std::ceil(cellH));
                 GlyphKey boxKey{kInvalidFontFace, static_cast<uint32_t>(cp), {0, 0}};
@@ -411,7 +467,6 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                     inst.position[1] = row * cellH + gridOffsetY;
                     inst.atlas_uv[0] = static_cast<float>(boxInfo->region.x);
                     inst.atlas_uv[1] = static_cast<float>(boxInfo->region.y);
-                    // Use exact cell dimensions for quad size so box lines fill cells seamlessly
                     inst.atlas_size[0] = cellW;
                     inst.atlas_size[1] = cellH;
 
@@ -563,7 +618,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 float glyphH = inst.atlas_size[1];
 
                 if (glyphW > maxW || glyphH > maxH) {
-                    float scale = std::min(maxW / glyphW, maxH / glyphH);
+                    float scale = (std::min)(maxW / glyphW, maxH / glyphH);
                     float scaledW = glyphW * scale;
                     float scaledH = glyphH * scale;
                     // Adjust displayed size while keeping atlas UV the same

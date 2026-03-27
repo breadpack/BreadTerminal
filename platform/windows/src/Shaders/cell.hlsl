@@ -1,8 +1,9 @@
 // BreadTerminal - D3D11 cell rendering shader
 // Vertex shader maps pixel coords to NDC.
-// Pixel shader samples atlas texture and blends with cell colors.
+// Pixel shader samples atlas texture, renders GPU box drawing/block elements,
+// and blends with cell colors.
 // NOTE: This file is a reference copy. The actual shader source is
-//       embedded in D3DTextRenderer.cpp as kCellShaderSource.
+//       embedded in D3DTextRenderer.cpp as kCellShaderSource (split into parts).
 
 cbuffer CellConstants : register(b0) {
     float2 viewport_size;   // Window dimensions in pixels
@@ -25,7 +26,7 @@ struct CellInstance {
     float4 fg_color;        // Foreground RGBA (0-1)
     float4 bg_color;        // Background RGBA (0-1)
     uint   flags;           // bit0=has_glyph, bit1=is_color, bit2=is_bg_pass, bit3=is_cursor, bit4=is_underline, bit5=is_rounded_rect_top
-    uint   extra_flags;     // bits 0-2: underline_style; bits 16-31: corner_radius * 16 (fixed-point)
+    uint   extra_flags;     // bits 0-2: underline_style; bits 3-4: render_mode (0=normal,1=box,2=block); bits 16-31: corner_radius * 16
 };
 
 StructuredBuffer<CellInstance> cells : register(t2);
