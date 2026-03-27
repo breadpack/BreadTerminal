@@ -17,6 +17,8 @@ struct GlyphInfo {
     float advance_x;          // Horizontal advance in pixels
     float advance_y;          // Vertical advance in pixels
     bool is_color;            // Whether this is a color (emoji) glyph
+    uint32_t last_used_generation = 0;  // Generation when last accessed
+    bool needs_rerasterize = false;     // True after atlas reset (region is stale)
 };
 
 /// LRU glyph cache with atlas integration.
@@ -55,10 +57,18 @@ public:
     uint64_t misses() const { return misses_; }
     void resetStats() { hits_ = 0; misses_ = 0; }
 
+    /// Current generation (incremented on atlas compaction).
+    uint32_t generation() const { return current_generation_; }
+
 private:
     void evict();  // Remove least recently used entry
 
+    /// Generation-based compaction: evict old entries and mark survivors
+    /// as needing re-rasterization (their atlas regions are stale).
+    void compactForAtlasReset();
+
     size_t max_entries_;
+    uint32_t current_generation_ = 0;
 
     // LRU list: front = most recently used, back = least recently used
     using LruList = std::list<std::pair<GlyphKey, GlyphInfo>>;

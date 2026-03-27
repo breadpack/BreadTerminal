@@ -12,10 +12,20 @@ std::optional<GlyphInfo> GlyphCache::get(const GlyphKey& key) {
         return std::nullopt;
     }
 
+    auto& info = it->second->second;
+
+    // If entry needs re-rasterization (atlas was reset), treat as miss
+    // so caller goes through getOrRasterize path
+    if (info.needs_rerasterize) {
+        ++misses_;
+        return std::nullopt;
+    }
+
     // Move to front of LRU list (most recently used)
     lru_list_.splice(lru_list_.begin(), lru_list_, it->second);
+    info.last_used_generation = current_generation_;
     ++hits_;
-    return it->second->second;
+    return info;
 }
 
 void GlyphCache::put(const GlyphKey& key, const GlyphInfo& info) {
@@ -23,6 +33,8 @@ void GlyphCache::put(const GlyphKey& key, const GlyphInfo& info) {
     if (it != cache_.end()) {
         // Update existing entry and move to front
         it->second->second = info;
+        it->second->second.last_used_generation = current_generation_;
+        it->second->second.needs_rerasterize = false;
         lru_list_.splice(lru_list_.begin(), lru_list_, it->second);
         return;
     }
@@ -32,8 +44,11 @@ void GlyphCache::put(const GlyphKey& key, const GlyphInfo& info) {
         evict();
     }
 
-    // Insert at front
-    lru_list_.emplace_front(key, info);
+    // Insert at front with current generation
+    GlyphInfo stamped = info;
+    stamped.last_used_generation = current_generation_;
+    stamped.needs_rerasterize = false;
+    lru_list_.emplace_front(key, stamped);
     cache_[key] = lru_list_.begin();
 }
 
@@ -49,7 +64,7 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
         return cached;
     }
 
-    // Cache miss — rasterize
+    // Cache miss or stale entry — rasterize
     RasterizedGlyph rasterized = rasterizer.rasterize(
         key.face_id, key.glyph_index, size, key.subpixel);
 
@@ -57,9 +72,11 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
     bool atlas_was_reset = false;
     auto region = atlas.pack(rasterized, &atlas_was_reset);
 
-    // If atlas was reset, all cached UV references are stale — clear everything
+    // If atlas was reset, use generation-based compaction instead of full clear.
+    // This evicts old entries and marks recently-used ones for re-rasterization,
+    // avoiding a full cache rebuild stall.
     if (atlas_was_reset) {
-        clear();
+        compactForAtlasReset();
     }
 
     if (!region.has_value()) {
@@ -74,6 +91,8 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
     info.advance_x = static_cast<float>(rasterized.bearing_x + rasterized.width);
     info.advance_y = 0.0f;
     info.is_color = rasterizer.isColorGlyph(key.face_id, key.glyph_index);
+    info.last_used_generation = current_generation_;
+    info.needs_rerasterize = false;
 
     put(key, info);
     return info;
@@ -114,6 +133,27 @@ void GlyphCache::evict() {
     cache_.erase(back.first);
     // Remove from LRU list
     lru_list_.pop_back();
+}
+
+void GlyphCache::compactForAtlasReset() {
+    ++current_generation_;
+
+    // Remove entries not used in the previous generation (old glyphs).
+    // Keep entries from current_generation_ - 1 or later (recently used).
+    // Since we just incremented, recently-used means generation >= current_generation_ - 1.
+    auto it = lru_list_.begin();
+    while (it != lru_list_.end()) {
+        auto& info = it->second;
+        if (info.last_used_generation + 1 < current_generation_) {
+            // Old entry — evict completely
+            cache_.erase(it->first);
+            it = lru_list_.erase(it);
+        } else {
+            // Recent entry — mark as needing re-rasterization since atlas region is stale
+            info.needs_rerasterize = true;
+            ++it;
+        }
+    }
 }
 
 } // namespace termcore
