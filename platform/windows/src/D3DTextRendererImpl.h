@@ -7,6 +7,7 @@
 #include "D3DAtlasUploader.h"
 #include "D3DImageRenderer.h"
 #include "termcore/dynamic_colors.h"
+#include "termcore/font/ligature.h"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -92,6 +93,10 @@ struct D3DTextRenderer::Impl {
         int col = -1;      // starting column
     };
     GhostText ghostText;
+
+    // Font ligatures
+    bool fontLigatures = true;
+    LigatureDetector ligatureDetector;
 
     // Shaders
     ID3D11VertexShader* vertexShader = nullptr;

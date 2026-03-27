@@ -473,4 +473,9 @@ void GLTextRenderer::setGhostText(const std::string& text, int row, int col) {
     impl_->contentDirty = true;
 }
 
+void GLTextRenderer::setFontLigatures(bool enabled) {
+    impl_->fontLigatures = enabled;
+    impl_->contentDirty = true;
+}
+
 } // namespace termcore

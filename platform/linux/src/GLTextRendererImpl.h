@@ -4,6 +4,7 @@
 #include "GLTextRenderer.h"
 #include "GLAtlasUploader.h"
 #include "termcore/dynamic_colors.h"
+#include "termcore/font/ligature.h"
 
 #include <epoxy/gl.h>
 #include <cstring>
@@ -81,6 +82,10 @@ struct GLTextRenderer::Impl {
         int col = -1;      // starting column
     };
     GhostText ghostText;
+
+    // Font ligatures
+    bool fontLigatures = true;
+    LigatureDetector ligatureDetector;
 
     // Font stack (not owned)
     FontCollection* fontCollection = nullptr;

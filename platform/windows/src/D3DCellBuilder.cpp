@@ -219,10 +219,139 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
+    // Cursor position for ligature breaking
+    int cursorRow = screen.cursorRow();
+    int cursorCol = screen.cursorCol();
+
     // Pass 2: Glyph quads (glyph-sized, positioned with bearing)
     for (int row = 0; row < rows; ++row) {
+
+        // --- Ligature detection for this row ---
+        // ligatureGlyphs[col] holds the shaped glyph index if this column
+        // starts a ligature; ligatureSkip[col] is true for continuation
+        // columns within a ligature span that should not emit a glyph.
+        std::vector<int> ligatureSpanIndex(cols, -1);  // -1 = not part of ligature
+        std::vector<LigatureShapingResult> ligatureResults;
+
+        if (fontLigatures && fontCollection) {
+            // Collect codepoints for the row
+            std::vector<uint32_t> rowCodepoints;
+            rowCodepoints.reserve(cols);
+            for (int c = 0; c < cols; ++c) {
+                const TermCell& tc = screen.cellAt(row, c);
+                rowCodepoints.push_back(
+                    (tc.codepoint != 0) ? static_cast<uint32_t>(tc.codepoint) : ' ');
+            }
+
+            auto spans = ligatureDetector.detectLigatures(rowCodepoints, 0);
+
+            for (const auto& span : spans) {
+                // Break ligature if cursor is on this row and overlaps the span
+                if (row == cursorRow &&
+                    cursorCol >= span.start_col && cursorCol < span.end_col) {
+                    continue;  // Skip this span — render individual chars
+                }
+
+                // Shape the ligature span
+                auto faceId = fontCollection->resolveFace(
+                    static_cast<char32_t>(span.codepoints[0]));
+                if (faceId == kInvalidCollectionFace) continue;
+
+                FontFaceId shaperFace = fontCollection->shaperFaceId(faceId);
+                if (shaperFace == kInvalidFontFace) continue;
+
+                auto result = LigatureDetector::shapeLigature(
+                    fontCollection->shaper(), shaperFace, span);
+
+                if (result.glyphs.empty()) continue;
+
+                // Check that at least one glyph was produced
+                int spanIdx = static_cast<int>(ligatureResults.size());
+                ligatureResults.push_back(std::move(result));
+
+                for (int c = span.start_col; c < span.end_col && c < cols; ++c) {
+                    ligatureSpanIndex[c] = spanIdx;
+                }
+            }
+        }
+
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
+
+            // --- Handle ligature span cells ---
+            if (ligatureSpanIndex[col] >= 0) {
+                int spanIdx = ligatureSpanIndex[col];
+                const auto& ligResult = ligatureResults[spanIdx];
+
+                // Only emit glyph on the first column of the span
+                bool isFirstCol = (col == 0 || ligatureSpanIndex[col - 1] != spanIdx);
+                if (!isFirstCol) continue;  // Skip continuation columns
+
+                // Use the first shaped glyph from the ligature result
+                if (ligResult.glyphs.empty()) continue;
+                const auto& shapedGlyph = ligResult.glyphs[0];
+
+                auto faceId = fontCollection->resolveFace(cell.codepoint);
+                if (faceId == kInvalidCollectionFace) continue;
+                FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
+
+                GlyphKey key{rastFace, shapedGlyph.glyph_index, {0, 0}};
+                auto info = glyphCache->getOrRasterize(
+                    key, fontSize, *rasterizer, *glyphAtlas);
+                if (!info || info->region.width <= 0 ||
+                    info->region.height <= 0) {
+                    continue;
+                }
+
+                D3DCellInstance inst = {};
+
+                float offsetX = static_cast<float>(info->region.bearing_x);
+                float offsetY = ascent -
+                    static_cast<float>(info->region.bearing_y);
+
+                inst.position[0] = col * cellW + offsetX + gridOffsetX;
+                inst.position[1] = row * cellH + offsetY + gridOffsetY;
+
+                inst.atlas_uv[0] = static_cast<float>(info->region.x);
+                inst.atlas_uv[1] = static_cast<float>(info->region.y);
+                inst.atlas_size[0] = static_cast<float>(info->region.width);
+                inst.atlas_size[1] = static_cast<float>(info->region.height);
+
+                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+
+                if (cell.attributes & AttrInverse) {
+                    std::swap(inst.fg_color[0], inst.bg_color[0]);
+                    std::swap(inst.fg_color[1], inst.bg_color[1]);
+                    std::swap(inst.fg_color[2], inst.bg_color[2]);
+                    std::swap(inst.fg_color[3], inst.bg_color[3]);
+                }
+
+                if (isCellSelected(row, col)) {
+                    std::swap(inst.fg_color[0], inst.bg_color[0]);
+                    std::swap(inst.fg_color[1], inst.bg_color[1]);
+                    std::swap(inst.fg_color[2], inst.bg_color[2]);
+                    std::swap(inst.fg_color[3], inst.bg_color[3]);
+                }
+
+                if (cell.attributes & AttrDim) {
+                    inst.fg_color[0] *= 0.5f;
+                    inst.fg_color[1] *= 0.5f;
+                    inst.fg_color[2] *= 0.5f;
+                }
+
+                int sht2 = searchHighlightType(row, col);
+                if (sht2 > 0) {
+                    inst.fg_color[0] = 0.0f; inst.fg_color[1] = 0.0f;
+                    inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
+                }
+
+                inst.flags = 1;  // has_glyph
+                if (info->is_color) inst.flags |= 2;
+
+                cellInstances.push_back(inst);
+                continue;
+            }
 
             if (cell.codepoint == ' ' || cell.codepoint == 0) {
                 continue;

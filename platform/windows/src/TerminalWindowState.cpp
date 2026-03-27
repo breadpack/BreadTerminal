@@ -416,10 +416,11 @@ void TerminalWindowState::renderFrame() {
         renderer->setUrlHighlights(urlHighlights);
     }
 
-    // Update background opacity on renderer.
+    // Update background opacity and font ligatures on renderer.
     {
         const auto& cfg = controller->config();
         renderer->setBackgroundOpacity(cfg.background_opacity);
+        renderer->setFontLigatures(cfg.font_ligatures);
     }
 
     // Ghost text for autocomplete

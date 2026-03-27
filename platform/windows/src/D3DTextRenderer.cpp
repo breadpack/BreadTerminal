@@ -507,6 +507,11 @@ void D3DTextRenderer::setGhostText(const std::string& text, int row, int col) {
     impl_->contentDirty = true;
 }
 
+void D3DTextRenderer::setFontLigatures(bool enabled) {
+    impl_->fontLigatures = enabled;
+    impl_->contentDirty = true;
+}
+
 void D3DTextRenderer::setStatusBar(const StatusBarInfo& info) {
     impl_->statusBar = info;
     impl_->contentDirty = true;

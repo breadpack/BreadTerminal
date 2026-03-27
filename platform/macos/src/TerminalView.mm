@@ -145,6 +145,9 @@
         _impl->currentThemeString = config.theme;
     }
 
+    // Font ligatures
+    _impl->renderer->setFontLigatures(config.font_ligatures);
+
     // Background transparency & blur
     [self applyTransparencyConfig:config];
 

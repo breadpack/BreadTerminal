@@ -201,6 +201,9 @@ public:
     /// Pass an empty string or row=-1 to clear.
     void setGhostText(const std::string& text, int row, int col);
 
+    /// Enable or disable font ligatures in the cell builder.
+    void setFontLigatures(bool enabled);
+
     /// Return the atlas uploader for GPU texture management.
     IAtlasUploader* atlasUploader() override;
 

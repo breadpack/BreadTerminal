@@ -256,6 +256,11 @@ void MetalTextRenderer::setGhostText(const std::string& text, int row, int col) 
     impl_->contentDirty = true;
 }
 
+void MetalTextRenderer::setFontLigatures(bool enabled) {
+    impl_->fontLigatures = enabled;
+    impl_->contentDirty = true;
+}
+
 IAtlasUploader* MetalTextRenderer::atlasUploader() {
     return impl_->atlasUploader.get();
 }

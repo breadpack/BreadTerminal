@@ -205,6 +205,9 @@ public:
     /// Pass an empty string or row=-1 to clear.
     void setGhostText(const std::string& text, int row, int col);
 
+    /// Enable or disable font ligatures in the cell builder.
+    void setFontLigatures(bool enabled);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

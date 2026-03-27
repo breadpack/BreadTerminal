@@ -17,6 +17,7 @@
 #include "termcore/font/glyph_cache.h"
 #include "termcore/font/font_collection.h"
 #include "termcore/font/i_font_rasterizer.h"
+#include "termcore/font/ligature.h"
 #include "termcore/screen.h"
 
 namespace termcore {
@@ -111,6 +112,10 @@ struct MetalTextRenderer::Impl {
         int col = -1;      // starting column
     };
     GhostText ghostText;
+
+    // Font ligatures
+    bool fontLigatures = true;
+    LigatureDetector ligatureDetector;
 
     // Dummy textures for when atlas pages don't exist yet
     id<MTLTexture> dummyR8;

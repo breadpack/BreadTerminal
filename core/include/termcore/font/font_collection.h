@@ -81,6 +81,9 @@ public:
     /// Get the number of fonts in the chain.
     size_t chainLength() const { return chain_.size(); }
 
+    /// Access the underlying font shaper (needed for ligature shaping).
+    FontShaper& shaper() { return shaper_; }
+
 private:
     /// Ensure a font entry is loaded (lazy loading).
     bool ensureLoaded(FontEntry& entry);

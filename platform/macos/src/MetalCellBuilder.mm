@@ -129,10 +129,119 @@ void MetalTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         }
     }
 
+    // Cursor position for ligature breaking
+    int cursorRow = screen.cursorRow();
+    int cursorCol = screen.cursorCol();
+
     // Pass 2: Glyph quads
     for (int row = 0; row < rows; ++row) {
+
+        // --- Ligature detection for this row ---
+        std::vector<int> ligatureSpanIndex(cols, -1);
+        std::vector<LigatureShapingResult> ligatureResults;
+
+        if (fontLigatures && fontCollection) {
+            std::vector<uint32_t> rowCodepoints;
+            rowCodepoints.reserve(cols);
+            for (int c = 0; c < cols; ++c) {
+                const TermCell& tc = screen.cellAt(row, c);
+                rowCodepoints.push_back(
+                    (tc.codepoint != 0) ? static_cast<uint32_t>(tc.codepoint) : ' ');
+            }
+
+            auto spans = ligatureDetector.detectLigatures(rowCodepoints, 0);
+
+            for (const auto& span : spans) {
+                if (row == cursorRow &&
+                    cursorCol >= span.start_col && cursorCol < span.end_col) {
+                    continue;
+                }
+
+                auto faceId = fontCollection->resolveFace(
+                    static_cast<char32_t>(span.codepoints[0]));
+                if (faceId == kInvalidCollectionFace) continue;
+
+                FontFaceId shaperFace = fontCollection->shaperFaceId(faceId);
+                if (shaperFace == kInvalidFontFace) continue;
+
+                auto result = LigatureDetector::shapeLigature(
+                    fontCollection->shaper(), shaperFace, span);
+
+                if (result.glyphs.empty()) continue;
+
+                int spanIdx = static_cast<int>(ligatureResults.size());
+                ligatureResults.push_back(std::move(result));
+
+                for (int c = span.start_col; c < span.end_col && c < cols; ++c) {
+                    ligatureSpanIndex[c] = spanIdx;
+                }
+            }
+        }
+
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
+
+            // --- Handle ligature span cells ---
+            if (ligatureSpanIndex[col] >= 0) {
+                int spanIdx = ligatureSpanIndex[col];
+                const auto& ligResult = ligatureResults[spanIdx];
+
+                bool isFirstCol = (col == 0 || ligatureSpanIndex[col - 1] != spanIdx);
+                if (!isFirstCol) continue;
+
+                if (ligResult.glyphs.empty()) continue;
+                const auto& shapedGlyph = ligResult.glyphs[0];
+
+                auto faceId = fontCollection->resolveFace(cell.codepoint);
+                if (faceId == kInvalidCollectionFace) continue;
+                FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
+
+                GlyphKey key{rastFace, shapedGlyph.glyph_index, {0, 0}};
+                auto info = glyphCache->getOrRasterize(
+                    key, fontSize, *rasterizer, *glyphAtlas);
+                if (!info) continue;
+
+                uint32_t fg = dc.resolveFg(cell.fg_color);
+                uint32_t bg = dc.resolveBg(cell.bg_color);
+                if (cell.attributes & AttrInverse) std::swap(fg, bg);
+                if (minimumContrast > 1.0f) {
+                    fg = ensureContrast(fg, bg, minimumContrast);
+                }
+                if (selection.contains(row, col)) {
+                    fg = selFg; bg = selBg;
+                }
+                if (cell.attributes & AttrDim) {
+                    fg = ((fg >> 1) & 0x7F7F7F00) | (fg & 0xFF);
+                }
+                int sht2 = searchHighlightType(row, col);
+                if (sht2 > 0) {
+                    fg = 0x000000;
+                }
+
+                CellInstance inst = {};
+                inst.grid_col = static_cast<uint16_t>(col);
+                inst.grid_row = static_cast<uint16_t>(row);
+                inst.glyph_x = static_cast<uint16_t>(info->region.x);
+                inst.glyph_y = static_cast<uint16_t>(info->region.y);
+                inst.glyph_width = static_cast<uint16_t>(info->region.width);
+                inst.glyph_height = static_cast<uint16_t>(info->region.height);
+                inst.offset_x = static_cast<int16_t>(info->region.bearing_x);
+                inst.offset_y = static_cast<int16_t>(
+                    static_cast<int>(ascent) - info->region.bearing_y);
+                inst.fg_r = (fg >> 16) & 0xFF;
+                inst.fg_g = (fg >> 8) & 0xFF;
+                inst.fg_b = fg & 0xFF;
+                inst.fg_a = 255;
+                inst.bg_r = (bg >> 16) & 0xFF;
+                inst.bg_g = (bg >> 8) & 0xFF;
+                inst.bg_b = bg & 0xFF;
+                inst.bg_a = 255;
+                inst.flags = 1;
+                if (info->is_color) inst.flags |= 2;
+                cellInstances.push_back(inst);
+                continue;
+            }
+
             if (cell.codepoint <= ' ') continue;
 
             // Skip continuation cells (second cell of a wide character,

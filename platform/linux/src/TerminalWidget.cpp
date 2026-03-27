@@ -156,9 +156,10 @@ static gboolean terminal_widget_render(GtkGLArea* area,
                                         GdkGLContext* /*context*/) {
     TerminalWidget* self = TERMINAL_WIDGET(area);
     if (self->renderer && self->controller) {
-        // Update background opacity from config
+        // Update background opacity and font ligatures from config
         const auto& cfg = self->controller->config();
         self->renderer->setBackgroundOpacity(cfg.background_opacity);
+        self->renderer->setFontLigatures(cfg.font_ligatures);
 
         Screen* screen = self->controller->activeScreen();
         if (screen) {
