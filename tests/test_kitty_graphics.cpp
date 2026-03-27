@@ -58,8 +58,8 @@ TEST(KittyGraphicsTest, TransmitAndDisplay) {
     ASSERT_EQ(mgr.placements().size(), 1u);
     const auto& pl = mgr.placements()[0];
     EXPECT_EQ(pl.image_id, 5u);
-    EXPECT_EQ(pl.x, 3);
-    EXPECT_EQ(pl.y, 7);
+    EXPECT_EQ(pl.src_x, 3);
+    EXPECT_EQ(pl.src_y, 7);
     EXPECT_EQ(pl.z_index, 2);
 }
 
@@ -168,8 +168,8 @@ TEST(KittyGraphicsTest, PlacementHasCorrectPosition) {
     const auto& pl = mgr.placements()[0];
     EXPECT_EQ(pl.image_id, 60u);
     EXPECT_EQ(pl.placement_id, 7u);
-    EXPECT_EQ(pl.x, 10);
-    EXPECT_EQ(pl.y, 20);
+    EXPECT_EQ(pl.src_x, 10);
+    EXPECT_EQ(pl.src_y, 20);
     EXPECT_EQ(pl.cols, 5);
     EXPECT_EQ(pl.rows, 3);
     EXPECT_EQ(pl.z_index, -1);
