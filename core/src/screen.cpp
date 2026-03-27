@@ -592,9 +592,13 @@ void Screen::onDcsDispatch(char32_t final_char,
                            const std::vector<VtParam>& params,
                            const std::string& intermediates,
                            const std::string& data) {
-    (void)final_char;
-    (void)params;
     (void)intermediates;
+
+    // Sixel graphics: DCS P1;P2;P3 q <sixel-data> ST
+    if (final_char == 'q') {
+        handleSixelImage(params, data);
+        return;
+    }
 
     // tmux DCS passthrough: ESC P tmux; <escaped-sequence> ST
     // In the DCS state machine, 't' is the final char that transitions to
@@ -623,6 +627,63 @@ void Screen::onDcsDispatch(char32_t final_char,
         // Re-feed the unwrapped sequence through the parser
         parser_feed_callback_(inner.data(), inner.size());
     }
+}
+
+// --- handleSixelImage ---
+void Screen::handleSixelImage(const std::vector<VtParam>& params,
+                               const std::string& data) {
+    (void)params;
+
+    SixelImage sixel = parseSixel(data);
+    if (sixel.empty()) return;
+
+    // Convert SixelImage pixels (uint32_t: R<<24|G<<16|B<<8|A) to uint8_t RGBA array
+    std::vector<uint8_t> rgba(sixel.width * sixel.height * 4);
+    for (size_t i = 0; i < sixel.pixels.size(); ++i) {
+        uint32_t px = sixel.pixels[i];
+        rgba[i * 4 + 0] = static_cast<uint8_t>((px >> 24) & 0xFF); // R
+        rgba[i * 4 + 1] = static_cast<uint8_t>((px >> 16) & 0xFF); // G
+        rgba[i * 4 + 2] = static_cast<uint8_t>((px >> 8) & 0xFF);  // B
+        rgba[i * 4 + 3] = static_cast<uint8_t>(px & 0xFF);         // A
+    }
+
+    // Create KittyImage from Sixel data
+    KittyImage image;
+    image.width = sixel.width;
+    image.height = sixel.height;
+    image.format = 32; // RGBA
+    image.data = std::move(rgba);
+    image.complete = true;
+
+    uint32_t img_id = kitty_graphics_.addImage(std::move(image));
+
+    // Calculate display cells
+    int display_rows = (sixel.height + cell_height_px_ - 1) / cell_height_px_;
+    int display_cols = (sixel.width + cell_width_px_ - 1) / cell_width_px_;
+
+    // Create placement at current cursor position
+    KittyPlacement placement;
+    placement.image_id = img_id;
+    placement.col = cursor_.col;
+    placement.absolute_row = absoluteRowMonotonic();
+    placement.cols = display_cols;
+    placement.rows = display_rows;
+
+    kitty_graphics_.addPlacement(placement);
+
+    // Move cursor past the image area (same pattern as iTerm2 inline images)
+    cursor_.row += display_rows;
+    if (cursor_.row >= rows_) {
+        int overflow = cursor_.row - rows_ + 1;
+        for (int i = 0; i < overflow; ++i) {
+            scrollUp(scroll_top_, scroll_bottom_);
+        }
+        cursor_.row = rows_ - 1;
+    }
+    cursor_.col = 0;
+    wrap_pending_ = false;
+
+    markAllDirty();
 }
 
 // --- onApcDispatch: Kitty graphics protocol ---

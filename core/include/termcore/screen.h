@@ -5,6 +5,7 @@
 #include "termcore/kitty_graphics.h"
 #include "termcore/scrollback_ring.h"
 #include "termcore/kitty_keyboard.h"
+#include "termcore/sixel.h"
 #include "termcore/term_cell.h"
 #include "termcore/vt_parser.h"
 #include <chrono>
@@ -482,6 +483,9 @@ private:
     void handleOscResetColor(int osc_number, const std::string& str);
     void handleOscItermImage(const std::string& str);
     void handleOscHookEvent(const std::string& str);
+
+    // DCS handlers
+    void handleSixelImage(const std::vector<VtParam>& params, const std::string& data);
 
     // Alt screen helpers
     void switchToAltScreen(bool save_cursor);
