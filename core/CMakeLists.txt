@@ -15,6 +15,7 @@ set(TERMCORE_SOURCES
     src/dynamic_colors.cpp
     src/contrast.cpp
     src/compressed_row.cpp
+    src/scrollback_ring.cpp
     src/screen.cpp
     src/screen_csi.cpp
     src/screen_csi_ext.cpp

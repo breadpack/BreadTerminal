@@ -1,9 +1,9 @@
 #ifndef TERMCORE_SCREEN_H
 #define TERMCORE_SCREEN_H
 
-#include "termcore/compressed_row.h"
 #include "termcore/dynamic_colors.h"
 #include "termcore/kitty_graphics.h"
+#include "termcore/scrollback_ring.h"
 #include "termcore/kitty_keyboard.h"
 #include "termcore/term_cell.h"
 #include "termcore/vt_parser.h"
@@ -60,6 +60,10 @@ public:
     explicit Screen(int rows = 24, int cols = 80);
     ~Screen() override = default;
 
+    // Movable (required because ScrollbackRing is non-copyable)
+    Screen(Screen&&) noexcept = default;
+    Screen& operator=(Screen&&) noexcept = default;
+
     // --- Grid access ---
     const TermCell& cellAt(int row, int col) const;
     TermCell& mutableCellAt(int row, int col);
@@ -77,8 +81,8 @@ public:
     void resize(int rows, int cols);
 
     // --- Scrollback ---
-    size_t scrollbackSize() const { return scrollback_.size(); }
-    void setMaxScrollback(size_t max) { max_scrollback_ = max; }
+    size_t scrollbackSize() const { return scrollback_ring_.size(); }
+    void setMaxScrollback(size_t max) { scrollback_ring_.setMaxRows(max); }
 
     // --- Viewport scrolling ---
     /// Current viewport offset (0 = at bottom/live, >0 = scrolled up into history)
@@ -188,13 +192,13 @@ public:
     /// Monotonic absolute row for the current cursor position.
     /// This value never decreases, even when scrollback rows are evicted.
     int64_t absoluteRowMonotonic() const {
-        return scrollback_lines_evicted_ + static_cast<int64_t>(scrollback_.size()) + cursor_.row;
+        return scrollback_ring_.evictedCount() + static_cast<int64_t>(scrollback_ring_.size()) + cursor_.row;
     }
 
     /// Monotonic absolute row for the top of the current viewport.
     /// Used by renderers to convert placement absolute_row to screen-relative position.
     int64_t viewportTopAbsoluteRow() const {
-        return scrollback_lines_evicted_ + static_cast<int64_t>(scrollback_.size()) - viewport_offset_;
+        return scrollback_ring_.evictedCount() + static_cast<int64_t>(scrollback_ring_.size()) - viewport_offset_;
     }
 
     // --- Cell size hints (for iTerm2 image dimension calculation) ---
@@ -300,9 +304,7 @@ private:
     int rows_;
     int cols_;
     std::deque<Row> grid_;
-    std::deque<CompressedRow> scrollback_;
-    size_t max_scrollback_ = 10000;
-    int64_t scrollback_lines_evicted_ = 0;  // Total scrollback lines evicted (for monotonic row tracking)
+    ScrollbackRing scrollback_ring_;
     int viewport_offset_ = 0;  // 0 = bottom (live), >0 = scrolled up
 
     // Cursor

@@ -266,7 +266,7 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     //          C (input end/output start), D (output end)
     if (str.empty()) return;
 
-    int absolute_row = static_cast<int>(scrollback_.size()) + cursor_.row;
+    int absolute_row = static_cast<int>(scrollback_ring_.size()) + cursor_.row;
 
     switch (str[0]) {
     case 'A':
@@ -289,7 +289,7 @@ void Screen::handleOscShellIntegration(const std::string& str) {
     case 'B':
         prompt_state_ = PromptState::Input;
         prompt_markers_.push_back({absolute_row, PromptState::Input});
-        input_start_row_ = static_cast<int>(scrollback_.size()) + cursor_.row;
+        input_start_row_ = static_cast<int>(scrollback_ring_.size()) + cursor_.row;
         input_start_col_ = cursor_.col;
         break;
     case 'C': {
@@ -520,7 +520,7 @@ std::pair<int,int> Screen::outputRegionAt(int row) const {
             prompt_markers_[i].absolute_row <= row) {
             output_start = prompt_markers_[i].absolute_row;
             // Find the end: next A marker or end of content
-            output_end = static_cast<int>(scrollback_.size()) + rows_;
+            output_end = static_cast<int>(scrollback_ring_.size()) + rows_;
             for (size_t j = i + 1; j < prompt_markers_.size(); ++j) {
                 if (prompt_markers_[j].type == PromptState::Prompt) {
                     output_end = prompt_markers_[j].absolute_row;

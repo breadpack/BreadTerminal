@@ -212,8 +212,7 @@ void Screen::handleEraseDisplay(const std::vector<VtParam>& params) {
         markAllDirty();
         break;
     case 3: // Erase scrollback
-        scrollback_lines_evicted_ += static_cast<int64_t>(scrollback_.size());
-        scrollback_.clear();
+        scrollback_ring_.clear();
         break;
     default:
         break;
