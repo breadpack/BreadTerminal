@@ -1,4 +1,5 @@
 #include "termcore/kitty_graphics.h"
+#include "termcore/iterm_image.h"
 #include <algorithm>
 #include <array>
 #include <sstream>
@@ -100,11 +101,10 @@ std::string KittyGraphicsManager::processCommand(
     } else if (action == "d") {
         handleDelete(params);
     } else if (action == "q") {
-        // Don't respond to Kitty graphics queries — our image placement
-        // support is incomplete (no cursor advancement, no virtual placement).
-        // Responding "OK" causes apps like Claude Code to attempt image-based
-        // rendering, which produces broken layouts.
-        return "";
+        // Respond to query: terminal supports graphics protocol
+        auto i_it = params.find("i");
+        uint32_t image_id = i_it != params.end() ? safeStou(i_it->second) : 0;
+        return "i=" + std::to_string(image_id) + ";OK";
     }
 
     return "";
@@ -182,6 +182,18 @@ void KittyGraphicsManager::handleTransmit(
     // Final chunk: decode and store
     pending_.image.data = base64Decode(pending_.accumulated_payload);
     pending_.image.complete = true;
+
+    // Decode PNG format (f=100) to RGBA
+    if (pending_.image.format == 100 && !pending_.image.data.empty()) {
+        int w = 0, h = 0;
+        std::vector<uint8_t> rgba_pixels;
+        if (decodeImageData(pending_.image.data, w, h, rgba_pixels)) {
+            pending_.image.data = std::move(rgba_pixels);
+            pending_.image.width = w;
+            pending_.image.height = h;
+            pending_.image.format = 32; // Now RGBA
+        }
+    }
 
     // Check decoded data size against single image limit
     if (pending_.image.data.size() > kMaxSingleImageSize) {
