@@ -28,11 +28,11 @@ namespace {
 // Must match kNotifyCallbackMsg in TerminalWindowNotify.cpp
 constexpr UINT kNotifyCallbackMsg = WM_APP + 100;
 
-constexpr UINT_PTR kRenderTimerId = 1;
-constexpr UINT kRenderIntervalMs = 16;
+// Render timer removed — rendering is driven by dedicated render thread.
+// Cursor blink timer removed — render thread uses WaitForSingleObject timeout.
 
-constexpr UINT_PTR kCursorBlinkTimerId = 2;
-constexpr UINT kCursorBlinkIntervalMs = 500;
+constexpr UINT_PTR kResizeOverlayTimerId = 3;
+constexpr UINT kResizeOverlayCheckMs = 100;
 
 const wchar_t* kWindowClassName = L"BreadTerminalWindow";
 
@@ -60,61 +60,81 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
             newState->needsRender = true;
 
-            SetTimer(hWnd, kRenderTimerId, kRenderIntervalMs, nullptr);
-            SetTimer(hWnd, kCursorBlinkTimerId,
-                     kCursorBlinkIntervalMs, nullptr);
+            // Start dedicated render thread (Phase 2)
+            newState->initRenderThread();
+            newState->signalInvalidate();
+
+            // Timer for resize overlay auto-hide check
+            SetTimer(hWnd, kResizeOverlayTimerId, kResizeOverlayCheckMs, nullptr);
             return 0;
         }
 
         case WM_SETFOCUS:
             if (state && state->controller) {
-                state->controller->onFocusChange(true);
+                state->withWriteLock([&] {
+                    state->controller->onFocusChange(true);
+                });
             }
             return 0;
 
         case WM_KILLFOCUS:
             if (state && state->controller) {
-                state->controller->onFocusChange(false);
+                state->withWriteLock([&] {
+                    state->controller->onFocusChange(false);
+                });
             }
             return 0;
 
         case WM_ENTERSIZEMOVE:
-            if (state) state->inLiveResize = true;
+            if (state) {
+                state->withWriteLock([&] { state->inLiveResize = true; });
+            }
             return 0;
 
         case WM_EXITSIZEMOVE:
-            if (state) state->inLiveResize = false;
+            if (state) {
+                state->withWriteLock([&] { state->inLiveResize = false; });
+            }
             return 0;
 
         case WM_SIZE:
             if (state && wParam != SIZE_MINIMIZED) {
                 int width = LOWORD(lParam);
                 int height = HIWORD(lParam);
+
+                // Pause render thread while resizing swap chain.
+                // We temporarily stop the render thread, resize under
+                // exclusive lock (no D3D contention), then restart.
+                bool wasRunning = state->renderRunning_.load();
+                if (wasRunning) {
+                    state->stopRenderThread();
+                }
+
                 state->resizeSwapChain(width, height);
                 state->repositionSearchBar();
                 state->needsRender = false;
-                state->renderFrame();
+
+                // Restart render thread and immediately signal for a frame
+                if (wasRunning) {
+                    state->initRenderThread();
+                    state->signalInvalidate();
+                }
             }
             return 0;
 
         case WM_TIMER:
-            if (wParam == kRenderTimerId && state) {
+            if (wParam == kResizeOverlayTimerId && state) {
                 // Auto-hide resize overlay after 1 second
                 if (state->showResizeOverlay) {
                     auto elapsed = std::chrono::steady_clock::now()
                                    - state->resizeOverlayStart;
                     if (elapsed > std::chrono::seconds(1)) {
-                        state->showResizeOverlay = false;
-                        state->needsRender = true;
-                        if (state->renderer) state->renderer->markContentDirty();
+                        state->withWriteLock([&] {
+                            state->showResizeOverlay = false;
+                            if (state->renderer) state->renderer->markContentDirty();
+                        });
                     }
                 }
-            } else if (wParam == kCursorBlinkTimerId && state) {
-                state->cursorBlinkOn = !state->cursorBlinkOn;
-                if (state->renderer) {
-                    state->renderer->setCursorBlink(state->cursorBlinkOn);
-                }
-                state->needsRender = true;
             }
             return 0;
 
@@ -123,7 +143,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 int delta = GET_WHEEL_DELTA_WPARAM(wParam);
                 POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
                 ScreenToClient(hWnd, &pt);
-                state->handleMouseWheel(delta, pt.x, pt.y);
+                state->withWriteLock([&] {
+                    state->handleMouseWheel(delta, pt.x, pt.y);
+                });
             }
             return 0;
 
@@ -131,10 +153,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             if (state) {
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
-                // Check if click is in tab bar area
-                if (!state->handleTabBarClick(mx, my)) {
-                    state->handleMouseDown(mx, my);
-                }
+                state->withWriteLock([&] {
+                    if (!state->handleTabBarClick(mx, my)) {
+                        state->handleMouseDown(mx, my);
+                    }
+                });
             }
             return 0;
 
@@ -142,19 +165,29 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             if (state) {
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
-                state->handleTabBarHover(mx, my);
-                state->handleMouseMove(mx, my);
+                state->withWriteLock([&] {
+                    state->handleTabBarHover(mx, my);
+                    state->handleMouseMove(mx, my);
+                });
             }
             return 0;
 
         case WM_LBUTTONUP:
-            if (state) state->handleMouseUp(
-                GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (state) {
+                state->withWriteLock([&] {
+                    state->handleMouseUp(
+                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                });
+            }
             return 0;
 
         case WM_LBUTTONDBLCLK:
-            if (state) state->handleDoubleClick(
-                GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (state) {
+                state->withWriteLock([&] {
+                    state->handleDoubleClick(
+                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                });
+            }
             return 0;
 
         case WM_COMMAND:
@@ -163,27 +196,27 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 // Get text from edit control and send to controller
                 if (state->searchEditHwnd && state->controller) {
                     int len = GetWindowTextLengthW(state->searchEditHwnd);
+                    std::string utf8Query;
                     if (len > 0) {
                         std::wstring wquery(len + 1, L'\0');
                         GetWindowTextW(state->searchEditHwnd, &wquery[0], len + 1);
                         wquery.resize(len);
-                        // Convert to UTF-8
                         int utf8Len = WideCharToMultiByte(CP_UTF8, 0,
                             wquery.c_str(), static_cast<int>(wquery.size()),
                             nullptr, 0, nullptr, nullptr);
-                        std::string utf8Query(utf8Len, '\0');
+                        utf8Query.resize(utf8Len);
                         WideCharToMultiByte(CP_UTF8, 0,
                             wquery.c_str(), static_cast<int>(wquery.size()),
                             &utf8Query[0], utf8Len, nullptr, nullptr);
+                    }
+                    state->withWriteLock([&] {
                         state->controller->onSearchQuery(utf8Query);
-                    } else {
-                        state->controller->onSearchQuery("");
-                    }
-                    if (state->controller->needsRender()) {
-                        state->needsRender = true;
-                        state->controller->clearNeedsRender();
-                        if (state->renderer) state->renderer->markContentDirty();
-                    }
+                        if (state->controller->needsRender()) {
+                            state->needsRender = true;
+                            state->controller->clearNeedsRender();
+                            if (state->renderer) state->renderer->markContentDirty();
+                        }
+                    });
                 }
             }
             return 0;
@@ -200,11 +233,19 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             break;
 
         case WM_KEYDOWN:
-            if (state) state->handleKeyDown(wParam, lParam);
+            if (state) {
+                state->withWriteLock([&] {
+                    state->handleKeyDown(wParam, lParam);
+                });
+            }
             return 0;
 
         case WM_CHAR:
-            if (state) state->handleChar(wParam);
+            if (state) {
+                state->withWriteLock([&] {
+                    state->handleChar(wParam);
+                });
+            }
             return 0;
 
         case WM_PAINT: {
@@ -212,8 +253,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             BeginPaint(hWnd, &ps);
             EndPaint(hWnd, &ps);
             if (state) {
-                state->needsRender = true;
-                if (state->renderer) state->renderer->markContentDirty();
+                state->withWriteLock([&] {
+                    state->needsRender = true;
+                    if (state->renderer) state->renderer->markContentDirty();
+                });
             }
             return 0;
         }
@@ -236,6 +279,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_IME_STARTCOMPOSITION:
             if (state && state->controller) {
+                AcquireSRWLockShared(&state->renderLock_);
                 float cw = state->controller->cellWidth();
                 float ch = state->controller->cellHeight();
                 termcore::Screen* scr = state->controller->activeScreen();
@@ -244,6 +288,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                     cursorX = static_cast<int>(scr->cursorCol() * cw);
                     cursorY = static_cast<int>(scr->cursorRow() * ch);
                 }
+                ReleaseSRWLockShared(&state->renderLock_);
                 termcore::handleImeStartComposition(hWnd, cursorX, cursorY,
                                                      static_cast<int>(ch));
             }
@@ -251,43 +296,55 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_IME_COMPOSITION: {
             // Capture composition (preedit) string for inline rendering
+            std::wstring compText;
             if (state && (lParam & GCS_COMPSTR)) {
                 HIMC imc = ImmGetContext(hWnd);
                 if (imc) {
                     LONG bytes = ImmGetCompositionStringW(imc, GCS_COMPSTR, nullptr, 0);
                     if (bytes > 0) {
-                        state->imeCompositionText.resize(bytes / sizeof(wchar_t));
+                        compText.resize(bytes / sizeof(wchar_t));
                         ImmGetCompositionStringW(imc, GCS_COMPSTR,
-                            state->imeCompositionText.data(), bytes);
-                    } else {
-                        state->imeCompositionText.clear();
+                            compText.data(), bytes);
                     }
                     ImmReleaseContext(hWnd, imc);
-                    state->needsRender = true;
-                    if (state->renderer) state->renderer->markContentDirty();
                 }
             }
 
             std::string result = termcore::handleImeComposition(hWnd, lParam);
-            if (!result.empty() && state && state->controller) {
-                state->imeCompositionText.clear(); // composition finalized
-                state->controller->onCharInput(result);
-                if (state->controller->needsRender()) {
-                    state->needsRender = true;
-                    state->controller->clearNeedsRender();
-                    if (state->renderer) state->renderer->markContentDirty();
-                }
+
+            if (state) {
+                state->withWriteLock([&] {
+                    if (!compText.empty()) {
+                        state->imeCompositionText = compText;
+                        state->needsRender = true;
+                        if (state->renderer) state->renderer->markContentDirty();
+                    } else if (lParam & GCS_COMPSTR) {
+                        state->imeCompositionText.clear();
+                    }
+
+                    if (!result.empty() && state->controller) {
+                        state->imeCompositionText.clear();
+                        state->controller->onCharInput(result);
+                        if (state->controller->needsRender()) {
+                            state->needsRender = true;
+                            state->controller->clearNeedsRender();
+                            if (state->renderer) state->renderer->markContentDirty();
+                        }
+                    }
+                });
             }
             return 0;
         }
 
         case WM_IME_ENDCOMPOSITION:
-            if (state) state->imeCompositionText.clear();
-            termcore::handleImeEndComposition(hWnd);
             if (state) {
-                state->needsRender = true;
-                if (state->renderer) state->renderer->markContentDirty();
+                state->withWriteLock([&] {
+                    state->imeCompositionText.clear();
+                    state->needsRender = true;
+                    if (state->renderer) state->renderer->markContentDirty();
+                });
             }
+            termcore::handleImeEndComposition(hWnd);
             break;
 
         case WM_DPICHANGED:
@@ -309,8 +366,9 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             break;
 
         case WM_DESTROY:
-            KillTimer(hWnd, kRenderTimerId);
-            KillTimer(hWnd, kCursorBlinkTimerId);
+            // Stop render thread before destroying resources
+            if (state) state->stopRenderThread();
+            KillTimer(hWnd, kResizeOverlayTimerId);
             if (state && state->notifyIconAdded) {
                 termcore::removeNotificationIcon(hWnd);
                 state->notifyIconAdded = false;
@@ -447,14 +505,10 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
-    // Event-driven message loop with render throttling.
-    // PTY data_event_ handles are not used in MsgWaitForMultipleObjects because
-    // they remain signaled while the ring buffer has data, defeating the timeout.
-    // Instead we use a short timeout for polling.
+    // Event-driven message loop. Rendering is on the dedicated render thread.
+    // Main thread handles input + PTY polling under exclusive lock.
     MSG msg = {};
     bool running = true;
-    auto lastRender = std::chrono::steady_clock::now();
-    constexpr auto kFrameInterval = std::chrono::milliseconds(16);
     bool lastPollHadData = false;
 
     while (running) {
@@ -475,24 +529,16 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
         }
         if (!running) break;
 
-        // 2. Poll PTY (fast: reads data into screen buffer, sets needsRender)
+        // 2. Poll PTY under exclusive lock (fast: reads data, sets needsRender)
         lastPollHadData = false;
         if (state->controller) {
-            bool hadRender = state->needsRender;
-            state->pollPty();
-            if (!hadRender && state->needsRender) {
-                lastPollHadData = true;
-            }
-        }
-
-        // 3. Render at most once per frame interval (~60fps)
-        auto now = std::chrono::steady_clock::now();
-        if (now - lastRender >= kFrameInterval) {
-            if (state->needsRender) {
-                state->needsRender = false;
-                state->renderFrame();
-            }
-            lastRender = now;
+            state->withWriteLock([&] {
+                bool hadRender = state->needsRender;
+                state->pollPty();
+                if (!hadRender && state->needsRender) {
+                    lastPollHadData = true;
+                }
+            });
         }
     }
 

@@ -18,6 +18,7 @@ namespace termcore {
 void TerminalWindowState::invalidate() {
     needsRender = true;
     if (renderer) renderer->markContentDirty();
+    signalInvalidate();
 }
 
 void TerminalWindowState::getViewportSize(int& w, int& h) {

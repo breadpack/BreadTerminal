@@ -336,9 +336,72 @@ void TerminalWindowState::initTerminal() {
     needsRender = true;
 }
 
+// --- Render thread lifecycle (Phase 2) ---
+
+void TerminalWindowState::initRenderThread() {
+    if (renderRunning_) return;
+
+    invalidateEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);  // auto-reset
+    renderPausedEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr); // manual-reset
+
+    renderRunning_ = true;
+    renderThread_ = std::thread([this]() { renderThreadFunc(); });
+}
+
+void TerminalWindowState::stopRenderThread() {
+    if (!renderRunning_) return;
+
+    renderRunning_ = false;
+    if (invalidateEvent_) SetEvent(invalidateEvent_);
+
+    if (renderThread_.joinable()) {
+        renderThread_.join();
+    }
+
+    if (invalidateEvent_) { CloseHandle(invalidateEvent_); invalidateEvent_ = nullptr; }
+    if (renderPausedEvent_) { CloseHandle(renderPausedEvent_); renderPausedEvent_ = nullptr; }
+}
+
+void TerminalWindowState::signalInvalidate() {
+    if (invalidateEvent_) SetEvent(invalidateEvent_);
+}
+
+void TerminalWindowState::renderThreadFunc() {
+    while (renderRunning_) {
+        // Wait for invalidation signal or cursor blink timeout (~500ms)
+        DWORD result = WaitForSingleObject(invalidateEvent_, 500);
+
+        if (!renderRunning_) break;
+
+        // Capture state and push renderer setters under shared lock
+        RenderSnapshot snap;
+        {
+            AcquireSRWLockShared(&renderLock_);
+            if (controller && renderer) {
+                snap = captureRenderSnapshot();
+                pushRendererState(snap);
+            }
+            ReleaseSRWLockShared(&renderLock_);
+        }
+
+        if (!snap.screen) continue;
+
+        // Toggle cursor blink on timeout (no data arrived)
+        if (result == WAIT_TIMEOUT) {
+            cursorBlinkOn = !cursorBlinkOn;
+            snap.cursorBlinkOn = cursorBlinkOn;
+            if (renderer) renderer->setCursorBlink(cursorBlinkOn);
+        }
+
+        // All D3D11 / GPU work below — no lock held
+        renderFrame(snap);
+    }
+}
+
 // --- PTY / rendering ---
 
 void TerminalWindowState::pollPty() {
+    // NOTE: Caller must hold exclusive renderLock_ (or call via withWriteLock)
     if (!controller) return;
 
     controller->pollPty();
@@ -382,33 +445,13 @@ RenderSnapshot TerminalWindowState::captureRenderSnapshot() {
     return snap;
 }
 
-void TerminalWindowState::renderFrame() {
+/// Push all controller state to renderer setters. Must be called under shared lock
+/// (or from a context where controller state is stable).
+void TerminalWindowState::pushRendererState(const RenderSnapshot& snap) {
     if (!renderer || !controller) return;
 
-    termcore::Screen* screen = controller->activeScreen();
+    termcore::Screen* screen = snap.screen;
     if (!screen) return;
-
-    // Decay notification ring intensities
-    {
-        auto now = std::chrono::steady_clock::now();
-        float dt = std::chrono::duration<float>(now - last_frame_time_).count();
-        if (dt > 0.5f) dt = 0.016f; // clamp on first frame or long pauses
-        last_frame_time_ = now;
-
-        bool anyRingActive = false;
-        for (auto& [pane, ring] : pane_ring_states_) {
-            if (ring.intensity > 0.0f) {
-                ring.intensity -= dt * 0.33f;
-                if (ring.intensity < 0.0f) ring.intensity = 0.0f;
-                if (ring.intensity > 0.0f) anyRingActive = true;
-            }
-        }
-        if (anyRingActive) needsRender = true;
-    }
-
-    // Capture all render inputs into a snapshot.
-    // In Phase 2, this will be done under SRWLOCK shared lock.
-    RenderSnapshot snap = captureRenderSnapshot();
 
     // Push state from controller to renderer via setters
     updateTabBar();
@@ -466,9 +509,36 @@ void TerminalWindowState::renderFrame() {
     bool imeComposing = !snap.ime.text.empty();
     renderer->setIMEActive(imeComposing);
     renderer->setImeOverlay(snap.ime);
+}
 
-    // Render without mutating Screen cells — IME preedit is applied
-    // as a virtual overlay during cell buffer construction.
+void TerminalWindowState::renderFrame() {
+    if (!renderer || !controller) return;
+
+    termcore::Screen* screen = controller->activeScreen();
+    if (!screen) return;
+
+    // Decay notification ring intensities
+    {
+        auto now = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float>(now - last_frame_time_).count();
+        if (dt > 0.5f) dt = 0.016f; // clamp on first frame or long pauses
+        last_frame_time_ = now;
+
+        bool anyRingActive = false;
+        for (auto& [pane, ring] : pane_ring_states_) {
+            if (ring.intensity > 0.0f) {
+                ring.intensity -= dt * 0.33f;
+                if (ring.intensity < 0.0f) ring.intensity = 0.0f;
+                if (ring.intensity > 0.0f) anyRingActive = true;
+            }
+        }
+        if (anyRingActive) needsRender = true;
+    }
+
+    RenderSnapshot snap = captureRenderSnapshot();
+    pushRendererState(snap);
+
+    // Render without mutating Screen cells
     renderer->render(*screen);
 
     if (swapChain) {
@@ -485,6 +555,40 @@ void TerminalWindowState::renderFrame() {
         } else {
             SetWindowTextW(hwnd, L"BreadTerminal");
         }
+    }
+}
+
+void TerminalWindowState::renderFrame(const RenderSnapshot& snap) {
+    if (!renderer || !controller) return;
+
+    termcore::Screen* screen = snap.screen;
+    if (!screen) return;
+
+    // Decay notification ring intensities
+    {
+        auto now = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float>(now - last_frame_time_).count();
+        if (dt > 0.5f) dt = 0.016f; // clamp on first frame or long pauses
+        last_frame_time_ = now;
+
+        bool anyRingActive = false;
+        for (auto& [pane, ring] : pane_ring_states_) {
+            if (ring.intensity > 0.0f) {
+                ring.intensity -= dt * 0.33f;
+                if (ring.intensity < 0.0f) ring.intensity = 0.0f;
+                if (ring.intensity > 0.0f) anyRingActive = true;
+            }
+        }
+        if (anyRingActive) signalInvalidate();
+    }
+
+    // Push renderer state was done under shared lock in renderThreadFunc
+    // Now do the actual GPU work — no lock held
+    renderer->render(*screen);
+
+    if (swapChain) {
+        UINT syncInterval = snap.inLiveResize ? 0 : 1;
+        swapChain->Present(syncInterval, 0);
     }
 }
 

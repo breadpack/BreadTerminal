@@ -30,9 +30,11 @@
 #include <dcomp.h>
 #include <wrl/client.h>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 
 using Microsoft::WRL::ComPtr;
 
@@ -84,6 +86,29 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // DPI
     float dpiScale_ = 1.0f;
 
+    // --- Render thread synchronization (Phase 2) ---
+    SRWLOCK renderLock_ = SRWLOCK_INIT;
+    HANDLE invalidateEvent_ = nullptr;   // auto-reset event, created in initRenderThread()
+    std::thread renderThread_;
+    std::atomic<bool> renderRunning_{false};
+
+    // Resize coordination: render thread sets this when paused
+    HANDLE renderPausedEvent_ = nullptr; // manual-reset event
+
+    void initRenderThread();
+    void stopRenderThread();
+    void renderThreadFunc();
+    void signalInvalidate();
+
+    /// Execute fn under exclusive SRWLOCK, then signal invalidation.
+    template<typename Fn>
+    void withWriteLock(Fn&& fn) {
+        AcquireSRWLockExclusive(&renderLock_);
+        fn();
+        ReleaseSRWLockExclusive(&renderLock_);
+        signalInvalidate();
+    }
+
     // State
     bool needsRender = false;
     bool inLiveResize = false;
@@ -130,6 +155,8 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void initTerminal();
     void pollPty();
     void renderFrame();
+    void renderFrame(const RenderSnapshot& snap);
+    void pushRendererState(const RenderSnapshot& snap);
 
     /// Capture all state needed for rendering into a RenderSnapshot.
     /// In Phase 2 this will be called under SRWLOCK shared lock.
