@@ -104,19 +104,32 @@ struct D3DAtlasUploader::Impl {
             textureHeights[idx] = pageH;
         }
 
-        // Upload pixel data
-        UINT rowPitch = static_cast<UINT>(pageW) * bytesPerPixel(fmt);
+        // Upload only the dirty region of the atlas
+        auto dirty = page.dirtyRect();
+        if (dirty.width <= 0 || dirty.height <= 0) {
+            page.clearDirty();
+            return;
+        }
+
+        UINT bpp = bytesPerPixel(fmt);
+        UINT rowPitch = static_cast<UINT>(pageW) * bpp;
+
         D3D11_BOX destBox = {};
-        destBox.left = 0;
-        destBox.top = 0;
+        destBox.left = static_cast<UINT>(dirty.x);
+        destBox.top = static_cast<UINT>(dirty.y);
         destBox.front = 0;
-        destBox.right = static_cast<UINT>(pageW);
-        destBox.bottom = static_cast<UINT>(pageH);
+        destBox.right = static_cast<UINT>(dirty.x + dirty.width);
+        destBox.bottom = static_cast<UINT>(dirty.y + dirty.height);
         destBox.back = 1;
+
+        // Point to the start of the dirty region in the source buffer
+        const uint8_t* srcData = page.data()
+            + static_cast<size_t>(dirty.y) * rowPitch
+            + static_cast<size_t>(dirty.x) * bpp;
 
         context->UpdateSubresource(
             textures[idx], 0, &destBox,
-            page.data(), rowPitch, 0);
+            srcData, rowPitch, 0);
 
         page.clearDirty();
     }
