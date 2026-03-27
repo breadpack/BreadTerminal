@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRendererImpl.h"
+#include "ScreenSnapshot.h"
 #include "termcore/font/box_drawing.h"
 #include "termcore/font/unicode_width.h"
 #include "termcore/kitty_unicode_placeholder.h"
@@ -80,8 +81,9 @@ struct RowShapedGlyph {
     int cell_span;             // how many cells this glyph covers (for ligatures)
 };
 
+template<typename ScreenT>
 static std::vector<RowShapedGlyph> shapeRow(
-    const Screen& screen, int row, int cols,
+    const ScreenT& screen, int row, int cols,
     FontCollection* fontCollection,
     const ShaperConfig& config,
     int cursorRow, int cursorCol)
@@ -240,7 +242,8 @@ static std::vector<RowShapedGlyph> shapeRow(
     return result;
 }
 
-void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
+template<typename ScreenT>
+void D3DTextRenderer::Impl::buildCellBuffer(const ScreenT& screen) {
     if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
         return;
     }
@@ -266,9 +269,34 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     // Offset grid right when sidebar is visible
     float gridOffsetX = sidebar.visible ? static_cast<float>(sidebar.width) : 0.0f;
 
+    // Invalidate row caches when grid dimensions change
+    if (rows != cachedRows || cols != cachedCols) {
+        rowCaches.clear();
+        rowCaches.resize(rows);
+        cachedRows = rows;
+        cachedCols = cols;
+    }
+
+    // When non-screen state changes (selection, search highlights, opacity, etc.),
+    // contentDirty is set but screen rows may not be dirty. In that case, invalidate
+    // all row caches so they get rebuilt with the new visual state.
+    bool useRowCache = screen.isDirty();
+    if (!useRowCache) {
+        for (auto& rc : rowCaches) rc.valid = false;
+    }
 
     // Pass 1: Background quads (cell-sized)
     for (int row = 0; row < rows; ++row) {
+        // Dirty row optimization: reuse cached bg instances for clean rows
+        if (useRowCache && !screen.isRowDirty(row)
+            && row < static_cast<int>(rowCaches.size())
+            && rowCaches[row].valid) {
+            for (const auto& inst : rowCaches[row].bgInstances)
+                cellInstances.push_back(inst);
+            continue;
+        }
+
+        size_t bgStartIdx = cellInstances.size();
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
 
@@ -329,6 +357,12 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
             inst.flags = 4;  // is_bg_pass
             cellInstances.push_back(inst);
+        }
+
+        // Cache this row's bg instances
+        if (row < static_cast<int>(rowCaches.size())) {
+            rowCaches[row].bgInstances.assign(
+                cellInstances.begin() + bgStartIdx, cellInstances.end());
         }
     }
 
@@ -399,6 +433,17 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
     // Pass 2: Glyph quads (glyph-sized, positioned with bearing)
     for (int row = 0; row < rows; ++row) {
+
+        // Dirty row optimization: reuse cached fg instances for clean rows
+        if (useRowCache && !screen.isRowDirty(row)
+            && row < static_cast<int>(rowCaches.size())
+            && rowCaches[row].valid) {
+            for (const auto& inst : rowCaches[row].fgInstances)
+                cellInstances.push_back(inst);
+            continue;
+        }
+
+        size_t fgStartIdx = cellInstances.size();
 
         // --- Row-level shaping (replaces per-cell ligature detection) ---
         // When fontCollection is available, shape entire font runs per row
@@ -815,6 +860,13 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
             cellInstances.push_back(inst);
         }
+
+        // Cache this row's fg instances and mark cache valid
+        if (row < static_cast<int>(rowCaches.size())) {
+            rowCaches[row].fgInstances.assign(
+                cellInstances.begin() + fgStartIdx, cellInstances.end());
+            rowCaches[row].valid = true;
+        }
     }
 
     // Pass 2b: Ghost text (dim suggestion text after cursor)
@@ -1065,8 +1117,9 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     buildOverlayPasses(screen, cellW, cellH, ascent, fontSize);
 }
 
+template<typename ScreenT>
 void D3DTextRenderer::Impl::appendCursorInstances(
-        const Screen& screen, float cellW, float cellH, float gridOffsetX, float gridOffsetY) {
+        const ScreenT& screen, float cellW, float cellH, float gridOffsetX, float gridOffsetY) {
     int rows = screen.rows();
     int cols = screen.cols();
 
@@ -1111,7 +1164,8 @@ void D3DTextRenderer::Impl::appendCursorInstances(
     }
 }
 
-void D3DTextRenderer::Impl::patchCursorOnly(const Screen& screen) {
+template<typename ScreenT>
+void D3DTextRenderer::Impl::patchCursorOnly(const ScreenT& screen) {
     if (!fontCollection) return;
 
     FontMetrics metrics = fontCollection->primaryMetrics();
@@ -1133,6 +1187,14 @@ void D3DTextRenderer::Impl::patchCursorOnly(const Screen& screen) {
     float fontSize = fontCollection->fontSize();
     buildOverlayPasses(screen, cellW, cellH, ascent, fontSize);
 }
+
+// Explicit template instantiations for Screen and ScreenSnapshot
+template void D3DTextRenderer::Impl::buildCellBuffer<Screen>(const Screen&);
+template void D3DTextRenderer::Impl::buildCellBuffer<::ScreenSnapshot>(const ::ScreenSnapshot&);
+template void D3DTextRenderer::Impl::appendCursorInstances<Screen>(const Screen&, float, float, float, float);
+template void D3DTextRenderer::Impl::appendCursorInstances<::ScreenSnapshot>(const ::ScreenSnapshot&, float, float, float, float);
+template void D3DTextRenderer::Impl::patchCursorOnly<Screen>(const Screen&);
+template void D3DTextRenderer::Impl::patchCursorOnly<::ScreenSnapshot>(const ::ScreenSnapshot&);
 
 } // namespace termcore
 

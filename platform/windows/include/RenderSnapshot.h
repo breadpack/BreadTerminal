@@ -4,6 +4,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRenderer.h"
+#include "ScreenSnapshot.h"
 #include "termcore/screen.h"
 
 #include <chrono>

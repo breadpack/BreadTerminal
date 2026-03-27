@@ -18,6 +18,7 @@ struct ID3D11DeviceContext;
 struct IDXGISwapChain1;
 struct ID3D11RenderTargetView;
 struct ImeOverlay;
+struct ScreenSnapshot;
 #endif
 
 namespace termcore {
@@ -64,6 +65,7 @@ public:
     /// prepareFrame reads Screen data (needs synchronization),
     /// submitFrame does GPU work (no Screen access needed).
     void prepareFrame(const Screen& screen);
+    void prepareFrame(const ::ScreenSnapshot& snap);
     void submitFrame();
 
     /// Handle viewport resize.

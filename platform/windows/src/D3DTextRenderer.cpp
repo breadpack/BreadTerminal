@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRendererImpl.h"
+#include "ScreenSnapshot.h"
 #include <string>
 
 namespace termcore {
@@ -1407,6 +1408,47 @@ void D3DTextRenderer::prepareFrame(const Screen& screen) {
         impl_->patchCursorOnly(screen);
     } else {
         impl_->buildCellBuffer(screen);
+        impl_->contentDirty = false;
+    }
+    impl_->lastBlinkState = impl_->cursorBlinkVisible;
+}
+
+void D3DTextRenderer::prepareFrame(const ::ScreenSnapshot& snap) {
+    if (!impl_->context || !impl_->rtv) return;
+
+    // Cache fallback background color from snapshot
+    {
+        uint32_t bg = snap.dynamicColors().background;
+        impl_->cachedFallbackBg[0] = static_cast<float>((bg >> 16) & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[1] = static_cast<float>((bg >> 8) & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[2] = static_cast<float>(bg & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[3] = 1.0f;
+    }
+
+    // Cache kitty graphics data from snapshot
+    if (snap.hasKittyGraphics()) {
+        const auto& gfx = snap.kittyGraphics();
+        if (!gfx.placements().empty()) {
+            impl_->cachedKittyGfx = &gfx;
+            impl_->cachedViewportTopAbsRow = snap.viewportTopAbsoluteRow();
+            impl_->cachedVisibleRows = snap.rows();
+        } else {
+            impl_->cachedKittyGfx = nullptr;
+        }
+    } else {
+        impl_->cachedKittyGfx = nullptr;
+    }
+
+    if (!impl_->vertexShader) return;
+
+    bool blinkChanged = (impl_->cursorBlinkVisible != impl_->lastBlinkState);
+
+    if (!impl_->contentDirty && blinkChanged
+        && impl_->cellCountBeforeCursor > 0
+        && !impl_->cellInstances.empty()) {
+        impl_->patchCursorOnly(snap);
+    } else {
+        impl_->buildCellBuffer(snap);
         impl_->contentDirty = false;
     }
     impl_->lastBlinkState = impl_->cursorBlinkVisible;

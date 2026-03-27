@@ -168,16 +168,20 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
                 // on render thread's shared lock during buildCellBuffer.
                 // Selection/hover state is simple coordinate data — a one-frame
                 // stale read by the render thread is visually imperceptible.
-                state->handleTabBarHover(mx, my);
-                state->handleMouseMove(mx, my);
+                if (!state->handleTabBarDrag(mx, my)) {
+                    state->handleTabBarHover(mx, my);
+                    state->handleMouseMove(mx, my);
+                }
                 state->signalInvalidate();
             }
             return 0;
 
         case WM_LBUTTONUP:
             if (state) {
-                state->handleMouseUp(
-                    GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                int mx = GET_X_LPARAM(lParam);
+                int my = GET_Y_LPARAM(lParam);
+                state->handleTabBarDragEnd(mx, my);
+                state->handleMouseUp(mx, my);
                 state->signalInvalidate();
             }
             return 0;
@@ -234,17 +238,13 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_KEYDOWN:
             if (state) {
-                state->withWriteLock([&] {
-                    state->handleKeyDown(wParam, lParam);
-                });
+                state->enqueueKeyDown(wParam);
             }
             return 0;
 
         case WM_CHAR:
             if (state) {
-                state->withWriteLock([&] {
-                    state->handleChar(wParam);
-                });
+                state->enqueueChar(wParam);
             }
             return 0;
 
@@ -529,16 +529,35 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
         }
         if (!running) break;
 
-        // 2. Poll PTY under exclusive lock (fast: reads data, sets needsRender)
+        // 2. Drain input queue + poll PTY under exclusive lock.
+        //    Input events were enqueued lock-free from WndProc above.
+        //    Use TryAcquire first to avoid blocking on render thread;
+        //    fall back to blocking acquire only when there is work to do.
         lastPollHadData = false;
         if (state->controller) {
-            state->withWriteLock([&] {
+            bool hasInput = !state->inputQueue_.empty();
+
+            // Fast path: try non-blocking lock first
+            bool locked = !!TryAcquireSRWLockExclusive(&state->renderLock_);
+            if (!locked && hasInput) {
+                // Input waiting — must acquire (blocking) to drain promptly
+                AcquireSRWLockExclusive(&state->renderLock_);
+                locked = true;
+            }
+            if (locked) {
+                state->drainInputQueue();
                 bool hadRender = state->needsRender;
                 state->pollPty();
                 if (!hadRender && state->needsRender) {
                     lastPollHadData = true;
                 }
-            });
+                ReleaseSRWLockExclusive(&state->renderLock_);
+                state->signalInvalidate();
+            }
+        } else if (!state->inputQueue_.empty()) {
+            // No controller yet — discard stale events
+            InputEvent ev;
+            while (state->inputQueue_.pop(ev)) {}
         }
     }
 

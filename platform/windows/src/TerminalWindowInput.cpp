@@ -70,6 +70,68 @@ static uint8_t getWin32Mods() {
     return mods;
 }
 
+// --- Lock-free input enqueue (called from WndProc without lock) ---
+
+void TerminalWindowState::enqueueKeyDown(WPARAM wParam) {
+    InputEvent ev;
+    ev.type = InputEvent::KeyDown;
+    ev.wParam = wParam;
+    ev.mods = getWin32Mods();  // capture modifiers at event time
+    inputQueue_.push(ev);
+}
+
+void TerminalWindowState::enqueueChar(WPARAM wParam) {
+    // Filter control chars early (same as handleChar)
+    wchar_t wc = static_cast<wchar_t>(wParam);
+    if (wc < 0x20) return;
+    if (searchActive) return;
+    if (!controller) return;
+
+    // If command palette or copy mode is active, queue for locked processing
+    if (controller->commandPalette().isOpen() || controller->inCopyMode()) {
+        InputEvent ev;
+        ev.type = InputEvent::Char;
+        ev.wParam = wParam;
+        ev.mods = 0;
+        inputQueue_.push(ev);
+        return;
+    }
+
+    // Fast path: direct PTY write without any lock.
+    // sendPtyData only writes to the OS pipe — no Screen mutation.
+    char utf8[4];
+    int len = WideCharToMultiByte(CP_UTF8, 0, &wc, 1,
+                                  utf8, sizeof(utf8), nullptr, nullptr);
+    if (len > 0) {
+        controller->sendPtyData(utf8, static_cast<size_t>(len));
+    }
+}
+
+void TerminalWindowState::drainInputQueue() {
+    // Called under exclusive write lock (inside pollPty cycle)
+    if (!controller) return;
+    InputEvent ev;
+    while (inputQueue_.pop(ev)) {
+        if (ev.type == InputEvent::KeyDown) {
+            // Use modifier captured at enqueue time, not current keyboard state
+            termcore::KeyEvent ke;
+            ke.keycode = mapWin32Keycode(ev.wParam);
+            ke.modifiers = ev.mods;
+            controller->onKeyEvent(ke);
+
+            if (controller->needsRender()) {
+                needsRender = true;
+                controller->clearNeedsRender();
+                if (renderer) renderer->markContentDirty();
+            }
+        } else {
+            // Char event — handleChar still reads current state only for searchActive
+            // but we already filtered that in enqueueChar
+            handleChar(ev.wParam);
+        }
+    }
+}
+
 // --- Keyboard input ---
 
 void TerminalWindowState::handleKeyDown(WPARAM wParam, LPARAM /*lParam*/) {
@@ -299,8 +361,12 @@ bool TerminalWindowState::handleTabBarClick(int x, int y) {
                     needsRender = true;
                 }
             } else {
-                // Switch tab
+                // Switch tab and start drag tracking
                 controller->tabs()->switchToTab(t);
+                tabDragging = true;
+                tabDragSourceIndex = t;
+                tabDragStartX = x;
+                SetCapture(hwnd);
                 updateTabBar();
                 needsRender = true;
             }
@@ -375,6 +441,65 @@ void TerminalWindowState::handleTabBarHover(int x, int y) {
         tabInfo.hover_plus = newPlusHover;
         renderer->setTabBar(tabInfo);
         needsRender = true;
+    }
+}
+
+bool TerminalWindowState::handleTabBarDrag(int x, int y) {
+    if (!tabDragging || !controller || !renderer) return false;
+
+    float cellW = controller->cellWidth();
+    int tabCount = controller->tabCount();
+    if (tabCount <= 1) {
+        tabDragging = false;
+        return false;
+    }
+
+    float tabGap = 4.0f;
+    float tabMinW = cellW * 12.0f;
+    float tabMaxW = cellW * 24.0f;
+    float leftMargin = 8.0f;
+    float plusBtnW = cellW * 2.0f;
+
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    int viewW = rc.right - rc.left;
+    float availW = viewW - leftMargin - plusBtnW - 8.0f;
+    float tabW = (availW - tabGap * (tabCount - 1)) / tabCount;
+    tabW = (std::max)(tabMinW, (std::min)(tabMaxW, tabW));
+
+    float fmx = static_cast<float>(x);
+
+    // Determine which tab position the mouse is over
+    int targetIndex = -1;
+    for (int t = 0; t < tabCount; ++t) {
+        float tabX = leftMargin + t * (tabW + tabGap);
+        if (fmx >= tabX && fmx < tabX + tabW) {
+            targetIndex = t;
+            break;
+        }
+    }
+
+    if (targetIndex >= 0 && targetIndex != tabDragSourceIndex) {
+        auto* mux = controller->tabs()->mux();
+        auto wsId = controller->tabs()->workspaceId();
+        auto* ws = mux->getWorkspace(wsId);
+        if (ws && tabDragSourceIndex < static_cast<int>(ws->tabs.size())) {
+            auto tabId = ws->tabs[tabDragSourceIndex]->id;
+            mux->moveTab(wsId, tabId, targetIndex);
+            controller->tabs()->syncActivePointers();
+            tabDragSourceIndex = targetIndex;
+            updateTabBar();
+            needsRender = true;
+        }
+    }
+    return true;
+}
+
+void TerminalWindowState::handleTabBarDragEnd(int x, int y) {
+    if (tabDragging) {
+        tabDragging = false;
+        tabDragSourceIndex = -1;
+        ReleaseCapture();
     }
 }
 

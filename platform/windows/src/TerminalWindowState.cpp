@@ -367,15 +367,16 @@ void TerminalWindowState::signalInvalidate() {
 }
 
 void TerminalWindowState::renderThreadFunc() {
+    ScreenSnapshot screenCopy;  // reused across frames to avoid reallocation
+
     while (renderRunning_) {
         // Wait for invalidation signal or cursor blink timeout (~500ms)
         DWORD result = WaitForSingleObject(invalidateEvent_, 500);
 
         if (!renderRunning_) break;
 
-        // Phase 1: Read Screen data under shared lock.
-        // This prevents the main thread from mutating Screen/controller
-        // state while the render thread reads it.
+        // Phase 1: Quick snapshot under shared lock.
+        // Copy Screen cell data so we can release the lock before expensive shaping.
         AcquireSRWLockShared(&renderLock_);
 
         RenderSnapshot snap;
@@ -399,7 +400,7 @@ void TerminalWindowState::renderThreadFunc() {
             renderer->setCursorBlink(cursorBlinkOn);
         }
 
-        // Decay notification ring intensities
+        // Decay notification ring intensities (uses pane_ring_states_, not Screen)
         {
             auto now = std::chrono::steady_clock::now();
             float dt = std::chrono::duration<float>(now - last_frame_time_).count();
@@ -417,15 +418,22 @@ void TerminalWindowState::renderThreadFunc() {
             if (anyRingActive) signalInvalidate();
         }
 
-        // prepareFrame reads Screen cells and builds the cell instance buffer.
-        // This is the expensive part (HarfBuzz shaping per row).
-        renderer->prepareFrame(*snap.screen);
+        // Deep-copy Screen cell data (fast memcpy-like operation)
+        screenCopy.captureFrom(*snap.screen);
 
-        // Release shared lock so mouse events can proceed.
-        // submitFrame only touches GPU resources and cached data.
+        // Clear dirty flags after capturing snapshot
+        snap.screen->clearDirty();
+
+        // Release shared lock BEFORE expensive HarfBuzz shaping.
+        // This allows the main thread to acquire the exclusive lock for
+        // input processing without waiting for text shaping to complete.
         ReleaseSRWLockShared(&renderLock_);
 
-        // Phase 2: GPU work without lock — atlas upload, buffer map, draw calls.
+        // Phase 2: Expensive HarfBuzz shaping WITHOUT any lock.
+        // prepareFrame reads only from the copied ScreenSnapshot.
+        renderer->prepareFrame(screenCopy);
+
+        // Phase 3: GPU work (already was lock-free) — atlas upload, buffer map, draw calls.
         renderer->submitFrame();
 
         if (swapChain) {

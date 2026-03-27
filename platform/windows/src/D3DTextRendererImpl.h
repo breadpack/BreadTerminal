@@ -7,6 +7,7 @@
 #include "D3DAtlasUploader.h"
 #include "D3DImageRenderer.h"
 #include "RenderSnapshot.h"
+#include "ScreenSnapshot.h"
 #include "termcore/dynamic_colors.h"
 #include "termcore/font/ligature.h"
 
@@ -146,6 +147,18 @@ struct D3DTextRenderer::Impl {
     // Reusable buffer
     std::vector<D3DCellInstance> cellInstances;
 
+    // Per-row caches for dirty row optimization.
+    // When a row is clean (not dirty), we reuse cached instances instead of
+    // re-shaping with HarfBuzz. Invalidated when grid dimensions change.
+    struct RowCache {
+        std::vector<D3DCellInstance> bgInstances;   // Pass 1 (background)
+        std::vector<D3DCellInstance> fgInstances;   // Pass 2 (glyph/foreground)
+        bool valid = false;
+    };
+    std::vector<RowCache> rowCaches;
+    int cachedRows = 0;
+    int cachedCols = 0;
+
     struct CellConstants {
         float viewport_size[2];
         float cell_size[2];
@@ -159,17 +172,25 @@ struct D3DTextRenderer::Impl {
     void cleanup();
 
     // Cell buffer construction (implemented in D3DCellBuilder.cpp)
+    // Templated on ScreenT to support both Screen and ScreenSnapshot.
     static void colorFromRGBA(uint32_t rgba, float out[4]);
     bool isCellSelected(int row, int col) const;
     int searchHighlightType(int row, int col) const;
     const D3DTextRenderer::UrlHighlight* urlHighlightAt(int row, int col) const;
-    void buildCellBuffer(const Screen& screen);
-    void appendCursorInstances(const Screen& screen, float cellW, float cellH,
+
+    template<typename ScreenT>
+    void buildCellBuffer(const ScreenT& screen);
+
+    template<typename ScreenT>
+    void appendCursorInstances(const ScreenT& screen, float cellW, float cellH,
                                float gridOffsetX, float gridOffsetY);
-    void patchCursorOnly(const Screen& screen);
+
+    template<typename ScreenT>
+    void patchCursorOnly(const ScreenT& screen);
 
     // Overlay passes (implemented in D3DCellBuilderOverlays.cpp)
-    void buildOverlayPasses(const Screen& screen, float cellW, float cellH,
+    template<typename ScreenT>
+    void buildOverlayPasses(const ScreenT& screen, float cellW, float cellH,
                             float ascent, float fontSize);
 
     // Pane status overlays (implemented in D3DCellBuilderPaneStatus.cpp)

@@ -31,6 +31,7 @@
 #include <wrl/client.h>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -40,6 +41,47 @@ using Microsoft::WRL::ComPtr;
 
 // Forward declaration for accessibility
 class TerminalAccessibilityProvider;
+
+/// Lock-free input event for deferred processing.
+struct InputEvent {
+    enum Type : uint8_t { KeyDown, Char };
+    Type type;
+    WPARAM wParam;
+    uint8_t mods;       // captured at enqueue time (modifier keys)
+};
+
+/// Lock-free SPSC ring buffer for input events.
+/// Single producer (WndProc / main message dispatch) and
+/// single consumer (main thread, inside withWriteLock during pollPty).
+struct InputRingBuffer {
+    static constexpr size_t kCapacity = 256;  // must be power of 2
+
+    bool push(const InputEvent& ev) {
+        size_t w = write_.load(std::memory_order_relaxed);
+        size_t next = (w + 1) & (kCapacity - 1);
+        if (next == read_.load(std::memory_order_acquire)) return false; // full
+        buf_[w] = ev;
+        write_.store(next, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(InputEvent& ev) {
+        size_t r = read_.load(std::memory_order_relaxed);
+        if (r == write_.load(std::memory_order_acquire)) return false; // empty
+        ev = buf_[r];
+        read_.store((r + 1) & (kCapacity - 1), std::memory_order_release);
+        return true;
+    }
+
+    bool empty() const {
+        return read_.load(std::memory_order_acquire) == write_.load(std::memory_order_acquire);
+    }
+
+private:
+    std::array<InputEvent, kCapacity> buf_{};
+    std::atomic<size_t> write_{0};
+    std::atomic<size_t> read_{0};
+};
 
 /// Terminal window state, stored as GWLP_USERDATA on the HWND.
 /// Implements IPlatformHost to bridge TerminalController with Win32.
@@ -174,6 +216,10 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void handleDpiChange(HWND hwnd, UINT dpi, const RECT* newRect);
 
     // --- Input ---
+    InputRingBuffer inputQueue_;              // lock-free SPSC input queue
+    void enqueueKeyDown(WPARAM wParam);       // push to queue (no lock)
+    void enqueueChar(WPARAM wParam);          // push to queue (no lock)
+    void drainInputQueue();                   // process queued events (under write lock)
     void handleKeyDown(WPARAM wParam, LPARAM lParam);
     void handleChar(WPARAM wParam);
 
@@ -193,6 +239,13 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // --- Tab bar click handling ---
     bool handleTabBarClick(int x, int y);
     void handleTabBarHover(int x, int y);
+    bool handleTabBarDrag(int x, int y);
+    void handleTabBarDragEnd(int x, int y);
+
+    // Tab drag state
+    bool tabDragging = false;
+    int tabDragSourceIndex = -1;
+    int tabDragStartX = 0;
 
     // --- Sidebar ---
     bool handleSidebarClick(int x, int y);

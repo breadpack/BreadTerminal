@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRendererImpl.h"
+#include "ScreenSnapshot.h"
 
 #include <chrono>
 #include <cmath>
@@ -14,7 +15,8 @@ static char32_t firstCodepoint(const std::string& s) {
     return nextCodepoint(s, pos);
 }
 
-void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
+template<typename ScreenT>
+void D3DTextRenderer::Impl::buildOverlayPasses(const ScreenT& screen,
                                                  float cellW, float cellH,
                                                  float ascent,
                                                  float fontSize) {
@@ -738,6 +740,10 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const Screen& screen,
     // Pass 10: Sidebar panel
     buildSidebarOverlay(cellW, cellH, ascent, fontSize);
 }
+
+// Explicit template instantiations for Screen and ScreenSnapshot
+template void D3DTextRenderer::Impl::buildOverlayPasses<Screen>(const Screen&, float, float, float, float);
+template void D3DTextRenderer::Impl::buildOverlayPasses<::ScreenSnapshot>(const ::ScreenSnapshot&, float, float, float, float);
 
 } // namespace termcore
 
