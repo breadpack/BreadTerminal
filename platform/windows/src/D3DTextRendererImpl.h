@@ -6,6 +6,7 @@
 #include "D3DTextRenderer.h"
 #include "D3DAtlasUploader.h"
 #include "D3DImageRenderer.h"
+#include "RenderSnapshot.h"
 #include "termcore/dynamic_colors.h"
 #include "termcore/font/ligature.h"
 
@@ -93,6 +94,9 @@ struct D3DTextRenderer::Impl {
         int col = -1;      // starting column
     };
     GhostText ghostText;
+
+    // IME composition overlay (virtual, does not mutate Screen)
+    ImeOverlay imeOverlay;
 
     // Font ligatures
     bool fontLigatures = true;

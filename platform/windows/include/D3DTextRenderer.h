@@ -17,6 +17,7 @@ struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct IDXGISwapChain1;
 struct ID3D11RenderTargetView;
+struct ImeOverlay;
 #endif
 
 namespace termcore {
@@ -298,6 +299,10 @@ public:
 
     /// Enable or disable font ligatures in the cell builder.
     void setFontLigatures(bool enabled);
+
+    /// Set IME composition overlay for virtual rendering without mutating Screen cells.
+    /// The overlay is applied during cell buffer construction in the renderer.
+    void setImeOverlay(const struct ImeOverlay& overlay);
 
 private:
     struct Impl;

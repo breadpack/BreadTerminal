@@ -512,6 +512,11 @@ void D3DTextRenderer::setFontLigatures(bool enabled) {
     impl_->contentDirty = true;
 }
 
+void D3DTextRenderer::setImeOverlay(const ImeOverlay& overlay) {
+    impl_->imeOverlay = overlay;
+    impl_->contentDirty = true;
+}
+
 void D3DTextRenderer::setStatusBar(const StatusBarInfo& info) {
     impl_->statusBar = info;
     impl_->contentDirty = true;

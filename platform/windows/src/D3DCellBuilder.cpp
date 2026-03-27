@@ -2,6 +2,7 @@
 
 #include "D3DTextRendererImpl.h"
 #include "termcore/font/box_drawing.h"
+#include "termcore/font/unicode_width.h"
 #include <cmath>
 
 namespace termcore {
@@ -647,6 +648,74 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             inst.flags = 1;  // has_glyph
             cellInstances.push_back(inst);
             ++gtCol;
+        }
+    }
+
+    // Pass 2c: IME composition overlay (virtual — does NOT mutate Screen cells)
+    // Renders IME preedit text at cursor position by drawing bg + glyph quads
+    // on top of existing content, similar to ghost text.
+    if (!imeOverlay.text.empty() && imeOverlay.row >= 0 && imeOverlay.col >= 0 &&
+        imeOverlay.row < rows) {
+        int imeCol = imeOverlay.col;
+        int imeRow = imeOverlay.row;
+
+        for (size_t i = 0; i < imeOverlay.text.size() && imeCol < cols; ++i) {
+            wchar_t ch = imeOverlay.text[i];
+            char32_t cp = static_cast<char32_t>(ch);
+            // Handle surrogate pairs
+            if (i + 1 < imeOverlay.text.size() &&
+                ch >= 0xD800 && ch <= 0xDBFF) {
+                wchar_t lo = imeOverlay.text[i + 1];
+                if (lo >= 0xDC00 && lo <= 0xDFFF) {
+                    cp = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
+                    ++i;
+                }
+            }
+
+            int w = codepoint_width(cp);
+            if (w < 1) w = 1;
+            if (imeCol + w > cols) break;
+
+            // Draw opaque background quad to cover existing cell content
+            for (int c = imeCol; c < imeCol + w; ++c) {
+                D3DCellInstance bgInst = {};
+                bgInst.position[0] = c * cellW + gridOffsetX;
+                bgInst.position[1] = imeRow * cellH + gridOffsetY;
+                colorFromRGBA(imeOverlay.bg_color, bgInst.bg_color);
+                bgInst.flags = 4;  // is_bg_pass
+                cellInstances.push_back(bgInst);
+            }
+
+            // Draw glyph for IME character
+            auto faceId = fontCollection->resolveFace(cp);
+            if (faceId != kInvalidCollectionFace) {
+                auto rastFace = fontCollection->rasterizerFaceId(faceId);
+                uint32_t glyphIdx = rasterizer->getGlyphIndex(rastFace, cp);
+                if (glyphIdx != 0) {
+                    GlyphKey key{rastFace, glyphIdx, {0, 0}};
+                    auto info = glyphCache->getOrRasterize(
+                        key, fontSize, *rasterizer, *glyphAtlas);
+                    if (info && info->region.width > 0 && info->region.height > 0) {
+                        D3DCellInstance inst = {};
+                        float offsetX = static_cast<float>(info->region.bearing_x);
+                        float offsetY = ascent - static_cast<float>(info->region.bearing_y);
+
+                        inst.position[0] = imeCol * cellW + offsetX + gridOffsetX;
+                        inst.position[1] = imeRow * cellH + offsetY + gridOffsetY;
+                        inst.atlas_uv[0] = static_cast<float>(info->region.x);
+                        inst.atlas_uv[1] = static_cast<float>(info->region.y);
+                        inst.atlas_size[0] = static_cast<float>(info->region.width);
+                        inst.atlas_size[1] = static_cast<float>(info->region.height);
+
+                        colorFromRGBA(imeOverlay.fg_color, inst.fg_color);
+                        inst.flags = 1;  // has_glyph
+                        if (info->is_color) inst.flags |= 2;
+                        cellInstances.push_back(inst);
+                    }
+                }
+            }
+
+            imeCol += w;
         }
     }
 

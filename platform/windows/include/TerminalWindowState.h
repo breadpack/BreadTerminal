@@ -4,6 +4,7 @@
 #if defined(_WIN32)
 
 #include "D3DTextRenderer.h"
+#include "RenderSnapshot.h"
 
 #include "termcore/terminal_controller.h"
 #include "termcore/platform_host.h"
@@ -129,6 +130,10 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     void initTerminal();
     void pollPty();
     void renderFrame();
+
+    /// Capture all state needed for rendering into a RenderSnapshot.
+    /// In Phase 2 this will be called under SRWLOCK shared lock.
+    RenderSnapshot captureRenderSnapshot();
 
     // --- Fullscreen ---
     void toggleFullscreen() override;

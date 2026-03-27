@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "TerminalWindowState.h"
+#include "RenderSnapshot.h"
 #include "TerminalAccessibility.h"
 #include "HighContrastDetector.h"
 #include "DirectWriteRasterizer.h"
@@ -355,6 +356,32 @@ void TerminalWindowState::pollPty() {
     }
 }
 
+RenderSnapshot TerminalWindowState::captureRenderSnapshot() {
+    RenderSnapshot snap;
+
+    termcore::Screen* screen = controller->activeScreen();
+    snap.screen = screen;
+
+    // IME overlay: pass composition text to renderer without mutating Screen
+    bool imeComposing = !imeCompositionText.empty();
+    if (imeComposing && screen) {
+        snap.ime.text = imeCompositionText;
+        snap.ime.row = screen->cursorRow();
+        snap.ime.col = screen->cursorCol();
+        // Inverted colors: fg = background color, bg = foreground color
+        snap.ime.fg_color = screen->dynamicColors().background;
+        snap.ime.bg_color = screen->dynamicColors().foreground;
+    }
+
+    snap.cursorBlinkOn = cursorBlinkOn;
+    snap.showResizeOverlay = showResizeOverlay;
+    snap.resizeOverlayCols = resizeOverlayCols;
+    snap.resizeOverlayRows = resizeOverlayRows;
+    snap.inLiveResize = inLiveResize;
+
+    return snap;
+}
+
 void TerminalWindowState::renderFrame() {
     if (!renderer || !controller) return;
 
@@ -379,15 +406,15 @@ void TerminalWindowState::renderFrame() {
         if (anyRingActive) needsRender = true;
     }
 
-    // Update tab bar, sidebar, and selection on renderer
+    // Capture all render inputs into a snapshot.
+    // In Phase 2, this will be done under SRWLOCK shared lock.
+    RenderSnapshot snap = captureRenderSnapshot();
+
+    // Push state from controller to renderer via setters
     updateTabBar();
     updateSidebar();
     updateRendererSelection();
-
-    // Update command palette state on renderer
     updateCommandPalette();
-
-    // Update profile dropdown state on renderer
     updateProfileDropdown();
 
     // Update search highlights on renderer
@@ -416,7 +443,7 @@ void TerminalWindowState::renderFrame() {
         renderer->setUrlHighlights(urlHighlights);
     }
 
-    // Update background opacity and font ligatures on renderer.
+    // Update background opacity and font ligatures on renderer
     {
         const auto& cfg = controller->config();
         renderer->setBackgroundOpacity(cfg.background_opacity);
@@ -435,78 +462,17 @@ void TerminalWindowState::renderFrame() {
         }
     }
 
-    // Hide cursor during IME composition
-    bool imeComposing = !imeCompositionText.empty();
+    // IME state: hide cursor and set overlay for virtual rendering
+    bool imeComposing = !snap.ime.text.empty();
     renderer->setIMEActive(imeComposing);
+    renderer->setImeOverlay(snap.ime);
 
-    // Inject IME composition (preedit) text into screen cells before render
-    struct IMESavedCell { int row, col; termcore::TermCell cell; };
-    std::vector<IMESavedCell> imeSaved;
-
-    if (imeComposing) {
-        int curRow = screen->cursorRow();
-        int curCol = screen->cursorCol();
-        int cols = screen->cols();
-        int rows = screen->rows();
-        if (curRow >= 0 && curRow < rows) {
-            int col = curCol;
-            for (size_t i = 0; i < imeCompositionText.size(); ++i) {
-                if (col >= cols) break;
-
-                wchar_t ch = imeCompositionText[i];
-                char32_t cp = static_cast<char32_t>(ch);
-                // Handle surrogate pairs
-                if (i + 1 < imeCompositionText.size() &&
-                    ch >= 0xD800 && ch <= 0xDBFF) {
-                    wchar_t lo = imeCompositionText[i + 1];
-                    if (lo >= 0xDC00 && lo <= 0xDFFF) {
-                        cp = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
-                        ++i;
-                    }
-                }
-
-                int w = termcore::codepoint_width(cp);
-                if (w < 1) w = 1;
-                if (col + w > cols) break;
-
-                // Save original cells
-                for (int c = col; c < col + w; ++c) {
-                    const termcore::TermCell& orig = screen->cellAt(curRow, c);
-                    imeSaved.push_back({curRow, c, orig});
-                }
-
-                // Write IME character with inverted colors (fg/bg swapped)
-                termcore::TermCell& cell = screen->mutableCellAt(curRow, col);
-                cell.codepoint = cp;
-                cell.fg_color = screen->dynamicColors().background;
-                cell.bg_color = screen->dynamicColors().foreground;
-                cell.attributes = 0;
-                cell.width = w;
-
-                if (w == 2 && col + 1 < cols) {
-                    termcore::TermCell& cont = screen->mutableCellAt(curRow, col + 1);
-                    cont.codepoint = 0;
-                    cont.fg_color = cell.fg_color;
-                    cont.bg_color = cell.bg_color;
-                    cont.attributes = 0;
-                    cont.width = 0;
-                }
-
-                col += w;
-            }
-        }
-    }
-
+    // Render without mutating Screen cells — IME preedit is applied
+    // as a virtual overlay during cell buffer construction.
     renderer->render(*screen);
 
-    // Restore original cells after render
-    for (const auto& sc : imeSaved) {
-        termcore::TermCell& cell = screen->mutableCellAt(sc.row, sc.col);
-        cell = sc.cell;
-    }
-
     if (swapChain) {
-        UINT syncInterval = inLiveResize ? 0 : 1;
+        UINT syncInterval = snap.inLiveResize ? 0 : 1;
         swapChain->Present(syncInterval, 0);
     }
 
