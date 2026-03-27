@@ -3,6 +3,7 @@
 #include "D3DImageRenderer.h"
 #include "termcore/kitty_graphics.h"
 
+#include <algorithm>
 #include <d3dcompiler.h>
 #include <cstring>
 
@@ -192,6 +193,7 @@ void D3DImageRenderer::syncImages(const KittyGraphicsManager& gfx) {
 void D3DImageRenderer::renderPlacements(const KittyGraphicsManager& gfx,
                                           float cell_width, float cell_height,
                                           float viewport_width, float viewport_height,
+                                          int64_t viewport_top_abs_row, int visible_rows,
                                           ID3D11RenderTargetView* rtv) {
     if (!context_ || !imageVS_ || !imagePS_ || gfx.placements().empty()) return;
 
@@ -204,14 +206,32 @@ void D3DImageRenderer::renderPlacements(const KittyGraphicsManager& gfx,
     context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     for (const auto& placement : gfx.placements()) {
+        // Convert absolute row to screen-relative row
+        int64_t screen_row = placement.absolute_row - viewport_top_abs_row;
+
+        // Determine the number of rows this placement occupies
+        int placement_rows = placement.rows;
+        if (placement_rows <= 0) {
+            auto tex_it = textures_.find(placement.image_id);
+            if (tex_it != textures_.end()) {
+                placement_rows = (std::max)(1, static_cast<int>(
+                    (static_cast<float>(tex_it->second.height) + cell_height - 1.0f) / cell_height));
+            } else {
+                placement_rows = 1;
+            }
+        }
+
+        // Skip placements entirely outside the visible viewport
+        if (screen_row + placement_rows <= 0 || screen_row >= visible_rows) continue;
+
         auto it = textures_.find(placement.image_id);
         if (it == textures_.end()) continue;
 
         const auto& tex = it->second;
 
         // Calculate quad position and size
-        float px = placement.x * cell_width;
-        float py = placement.y * cell_height;
+        float px = placement.col * cell_width;
+        float py = static_cast<float>(screen_row) * cell_height;
         float pw, ph;
 
         if (placement.cols > 0 && placement.rows > 0) {

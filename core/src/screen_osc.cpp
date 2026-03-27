@@ -596,8 +596,8 @@ void Screen::handleOscItermImage(const std::string& str) {
     KittyPlacement placement;
     placement.image_id = image_id;
     placement.placement_id = 0;
-    placement.x = cursor_.col;
-    placement.y = cursor_.row;
+    placement.col = cursor_.col;
+    placement.absolute_row = absoluteRowMonotonic();
     placement.cols = display_cols;
     placement.rows = display_rows;
 

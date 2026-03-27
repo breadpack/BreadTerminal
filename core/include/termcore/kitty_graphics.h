@@ -20,10 +20,11 @@ struct KittyImage {
 struct KittyPlacement {
     uint32_t image_id = 0;
     uint32_t placement_id = 0;
-    int x = 0, y = 0; // Cell position
-    int src_x = 0, src_y = 0; // Source crop
+    int col = 0;                // Column (cell position)
+    int64_t absolute_row = 0;   // Absolute row (scrollback-inclusive, monotonic)
+    int src_x = 0, src_y = 0;  // Source crop
     int src_w = 0, src_h = 0;
-    int cols = 0, rows = 0; // Display size in cells
+    int cols = 0, rows = 0;    // Display size in cells
     int z_index = 0;
 };
 
@@ -68,6 +69,13 @@ public:
     /// Add a placement directly (used by iTerm2 protocol integration).
     void addPlacement(const KittyPlacement& placement);
 
+    /// Set current cursor position for placement creation (called by Screen before processCommand).
+    /// col: cursor column, absolute_row: monotonic absolute row (scrollback_evicted + scrollback_size + cursor_row)
+    void setCursorPosition(int col, int64_t absolute_row);
+
+    /// Remove placements whose absolute_row is below the given threshold (scrollback eviction).
+    void evictPlacementsBefore(int64_t oldest_absolute_row);
+
 private:
     struct PendingTransmit {
         KittyImage image;
@@ -95,6 +103,10 @@ private:
     std::vector<KittyPlacement> placements_;
     PendingTransmit pending_;
     uint32_t next_id_ = 1;
+
+    // Current cursor position for placement creation (set by Screen)
+    int cursor_col_ = 0;
+    int64_t cursor_absolute_row_ = 0;
 
     size_t total_image_memory_ = 0;
     std::list<uint32_t> lru_order_; // front = oldest, back = newest

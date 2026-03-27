@@ -27,9 +27,12 @@ public:
     /// Render all placements at their cell positions.
     /// cell_width/cell_height: terminal cell size in pixels
     /// viewport_width/viewport_height: viewport size
+    /// viewport_top_abs_row: monotonic absolute row at the top of the viewport
+    /// visible_rows: number of visible rows in the viewport
     void renderPlacements(const KittyGraphicsManager& gfx,
                           float cell_width, float cell_height,
                           float viewport_width, float viewport_height,
+                          int64_t viewport_top_abs_row, int visible_rows,
                           ID3D11RenderTargetView* rtv);
 
     /// Clean up all textures

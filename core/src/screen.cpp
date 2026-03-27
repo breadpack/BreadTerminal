@@ -130,6 +130,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
                 scrollback_.push_back(std::move(compressed));
                 if (scrollback_.size() > max_scrollback_) {
                     scrollback_.pop_front();
+                    ++scrollback_lines_evicted_;
                 }
             }
             grid_.pop_front();
@@ -146,6 +147,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
             scrollback_.push_back(std::move(compressed));
             if (scrollback_.size() > max_scrollback_) {
                 scrollback_.pop_front();
+                ++scrollback_lines_evicted_;
             }
         }
         for (int r = top; r < bottom; ++r) {
@@ -601,6 +603,9 @@ void Screen::onApcDispatch(const std::string& data) {
     } else {
         control = data.substr(1);
     }
+
+    // Set cursor position so placements get correct absolute row
+    kitty_graphics_.setCursorPosition(cursor_.col, absoluteRowMonotonic());
 
     std::string response = kitty_graphics_.processCommand(control, payload);
 

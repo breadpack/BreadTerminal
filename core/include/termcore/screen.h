@@ -185,6 +185,18 @@ public:
     KittyGraphicsManager& kittyGraphics() { return kitty_graphics_; }
     const KittyGraphicsManager& kittyGraphics() const { return kitty_graphics_; }
 
+    /// Monotonic absolute row for the current cursor position.
+    /// This value never decreases, even when scrollback rows are evicted.
+    int64_t absoluteRowMonotonic() const {
+        return scrollback_lines_evicted_ + static_cast<int64_t>(scrollback_.size()) + cursor_.row;
+    }
+
+    /// Monotonic absolute row for the top of the current viewport.
+    /// Used by renderers to convert placement absolute_row to screen-relative position.
+    int64_t viewportTopAbsoluteRow() const {
+        return scrollback_lines_evicted_ + static_cast<int64_t>(scrollback_.size()) - viewport_offset_;
+    }
+
     // --- Cell size hints (for iTerm2 image dimension calculation) ---
     void setCellSize(int width_px, int height_px) {
         cell_width_px_ = width_px;
@@ -289,6 +301,7 @@ private:
     std::deque<Row> grid_;
     std::deque<CompressedRow> scrollback_;
     size_t max_scrollback_ = 10000;
+    int64_t scrollback_lines_evicted_ = 0;  // Total scrollback lines evicted (for monotonic row tracking)
     int viewport_offset_ = 0;  // 0 = bottom (live), >0 = scrolled up
 
     // Cursor

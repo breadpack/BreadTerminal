@@ -446,6 +446,7 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->imageRenderer.renderPlacements(
             gfx, constants.cell_size[0], constants.cell_size[1],
             impl_->viewportWidth, impl_->viewportHeight,
+            screen.viewportTopAbsoluteRow(), screen.rows(),
             impl_->rtv);
     }
 }

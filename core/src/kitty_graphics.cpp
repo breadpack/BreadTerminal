@@ -216,20 +216,23 @@ void KittyGraphicsManager::handleTransmit(
     if (display) {
         KittyPlacement placement;
         placement.image_id = image_id;
+        placement.col = cursor_col_;
+        placement.absolute_row = cursor_absolute_row_;
 
         auto p_it = params.find("p");
         if (p_it != params.end()) {
             placement.placement_id = safeStou(p_it->second);
         }
 
+        // Kitty protocol x/y params are source crop offsets
         auto x_it = params.find("x");
         if (x_it != params.end()) {
-            placement.x = safeStoi(x_it->second);
+            placement.src_x = safeStoi(x_it->second);
         }
 
         auto y_it = params.find("y");
         if (y_it != params.end()) {
-            placement.y = safeStoi(y_it->second);
+            placement.src_y = safeStoi(y_it->second);
         }
 
         auto z_it = params.find("z");
@@ -255,6 +258,8 @@ void KittyGraphicsManager::handleDisplay(
     const std::unordered_map<std::string, std::string>& params) {
 
     KittyPlacement placement;
+    placement.col = cursor_col_;
+    placement.absolute_row = cursor_absolute_row_;
 
     auto i_it = params.find("i");
     if (i_it != params.end()) {
@@ -266,14 +271,15 @@ void KittyGraphicsManager::handleDisplay(
         placement.placement_id = safeStou(p_it->second);
     }
 
+    // Kitty protocol x/y params are source crop offsets
     auto x_it = params.find("x");
     if (x_it != params.end()) {
-        placement.x = safeStoi(x_it->second);
+        placement.src_x = safeStoi(x_it->second);
     }
 
     auto y_it = params.find("y");
     if (y_it != params.end()) {
-        placement.y = safeStoi(y_it->second);
+        placement.src_y = safeStoi(y_it->second);
     }
 
     auto z_it = params.find("z");
@@ -406,6 +412,20 @@ uint32_t KittyGraphicsManager::addImage(KittyImage image) {
 
 void KittyGraphicsManager::addPlacement(const KittyPlacement& placement) {
     placements_.push_back(placement);
+}
+
+void KittyGraphicsManager::setCursorPosition(int col, int64_t absolute_row) {
+    cursor_col_ = col;
+    cursor_absolute_row_ = absolute_row;
+}
+
+void KittyGraphicsManager::evictPlacementsBefore(int64_t oldest_absolute_row) {
+    placements_.erase(
+        std::remove_if(placements_.begin(), placements_.end(),
+                        [oldest_absolute_row](const KittyPlacement& p) {
+                            return p.absolute_row < oldest_absolute_row;
+                        }),
+        placements_.end());
 }
 
 } // namespace termcore
