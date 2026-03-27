@@ -361,8 +361,9 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
 
             char32_t cp = cell.codepoint;
 
-            // Powerline glyphs (E0B0-E0B3): try font first, procedural fallback
-            bool isPowerline = (cp >= 0xE0B0 && cp <= 0xE0B3);
+            // Powerline glyphs: try font first, procedural fallback
+            bool isPowerline = is_powerline_extended(cp);
+            bool isNerdIcon = is_nerd_font_icon(cp);
             // Non-powerline box drawing: always procedural
             bool isBoxDrawing = !isPowerline && is_box_drawing(cp);
 
@@ -545,6 +546,26 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             inst.atlas_uv[1] = static_cast<float>(info->region.y);
             inst.atlas_size[0] = static_cast<float>(info->region.width);
             inst.atlas_size[1] = static_cast<float>(info->region.height);
+
+            // Cell constraint for Nerd Font icons: scale oversized glyphs to fit cell bounds
+            if (isNerdIcon) {
+                float maxW = cellW * 2.0f;
+                float maxH = cellH;
+                float glyphW = inst.atlas_size[0];
+                float glyphH = inst.atlas_size[1];
+
+                if (glyphW > maxW || glyphH > maxH) {
+                    float scale = std::min(maxW / glyphW, maxH / glyphH);
+                    float scaledW = glyphW * scale;
+                    float scaledH = glyphH * scale;
+                    // Adjust displayed size while keeping atlas UV the same
+                    inst.atlas_size[0] = scaledW;
+                    inst.atlas_size[1] = scaledH;
+                    // Re-center in cell
+                    inst.position[0] = col * cellW + (cellW - scaledW) / 2.0f + gridOffsetX;
+                    inst.position[1] = row * cellH + (cellH - scaledH) / 2.0f + gridOffsetY;
+                }
+            }
 
             colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
             colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);

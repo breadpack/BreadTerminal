@@ -16,6 +16,12 @@ struct BoxGlyphBitmap {
 /// Check if a codepoint should be custom-rendered (not from font).
 bool is_box_drawing(char32_t cp);
 
+/// Check if a codepoint is in the extended Powerline range (U+E0B0-E0BF).
+bool is_powerline_extended(char32_t cp);
+
+/// Check if a codepoint is a Nerd Font icon glyph (Dev Icons, Font Awesome, etc.).
+bool is_nerd_font_icon(char32_t cp);
+
 /// Render a box drawing or special glyph to a grayscale bitmap.
 /// cell_width/cell_height: terminal cell dimensions in pixels.
 /// thickness: line thickness in pixels (typically 1 or 2).

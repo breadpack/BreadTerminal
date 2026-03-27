@@ -20,6 +20,33 @@ bool is_box_drawing(char32_t cp) {
     return false;
 }
 
+bool is_powerline_extended(char32_t cp) {
+    // All Powerline variants: original + round + extra
+    return (cp >= 0xE0B0 && cp <= 0xE0BF);
+}
+
+bool is_nerd_font_icon(char32_t cp) {
+    // Seti-UI + Custom
+    if (cp >= 0xE200 && cp <= 0xE2A9) return true;
+    // Custom (devicons)
+    if (cp >= 0xE5FA && cp <= 0xE6B5) return true;
+    // Dev Icons
+    if (cp >= 0xE700 && cp <= 0xE7C5) return true;
+    // Codicons
+    if (cp >= 0xEA60 && cp <= 0xEC1E) return true;
+    // Various Nerd Font ranges
+    if (cp >= 0xED00 && cp <= 0xF2FF) return true;
+    // Font Awesome
+    if (cp >= 0xF000 && cp <= 0xF2E0) return true;
+    // Font Logos
+    if (cp >= 0xF300 && cp <= 0xF375) return true;
+    // Octicons
+    if (cp >= 0xF400 && cp <= 0xF532) return true;
+    // Material Design
+    if (cp >= 0xF500 && cp <= 0xFD46) return true;
+    return false;
+}
+
 // --- Block Elements (U+2580-U+259F) ---
 
 static BoxGlyphBitmap render_block_element(char32_t cp, int w, int h) {
