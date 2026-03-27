@@ -37,6 +37,7 @@ public:
     void onMouseEvent(const InputMouseEvent& e);
     void onCharInput(const std::string& utf8);
     void onResize(int pixelW, int pixelH);
+    void onFocusChange(bool focused);
 
     // Search (from search UI)
     void onSearchQuery(const std::string& query);

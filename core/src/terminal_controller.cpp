@@ -675,6 +675,14 @@ void TerminalController::onResize(int pixelW, int pixelH) {
     recalcGrid();
 }
 
+void TerminalController::onFocusChange(bool focused) {
+    auto* screen = activeScreen();
+    if (!screen || !screen->focusEvents()) return;
+
+    const char* seq = focused ? "\x1b[I" : "\x1b[O";
+    sendPtyData(seq, 3);
+}
+
 // --- Search ---
 
 void TerminalController::onSearchQuery(const std::string& query) {

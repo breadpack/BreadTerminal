@@ -66,6 +66,18 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             return 0;
         }
 
+        case WM_SETFOCUS:
+            if (state && state->controller) {
+                state->controller->onFocusChange(true);
+            }
+            return 0;
+
+        case WM_KILLFOCUS:
+            if (state && state->controller) {
+                state->controller->onFocusChange(false);
+            }
+            return 0;
+
         case WM_ENTERSIZEMOVE:
             if (state) state->inLiveResize = true;
             return 0;
