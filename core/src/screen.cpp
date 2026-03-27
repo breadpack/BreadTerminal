@@ -379,6 +379,56 @@ void Screen::onPrint(char32_t codepoint) {
     }
 }
 
+void Screen::onPrintAscii(const char* data, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        char32_t cp = static_cast<char32_t>(data[i]);
+        last_printed_ = cp;
+
+        markRowDirty(cursor_.row);
+
+        if (wrap_pending_) {
+            wrap_pending_ = false;
+            cursor_.col = 0;
+            if (cursor_.row == scroll_bottom_) {
+                scrollUp(scroll_top_, scroll_bottom_);
+            } else if (cursor_.row < rows_ - 1) {
+                cursor_.row++;
+            }
+            markRowDirty(cursor_.row);
+        }
+
+        if (insert_mode_) {
+            auto& row = grid_[cursor_.row];
+            row.insert(row.begin() + cursor_.col, TermCell{});
+            row.resize(cols_);
+            row.occ = std::min(row.occ + 1, cols_);
+        }
+
+        TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
+        cell.codepoint = cp;
+        cell.fg_color = pen_.fg_color;
+        cell.bg_color = pen_.bg_color;
+        cell.attributes = pen_.attributes;
+        cell.width = 1;
+        cell.underline_style = pen_.underline_style;
+        cell.underline_color = pen_.underline_color;
+        cell.extra_count = 0;
+
+        grid_[cursor_.row].markOccupied(cursor_.col);
+
+        grapheme_row_ = cursor_.row;
+        grapheme_col_ = cursor_.col + 1;
+
+        if (cursor_.col < cols_ - 1) {
+            cursor_.col++;
+        } else if (autowrap_) {
+            wrap_pending_ = true;
+        } else {
+            cursor_.col = cols_ - 1;
+        }
+    }
+}
+
 void Screen::advanceCursorAfterPrint() {
     if (cursor_.col < cols_ - 1) {
         cursor_.col++;

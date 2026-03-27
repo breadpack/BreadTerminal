@@ -33,6 +33,13 @@ public:
     /// Called for printable characters (full Unicode codepoints).
     virtual void onPrint(char32_t codepoint) = 0;
 
+    /// Called for bulk printable ASCII (0x20-0x7E) from SIMD fast-path.
+    /// Default implementation delegates to onPrint() per character.
+    virtual void onPrintAscii(const char* data, size_t len) {
+        for (size_t i = 0; i < len; ++i)
+            onPrint(static_cast<char32_t>(data[i]));
+    }
+
     /// Called for C0/C1 control codes (BEL, BS, HT, LF, CR, etc.).
     virtual void onExecute(uint8_t byte) = 0;
 

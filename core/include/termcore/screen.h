@@ -221,6 +221,7 @@ public:
 
     // --- VtParserHandler implementation ---
     void onPrint(char32_t codepoint) override;
+    void onPrintAscii(const char* data, size_t len) override;
     void onExecute(uint8_t byte) override;
     void onCsiDispatch(char32_t final_char,
                        const std::vector<VtParam>& params,

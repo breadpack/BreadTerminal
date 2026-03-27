@@ -11,6 +11,7 @@ find_package(ZLIB REQUIRED)
 set(TERMCORE_SOURCES
     src/termcore_api.cpp
     src/vt_parser.cpp
+    src/vt_parser_simd.cpp
     src/dynamic_colors.cpp
     src/contrast.cpp
     src/compressed_row.cpp
@@ -226,6 +227,16 @@ endif()
 list(APPEND TERMCORE_SOURCES src/lua_config.cpp src/lua_config_writer.cpp src/plugin_manager.cpp)
 
 add_library(termcore STATIC ${TERMCORE_SOURCES})
+
+# SIMD: compile vt_parser_simd.cpp with AVX2 so both AVX2 and SSE2 codepaths
+# are available; runtime CPU dispatch selects the best one.
+if(MSVC)
+    set_source_files_properties(src/vt_parser_simd.cpp
+        PROPERTIES COMPILE_FLAGS "/arch:AVX2")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/vt_parser_simd.cpp
+        PROPERTIES COMPILE_FLAGS "-mavx2")
+endif()
 
 target_include_directories(termcore
     PUBLIC

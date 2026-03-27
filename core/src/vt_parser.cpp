@@ -1,5 +1,6 @@
 #include "termcore/vt_parser.h"
 #include "termcore/terminal_inspector.h"
+#include "vt_parser_simd.h"
 
 #include <sstream>
 
@@ -79,8 +80,22 @@ void VtParser::setInspector(TerminalInspector* inspector) {
 }
 
 void VtParser::feed(const char* data, size_t len) {
-    for (size_t i = 0; i < len; ++i) {
-        processByte(static_cast<uint8_t>(data[i]));
+    const auto* bytes = reinterpret_cast<const uint8_t*>(data);
+    size_t i = 0;
+
+    while (i < len) {
+        // SIMD fast-path: bulk-process printable ASCII in Ground state
+        if (state_ == VtParserState::Ground
+            && !(inspector_ && inspector_->isEnabled())) {
+            size_t count = scanPrintableAscii(bytes + i, len - i);
+            if (count > 0) {
+                handler_.onPrintAscii(data + i, count);
+                i += count;
+                continue;
+            }
+        }
+        processByte(bytes[i]);
+        ++i;
     }
 }
 
