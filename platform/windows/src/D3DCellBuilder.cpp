@@ -3,6 +3,7 @@
 #include "D3DTextRendererImpl.h"
 #include "termcore/font/box_drawing.h"
 #include "termcore/font/unicode_width.h"
+#include "termcore/kitty_unicode_placeholder.h"
 #include <cmath>
 
 namespace termcore {
@@ -351,6 +352,13 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
                 if (info->is_color) inst.flags |= 2;
 
                 cellInstances.push_back(inst);
+                continue;
+            }
+
+            // Kitty Unicode Placeholder: skip glyph rendering for image cells.
+            // The image will be rendered by D3DImageRenderer once full
+            // placeholder-to-image mapping is implemented.
+            if (cell.codepoint == kKittyPlaceholder) {
                 continue;
             }
 

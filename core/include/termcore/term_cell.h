@@ -30,7 +30,9 @@ enum UnderlineStyle : uint8_t {
 };
 
 /// Maximum extra codepoints stored inline per cell for grapheme clusters.
-static constexpr int kMaxExtraCodepoints = 7;
+/// 10 slots to accommodate Kitty Unicode Placeholder (U+10EEEE) which can have
+/// up to 10 extra codepoints: 5 diacritical selectors + 5 value codepoints.
+static constexpr int kMaxExtraCodepoints = 10;
 
 /// A single cell in the terminal grid.
 struct TermCell {

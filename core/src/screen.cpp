@@ -1,5 +1,6 @@
 #include "termcore/screen.h"
 #include "termcore/config.h"
+#include "termcore/kitty_unicode_placeholder.h"
 #include "screen_colors.h"
 #include "termcore/font/unicode_width.h"
 #include <algorithm>
@@ -179,6 +180,19 @@ bool Screen::shouldCombineWithPrevious(char32_t codepoint) const {
 
     const TermCell& prev = grid_[grapheme_row_][prev_col];
     if (prev.codepoint == ' ' && prev.extra_count == 0) return false;
+
+    // Kitty Unicode Placeholder: force-combine all selector and value codepoints
+    // into the U+10EEEE cell. Value codepoints following diacritical selectors
+    // are not combining marks, so normal grapheme rules won't attach them.
+    if (prev.codepoint == kKittyPlaceholder) {
+        // Combine placeholder selectors (U+0305, U+030D, U+0310, U+0312, U+0313)
+        if (isPlaceholderSelector(codepoint)) return true;
+        // Also combine value codepoints that follow a selector
+        if (prev.extra_count > 0 &&
+            isPlaceholderSelector(prev.extra[prev.extra_count - 1])) {
+            return true;
+        }
+    }
 
     char32_t last_cp = prev.extra_count > 0
         ? prev.extra[prev.extra_count - 1]
