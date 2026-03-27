@@ -27,6 +27,7 @@ set(TERMCORE_SOURCES
     src/font/font_shaper.cpp
     src/font/glyph_atlas.cpp
     src/font/glyph_cache.cpp
+    src/font/raster_queue.cpp
     src/font/font_collection.cpp
     src/font/variable_font.cpp
     src/font/ligature.cpp

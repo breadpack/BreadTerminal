@@ -98,6 +98,59 @@ std::optional<GlyphInfo> GlyphCache::getOrRasterize(
     return info;
 }
 
+std::optional<GlyphInfo> GlyphCache::tryGet(const GlyphKey& key) {
+    auto it = cache_.find(key);
+    if (it == cache_.end()) {
+        ++misses_;
+        return std::nullopt;
+    }
+
+    auto& info = it->second->second;
+
+    // If entry needs re-rasterization (atlas was reset), treat as miss
+    if (info.needs_rerasterize) {
+        ++misses_;
+        return std::nullopt;
+    }
+
+    // Move to front of LRU list (most recently used)
+    lru_list_.splice(lru_list_.begin(), lru_list_, it->second);
+    info.last_used_generation = current_generation_;
+    ++hits_;
+    return info;
+}
+
+std::optional<GlyphInfo> GlyphCache::insertFromBackground(
+    const GlyphKey& key,
+    const RasterizedGlyph& glyph,
+    bool is_color,
+    GlyphAtlas& atlas) {
+
+    // Pack into atlas
+    bool atlas_was_reset = false;
+    auto region = atlas.pack(glyph, &atlas_was_reset);
+
+    if (atlas_was_reset) {
+        compactForAtlasReset();
+    }
+
+    if (!region.has_value()) {
+        return std::nullopt;  // Atlas full
+    }
+
+    // Build GlyphInfo
+    GlyphInfo info;
+    info.region = region.value();
+    info.advance_x = static_cast<float>(glyph.bearing_x + glyph.width);
+    info.advance_y = 0.0f;
+    info.is_color = is_color;
+    info.last_used_generation = current_generation_;
+    info.needs_rerasterize = false;
+
+    put(key, info);
+    return info;
+}
+
 void GlyphCache::precacheAscii(
     FontFaceId face_id,
     float size,

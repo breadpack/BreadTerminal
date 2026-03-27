@@ -40,6 +40,17 @@ public:
                                              IFontRasterizer& rasterizer,
                                              GlyphAtlas& atlas);
 
+    /// Try to get a glyph from cache without rasterizing on miss.
+    /// Returns nullopt on cache miss — caller should enqueue an async raster request.
+    std::optional<GlyphInfo> tryGet(const GlyphKey& key);
+
+    /// Insert a glyph that was rasterized in the background into the atlas and cache.
+    /// Returns the GlyphInfo if atlas packing succeeded.
+    std::optional<GlyphInfo> insertFromBackground(const GlyphKey& key,
+                                                   const RasterizedGlyph& glyph,
+                                                   bool is_color,
+                                                   GlyphAtlas& atlas);
+
     /// Precache ASCII range (32-126) for a font face in all 4 styles.
     /// For terminals, this avoids cache misses for common characters.
     void precacheAscii(FontFaceId face_id, float size,
