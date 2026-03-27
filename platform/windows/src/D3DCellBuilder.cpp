@@ -69,6 +69,147 @@ const D3DTextRenderer::UrlHighlight* D3DTextRenderer::Impl::urlHighlightAt(int r
     return nullptr;
 }
 
+// --- Row-level HarfBuzz shaping ---
+
+struct RowShapedGlyph {
+    int col;                    // which cell this glyph belongs to
+    uint32_t glyph_index;      // HarfBuzz glyph index
+    FontFaceId shaper_face_id; // font face used for shaping
+    FontFaceId raster_face_id; // font face used for rasterization
+    int x_offset_26_6;         // sub-pixel offset from advance (26.6 fixed point)
+    int cell_span;             // how many cells this glyph covers (for ligatures)
+};
+
+static std::vector<RowShapedGlyph> shapeRow(
+    const Screen& screen, int row, int cols,
+    FontCollection* fontCollection,
+    const ShaperConfig& config,
+    int cursorRow, int cursorCol)
+{
+    std::vector<RowShapedGlyph> result;
+    if (!fontCollection) return result;
+
+    // 1. Collect codepoints and resolve font faces
+    struct CellInfo {
+        char32_t codepoint;
+        CollectionFaceId collection_face;
+    };
+    std::vector<CellInfo> cells(cols);
+
+    for (int c = 0; c < cols; ++c) {
+        const TermCell& tc = screen.cellAt(row, c);
+        char32_t cp = tc.codepoint;
+        if (cp == 0 || tc.width == 0) {
+            cells[c] = {' ', fontCollection->resolveFace(' ')};
+        } else {
+            cells[c] = {cp, fontCollection->resolveFace(cp)};
+        }
+    }
+
+    // 2. Group into runs by font face
+    int run_start = 0;
+    while (run_start < cols) {
+        CollectionFaceId face = cells[run_start].collection_face;
+        int run_end = run_start + 1;
+        while (run_end < cols && cells[run_end].collection_face == face) {
+            ++run_end;
+        }
+
+        // 3. Build codepoint string for this run
+        std::u32string run_codepoints;
+        run_codepoints.reserve(run_end - run_start);
+        for (int c = run_start; c < run_end; ++c) {
+            run_codepoints.push_back(cells[c].codepoint);
+        }
+
+        // 4. Get shaper/raster face IDs
+        FontFaceId shaperFace = (face != kInvalidCollectionFace)
+            ? fontCollection->shaperFaceId(face) : kInvalidFontFace;
+        FontFaceId rasterFace = (face != kInvalidCollectionFace)
+            ? fontCollection->rasterizerFaceId(face) : kInvalidFontFace;
+
+        // 5. Shape the run
+        if (shaperFace != kInvalidFontFace) {
+            FontMetrics metrics = fontCollection->primaryMetrics();
+            float cellWidth = metrics.cell_width;
+
+            // If cursor is in this run, split into sub-runs around cursor
+            // to break ligatures at cursor position
+            bool cursorInRun = (row == cursorRow &&
+                               cursorCol >= run_start && cursorCol < run_end);
+
+            if (cursorInRun) {
+                // Shape three segments: before cursor, cursor cell, after cursor
+                int segments[][2] = {
+                    {run_start, cursorCol},
+                    {cursorCol, cursorCol + 1},
+                    {cursorCol + 1, run_end}
+                };
+                for (auto& seg : segments) {
+                    int segStart = seg[0];
+                    int segEnd = seg[1];
+                    if (segStart >= segEnd) continue;
+
+                    std::u32string segCp;
+                    segCp.reserve(segEnd - segStart);
+                    for (int c = segStart; c < segEnd; ++c) {
+                        segCp.push_back(cells[c].codepoint);
+                    }
+
+                    auto shaped_runs = fontCollection->shaper().shapeForGrid(
+                        shaperFace, segCp, cellWidth, config);
+
+                    for (const auto& sr : shaped_runs) {
+                        if (sr.glyphs.empty()) continue;
+                        const auto& g = sr.glyphs[0];
+                        RowShapedGlyph rsg;
+                        rsg.col = segStart + sr.start_cell;
+                        rsg.glyph_index = g.glyph_index;
+                        rsg.shaper_face_id = shaperFace;
+                        rsg.raster_face_id = rasterFace;
+                        rsg.x_offset_26_6 = g.x_offset;
+                        rsg.cell_span = sr.cell_count;
+                        result.push_back(rsg);
+                    }
+                }
+            } else {
+                auto shaped_runs = fontCollection->shaper().shapeForGrid(
+                    shaperFace, run_codepoints, cellWidth, config);
+
+                for (const auto& sr : shaped_runs) {
+                    if (sr.glyphs.empty()) continue;
+                    const auto& g = sr.glyphs[0];
+                    RowShapedGlyph rsg;
+                    rsg.col = run_start + sr.start_cell;
+                    rsg.glyph_index = g.glyph_index;
+                    rsg.shaper_face_id = shaperFace;
+                    rsg.raster_face_id = rasterFace;
+                    rsg.x_offset_26_6 = g.x_offset;
+                    rsg.cell_span = sr.cell_count;
+                    result.push_back(rsg);
+                }
+            }
+        } else {
+            // Fallback: no shaping, just individual glyphs
+            for (int c = run_start; c < run_end; ++c) {
+                if (cells[c].codepoint == ' ' || cells[c].codepoint == 0) continue;
+                RowShapedGlyph rsg;
+                rsg.col = c;
+                rsg.glyph_index = 0; // will be resolved individually
+                rsg.shaper_face_id = kInvalidFontFace;
+                rsg.raster_face_id = rasterFace;
+                rsg.x_offset_26_6 = 0;
+                rsg.cell_span = 1;
+                result.push_back(rsg);
+            }
+        }
+
+        run_start = run_end;
+    }
+
+    return result;
+}
+
 void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     if (!fontCollection || !glyphCache || !glyphAtlas || !rasterizer) {
         return;
@@ -229,51 +370,23 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     // Pass 2: Glyph quads (glyph-sized, positioned with bearing)
     for (int row = 0; row < rows; ++row) {
 
-        // --- Ligature detection for this row ---
-        // ligatureGlyphs[col] holds the shaped glyph index if this column
-        // starts a ligature; ligatureSkip[col] is true for continuation
-        // columns within a ligature span that should not emit a glyph.
-        std::vector<int> ligatureSpanIndex(cols, -1);  // -1 = not part of ligature
-        std::vector<LigatureShapingResult> ligatureResults;
+        // --- Row-level shaping (replaces per-cell ligature detection) ---
+        // When fontLigatures is enabled and fontCollection is available,
+        // shape entire font runs per row using shapeForGrid().
+        auto shapedRow = shapeRow(screen, row, cols, fontCollection,
+                                  ShaperConfig{fontLigatures, fontLigatures},
+                                  cursorRow, cursorCol);
 
-        if (fontLigatures && fontCollection) {
-            // Collect codepoints for the row
-            std::vector<uint32_t> rowCodepoints;
-            rowCodepoints.reserve(cols);
-            for (int c = 0; c < cols; ++c) {
-                const TermCell& tc = screen.cellAt(row, c);
-                rowCodepoints.push_back(
-                    (tc.codepoint != 0) ? static_cast<uint32_t>(tc.codepoint) : ' ');
-            }
+        // Build a map from col -> shaped glyph info
+        std::vector<const RowShapedGlyph*> colToShaped(cols, nullptr);
+        std::vector<bool> colIsContinuation(cols, false);
 
-            auto spans = ligatureDetector.detectLigatures(rowCodepoints, 0);
-
-            for (const auto& span : spans) {
-                // Break ligature if cursor is on this row and overlaps the span
-                if (row == cursorRow &&
-                    cursorCol >= span.start_col && cursorCol < span.end_col) {
-                    continue;  // Skip this span — render individual chars
-                }
-
-                // Shape the ligature span
-                auto faceId = fontCollection->resolveFace(
-                    static_cast<char32_t>(span.codepoints[0]));
-                if (faceId == kInvalidCollectionFace) continue;
-
-                FontFaceId shaperFace = fontCollection->shaperFaceId(faceId);
-                if (shaperFace == kInvalidFontFace) continue;
-
-                auto result = LigatureDetector::shapeLigature(
-                    fontCollection->shaper(), shaperFace, span);
-
-                if (result.glyphs.empty()) continue;
-
-                // Check that at least one glyph was produced
-                int spanIdx = static_cast<int>(ligatureResults.size());
-                ligatureResults.push_back(std::move(result));
-
-                for (int c = span.start_col; c < span.end_col && c < cols; ++c) {
-                    ligatureSpanIndex[c] = spanIdx;
+        for (const auto& sg : shapedRow) {
+            if (sg.col >= 0 && sg.col < cols) {
+                colToShaped[sg.col] = &sg;
+                // Mark continuation cells for multi-cell shaped glyphs
+                for (int c = sg.col + 1; c < sg.col + sg.cell_span && c < cols; ++c) {
+                    colIsContinuation[c] = true;
                 }
             }
         }
@@ -281,84 +394,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
         for (int col = 0; col < cols; ++col) {
             const TermCell& cell = screen.cellAt(row, col);
 
-            // --- Handle ligature span cells ---
-            if (ligatureSpanIndex[col] >= 0) {
-                int spanIdx = ligatureSpanIndex[col];
-                const auto& ligResult = ligatureResults[spanIdx];
-
-                // Only emit glyph on the first column of the span
-                bool isFirstCol = (col == 0 || ligatureSpanIndex[col - 1] != spanIdx);
-                if (!isFirstCol) continue;  // Skip continuation columns
-
-                // Use the first shaped glyph from the ligature result
-                if (ligResult.glyphs.empty()) continue;
-                const auto& shapedGlyph = ligResult.glyphs[0];
-
-                auto faceId = fontCollection->resolveFace(cell.codepoint);
-                if (faceId == kInvalidCollectionFace) continue;
-                FontFaceId rastFace = fontCollection->rasterizerFaceId(faceId);
-
-                GlyphKey key{rastFace, shapedGlyph.glyph_index, {0, 0}};
-                auto info = glyphCache->getOrRasterize(
-                    key, fontSize, *rasterizer, *glyphAtlas);
-                if (!info || info->region.width <= 0 ||
-                    info->region.height <= 0) {
-                    continue;
-                }
-
-                D3DCellInstance inst = {};
-
-                float offsetX = static_cast<float>(info->region.bearing_x);
-                float offsetY = ascent -
-                    static_cast<float>(info->region.bearing_y);
-
-                inst.position[0] = col * cellW + offsetX + gridOffsetX;
-                inst.position[1] = row * cellH + offsetY + gridOffsetY;
-
-                inst.atlas_uv[0] = static_cast<float>(info->region.x);
-                inst.atlas_uv[1] = static_cast<float>(info->region.y);
-                inst.atlas_size[0] = static_cast<float>(info->region.width);
-                inst.atlas_size[1] = static_cast<float>(info->region.height);
-
-                colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
-                colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
-
-                if (cell.attributes & AttrInverse) {
-                    std::swap(inst.fg_color[0], inst.bg_color[0]);
-                    std::swap(inst.fg_color[1], inst.bg_color[1]);
-                    std::swap(inst.fg_color[2], inst.bg_color[2]);
-                    std::swap(inst.fg_color[3], inst.bg_color[3]);
-                }
-
-                if (isCellSelected(row, col)) {
-                    std::swap(inst.fg_color[0], inst.bg_color[0]);
-                    std::swap(inst.fg_color[1], inst.bg_color[1]);
-                    std::swap(inst.fg_color[2], inst.bg_color[2]);
-                    std::swap(inst.fg_color[3], inst.bg_color[3]);
-                }
-
-                if (cell.attributes & AttrDim) {
-                    inst.fg_color[0] *= 0.5f;
-                    inst.fg_color[1] *= 0.5f;
-                    inst.fg_color[2] *= 0.5f;
-                }
-
-                int sht2 = searchHighlightType(row, col);
-                if (sht2 > 0) {
-                    inst.fg_color[0] = 0.0f; inst.fg_color[1] = 0.0f;
-                    inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
-                }
-
-                inst.flags = 1;  // has_glyph
-                if (info->is_color) inst.flags |= 2;
-
-                cellInstances.push_back(inst);
-                continue;
-            }
-
             // Kitty Unicode Placeholder: skip glyph rendering for image cells.
-            // The image will be rendered by D3DImageRenderer once full
-            // placeholder-to-image mapping is implemented.
             if (cell.codepoint == kKittyPlaceholder) {
                 continue;
             }
@@ -375,6 +411,91 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
             bool isNerdIcon = is_nerd_font_icon(cp);
             // Non-powerline box drawing: always procedural
             bool isBoxDrawing = !isPowerline && is_box_drawing(cp);
+
+            // --- Handle row-shaped glyph cells ---
+            // Check AFTER special character detection so box drawing, Powerline,
+            // and placeholder glyphs are handled by their dedicated paths.
+            if (!isBoxDrawing && !isPowerline && colToShaped[col]) {
+                const auto& sg = *colToShaped[col];
+                if (sg.glyph_index != 0 && sg.raster_face_id != kInvalidFontFace) {
+                    GlyphKey key{sg.raster_face_id, sg.glyph_index, {0, 0}};
+                    auto info = glyphCache->getOrRasterize(
+                        key, fontSize, *rasterizer, *glyphAtlas);
+                    if (info && info->region.width > 0 && info->region.height > 0) {
+                        D3DCellInstance inst = {};
+
+                        float offsetX = static_cast<float>(info->region.bearing_x);
+                        float offsetY = ascent -
+                            static_cast<float>(info->region.bearing_y);
+
+                        // Apply sub-pixel offset from shaping (26.6 fixed point -> pixels)
+                        float shapingOffsetX = static_cast<float>(sg.x_offset_26_6) / 64.0f;
+
+                        inst.position[0] = col * cellW + offsetX + shapingOffsetX + gridOffsetX;
+                        inst.position[1] = row * cellH + offsetY + gridOffsetY;
+
+                        inst.atlas_uv[0] = static_cast<float>(info->region.x);
+                        inst.atlas_uv[1] = static_cast<float>(info->region.y);
+                        inst.atlas_size[0] = static_cast<float>(info->region.width);
+                        inst.atlas_size[1] = static_cast<float>(info->region.height);
+
+                        // Nerd Font icon cell constraint for shaped glyphs
+                        if (isNerdIcon) {
+                            float maxW = cellW * 2.0f;
+                            float maxH = cellH;
+                            float glyphW = inst.atlas_size[0];
+                            float glyphH = inst.atlas_size[1];
+                            if (glyphW > maxW || glyphH > maxH) {
+                                float scale = (std::min)(maxW / glyphW, maxH / glyphH);
+                                float scaledW = glyphW * scale;
+                                float scaledH = glyphH * scale;
+                                inst.atlas_size[0] = scaledW;
+                                inst.atlas_size[1] = scaledH;
+                                inst.position[0] = col * cellW + (cellW - scaledW) / 2.0f + gridOffsetX;
+                                inst.position[1] = row * cellH + (cellH - scaledH) / 2.0f + gridOffsetY;
+                            }
+                        }
+
+                        colorFromRGBA(colors.resolveFg(cell.fg_color), inst.fg_color);
+                        colorFromRGBA(colors.resolveBg(cell.bg_color), inst.bg_color);
+
+                        if (cell.attributes & AttrInverse) {
+                            std::swap(inst.fg_color[0], inst.bg_color[0]);
+                            std::swap(inst.fg_color[1], inst.bg_color[1]);
+                            std::swap(inst.fg_color[2], inst.bg_color[2]);
+                            std::swap(inst.fg_color[3], inst.bg_color[3]);
+                        }
+
+                        if (isCellSelected(row, col)) {
+                            std::swap(inst.fg_color[0], inst.bg_color[0]);
+                            std::swap(inst.fg_color[1], inst.bg_color[1]);
+                            std::swap(inst.fg_color[2], inst.bg_color[2]);
+                            std::swap(inst.fg_color[3], inst.bg_color[3]);
+                        }
+
+                        if (cell.attributes & AttrDim) {
+                            inst.fg_color[0] *= 0.5f;
+                            inst.fg_color[1] *= 0.5f;
+                            inst.fg_color[2] *= 0.5f;
+                        }
+
+                        int sht2 = searchHighlightType(row, col);
+                        if (sht2 > 0) {
+                            inst.fg_color[0] = 0.0f; inst.fg_color[1] = 0.0f;
+                            inst.fg_color[2] = 0.0f; inst.fg_color[3] = 1.0f;
+                        }
+
+                        inst.flags = 1;  // has_glyph
+                        if (info->is_color) inst.flags |= 2;
+
+                        cellInstances.push_back(inst);
+                        continue;
+                    }
+                }
+                // Fall through to per-cell resolution if shaped glyph was 0 or rasterization failed
+            } else if (!isBoxDrawing && !isPowerline && colIsContinuation[col]) {
+                continue;  // Skip continuation cells of shaped multi-cell runs
+            }
 
             if (isBoxDrawing) {
                 // GPU path for box drawing (U+2500-257F) and block elements (U+2580-259F)
