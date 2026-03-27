@@ -125,7 +125,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
     if (top == 0 && bottom == rows_ - 1) {
         for (int i = 0; i < count; ++i) {
-            if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_) {
+            if (top == scroll_top_ && bottom == scroll_bottom_) {
                 scrollback_ring_.pushRow(grid_.front().cells);
             }
             grid_.pop_front();
@@ -136,7 +136,7 @@ void Screen::scrollUp(int top, int bottom, int count) {
 
     // Slow path: partial scroll region — O(region) shift
     for (int i = 0; i < count; ++i) {
-        if (!alt_screen_active_ && top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
+        if (top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
             scrollback_ring_.pushRow(grid_[top].cells);
         }
         for (int r = top; r < bottom; ++r) {

@@ -70,8 +70,9 @@ TEST_F(ScreenModesTest, AltScreen47NoSaveRestoreCursor) {
     EXPECT_EQ(screen.cursorCol(), 9);
 }
 
-// Scrollback disabled on alt screen
-TEST_F(ScreenModesTest, AltScreenNoScrollback) {
+// Alt screen accumulates scrollback (like Windows Terminal)
+// so users can scroll up to see content that scrolled off-screen.
+TEST_F(ScreenModesTest, AltScreenAccumulatesScrollback) {
     Screen s(3, 10);
     VtParser parser(s);
     std::string cmd;
@@ -79,11 +80,13 @@ TEST_F(ScreenModesTest, AltScreenNoScrollback) {
     cmd = "\x1B[?1049h";
     parser.feed(cmd.data(), cmd.size());
 
+    // Write 5 lines on a 3-row screen → 3 lines scroll into scrollback
+    // (each \r\n at bottom triggers scroll; final line's \r\n also scrolls)
     for (int i = 0; i < 5; ++i) {
         cmd = "Line" + std::to_string(i) + "\r\n";
         parser.feed(cmd.data(), cmd.size());
     }
-    EXPECT_EQ(s.scrollbackSize(), 0u);
+    EXPECT_EQ(s.scrollbackSize(), 3u);
 
     cmd = "\x1B[?1049l";
     parser.feed(cmd.data(), cmd.size());

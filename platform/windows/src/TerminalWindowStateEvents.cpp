@@ -234,6 +234,10 @@ void TerminalWindowState::positionIME(int x, int y, int height) {
 }
 
 void TerminalWindowState::onFontChanged(float cellW, float cellH) {
+    // Acquire exclusive lock to prevent render thread from accessing
+    // font resources while they are being replaced.
+    AcquireSRWLockExclusive(&renderLock_);
+
     // Detach renderer from old font resources before clearing
     if (renderer) {
         renderer->setFontStack(nullptr, nullptr, nullptr, nullptr);
@@ -250,6 +254,9 @@ void TerminalWindowState::onFontChanged(float cellW, float cellH) {
         renderer->markContentDirty();
     }
     needsRender = true;
+
+    ReleaseSRWLockExclusive(&renderLock_);
+    signalInvalidate();
 }
 
 void TerminalWindowState::onColorsChanged() {

@@ -60,6 +60,12 @@ public:
     /// Render a frame: read Screen data, build cell buffer, draw.
     void render(const Screen& screen) override;
 
+    /// Two-phase rendering for lock-splitting:
+    /// prepareFrame reads Screen data (needs synchronization),
+    /// submitFrame does GPU work (no Screen access needed).
+    void prepareFrame(const Screen& screen);
+    void submitFrame();
+
     /// Handle viewport resize.
     void resize(float width, float height) override;
 

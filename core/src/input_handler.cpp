@@ -127,8 +127,13 @@ void InputHandler::onCharInput(const std::string& utf8) {
 void InputHandler::onMouseEvent(const InputMouseEvent& e) {
     Screen* scr = d_.activeScreen();
 
-    // Check mouse protocol
-    if (scr && scr->mouseMode() != MouseMode::None) {
+    // Check mouse protocol.
+    // Shift bypasses mouse tracking so the user can still select text
+    // even when the application has requested mouse event reporting
+    // (standard terminal behavior — Windows Terminal, iTerm2, etc.).
+    bool shiftHeld = (e.modifiers & ModShift) != 0;
+
+    if (scr && scr->mouseMode() != MouseMode::None && !shiftHeld) {
         int gridCol = static_cast<int>(e.x / d_.cellWidth());
         int gridRow = static_cast<int>(e.y / d_.cellHeight());
 

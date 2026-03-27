@@ -132,6 +132,13 @@ struct D3DTextRenderer::Impl {
     // Kitty graphics image renderer
     D3DImageRenderer imageRenderer;
 
+    // Cached kitty graphics data for split-phase rendering
+    // (captured during prepareFrame, used during submitFrame)
+    const KittyGraphicsManager* cachedKittyGfx = nullptr;
+    int64_t cachedViewportTopAbsRow = 0;
+    int cachedVisibleRows = 0;
+    float cachedFallbackBg[4] = {0, 0, 0, 1};
+
     // Viewport
     float viewportWidth = 0;
     float viewportHeight = 0;

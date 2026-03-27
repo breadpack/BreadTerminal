@@ -7,9 +7,8 @@ namespace termcore {
 
 // HLSL shader source — cell rendering with GPU box drawing and block elements.
 // Split into multiple string literals to stay under MSVC's 65535-byte limit.
-static std::string buildShaderSource();
-static std::string kShaderStorage = buildShaderSource();
-const char* kCellShaderSource = kShaderStorage.c_str();
+// NOTE: buildShaderSource(), kShaderStorage, and kCellShaderSource are defined
+// AFTER all kShaderPart* literals to avoid static initialization order issues.
 
 // Part 1: declarations, vertex shader, helpers
 static const char* kShaderPart1 = R"(
@@ -1199,6 +1198,11 @@ static std::string buildShaderSource() {
     return s;
 }
 
+// Shader storage — must be defined AFTER all kShaderPart* literals
+// to guarantee correct static initialization order within this TU.
+static std::string kShaderStorage = buildShaderSource();
+const char* kCellShaderSource = kShaderStorage.c_str();
+
 // --- Impl: shader/resource setup ---
 
 bool D3DTextRenderer::Impl::buildShaders() {
@@ -1363,21 +1367,35 @@ void D3DTextRenderer::setFontStack(FontCollection* collection,
 }
 
 void D3DTextRenderer::render(const Screen& screen) {
+    prepareFrame(screen);
+    submitFrame();
+}
+
+void D3DTextRenderer::prepareFrame(const Screen& screen) {
     if (!impl_->context || !impl_->rtv) return;
 
-    // Always clear to opaque background even if shaders failed,
-    // so the window is never invisible with DirectComposition.
-    if (!impl_->vertexShader) {
+    // Cache fallback background color from Screen for submitFrame
+    {
         uint32_t bg = screen.dynamicColors().background;
-        float fallback[4] = {
-            static_cast<float>((bg >> 16) & 0xFF) / 255.0f,
-            static_cast<float>((bg >> 8) & 0xFF) / 255.0f,
-            static_cast<float>(bg & 0xFF) / 255.0f,
-            1.0f
-        };
-        impl_->context->ClearRenderTargetView(impl_->rtv, fallback);
-        return;
+        impl_->cachedFallbackBg[0] = static_cast<float>((bg >> 16) & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[1] = static_cast<float>((bg >> 8) & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[2] = static_cast<float>(bg & 0xFF) / 255.0f;
+        impl_->cachedFallbackBg[3] = 1.0f;
     }
+
+    // Cache kitty graphics data for submitFrame (avoids Screen access during GPU work)
+    {
+        const auto& gfx = screen.kittyGraphics();
+        if (!gfx.placements().empty()) {
+            impl_->cachedKittyGfx = &gfx;
+            impl_->cachedViewportTopAbsRow = screen.viewportTopAbsoluteRow();
+            impl_->cachedVisibleRows = screen.rows();
+        } else {
+            impl_->cachedKittyGfx = nullptr;
+        }
+    }
+
+    if (!impl_->vertexShader) return;
 
     // Determine if only cursor blink changed (no content rebuild needed)
     bool blinkChanged = (impl_->cursorBlinkVisible != impl_->lastBlinkState);
@@ -1392,6 +1410,16 @@ void D3DTextRenderer::render(const Screen& screen) {
         impl_->contentDirty = false;
     }
     impl_->lastBlinkState = impl_->cursorBlinkVisible;
+}
+
+void D3DTextRenderer::submitFrame() {
+    if (!impl_->context || !impl_->rtv) return;
+
+    // Fallback: clear to opaque background if shaders failed
+    if (!impl_->vertexShader) {
+        impl_->context->ClearRenderTargetView(impl_->rtv, impl_->cachedFallbackBg);
+        return;
+    }
 
     if (impl_->cellInstances.empty()) return;
 
@@ -1474,15 +1502,15 @@ void D3DTextRenderer::render(const Screen& screen) {
 
     impl_->context->DrawInstanced(6, count, 0, 0);
 
-    // Render Kitty graphics images on top of text cells
-    const auto& gfx = screen.kittyGraphics();
-    if (!gfx.placements().empty()) {
-        impl_->imageRenderer.syncImages(gfx);
+    // Render Kitty graphics images on top of text cells (using cached data)
+    if (impl_->cachedKittyGfx) {
+        impl_->imageRenderer.syncImages(*impl_->cachedKittyGfx);
         impl_->imageRenderer.renderPlacements(
-            gfx, constants.cell_size[0], constants.cell_size[1],
+            *impl_->cachedKittyGfx, constants.cell_size[0], constants.cell_size[1],
             impl_->viewportWidth, impl_->viewportHeight,
-            screen.viewportTopAbsoluteRow(), screen.rows(),
+            impl_->cachedViewportTopAbsRow, impl_->cachedVisibleRows,
             impl_->rtv);
+        impl_->cachedKittyGfx = nullptr;
     }
 }
 

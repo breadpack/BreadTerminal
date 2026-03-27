@@ -153,11 +153,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             if (state) {
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
-                state->withWriteLock([&] {
-                    if (!state->handleTabBarClick(mx, my)) {
-                        state->handleMouseDown(mx, my);
-                    }
-                });
+                if (!state->handleTabBarClick(mx, my)) {
+                    state->handleMouseDown(mx, my);
+                }
+                state->signalInvalidate();
             }
             return 0;
 
@@ -165,28 +164,29 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             if (state) {
                 int mx = GET_X_LPARAM(lParam);
                 int my = GET_Y_LPARAM(lParam);
-                state->withWriteLock([&] {
-                    state->handleTabBarHover(mx, my);
-                    state->handleMouseMove(mx, my);
-                });
+                // Bypass exclusive renderLock_ for mouse move to avoid blocking
+                // on render thread's shared lock during buildCellBuffer.
+                // Selection/hover state is simple coordinate data — a one-frame
+                // stale read by the render thread is visually imperceptible.
+                state->handleTabBarHover(mx, my);
+                state->handleMouseMove(mx, my);
+                state->signalInvalidate();
             }
             return 0;
 
         case WM_LBUTTONUP:
             if (state) {
-                state->withWriteLock([&] {
-                    state->handleMouseUp(
-                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-                });
+                state->handleMouseUp(
+                    GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                state->signalInvalidate();
             }
             return 0;
 
         case WM_LBUTTONDBLCLK:
             if (state) {
-                state->withWriteLock([&] {
-                    state->handleDoubleClick(
-                        GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-                });
+                state->handleDoubleClick(
+                    GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                state->signalInvalidate();
             }
             return 0;
 

@@ -373,28 +373,65 @@ void TerminalWindowState::renderThreadFunc() {
 
         if (!renderRunning_) break;
 
-        // Capture state and push renderer setters under shared lock
+        // Phase 1: Read Screen data under shared lock.
+        // This prevents the main thread from mutating Screen/controller
+        // state while the render thread reads it.
+        AcquireSRWLockShared(&renderLock_);
+
         RenderSnapshot snap;
-        {
-            AcquireSRWLockShared(&renderLock_);
-            if (controller && renderer) {
-                snap = captureRenderSnapshot();
-                pushRendererState(snap);
-            }
-            ReleaseSRWLockShared(&renderLock_);
+        if (controller && renderer) {
+            snap = captureRenderSnapshot();
+            pushRendererState(snap);
         }
 
-        if (!snap.screen) continue;
+        if (!snap.screen) {
+            ReleaseSRWLockShared(&renderLock_);
+            continue;
+        }
 
-        // Toggle cursor blink on timeout (no data arrived)
-        if (result == WAIT_TIMEOUT) {
+        // If woken by invalidation event, content has changed and needs rebuild.
+        // Timeout means only cursor blink toggled (no data arrived).
+        if (result == WAIT_OBJECT_0) {
+            renderer->markContentDirty();
+        } else {
             cursorBlinkOn = !cursorBlinkOn;
             snap.cursorBlinkOn = cursorBlinkOn;
-            if (renderer) renderer->setCursorBlink(cursorBlinkOn);
+            renderer->setCursorBlink(cursorBlinkOn);
         }
 
-        // All D3D11 / GPU work below — no lock held
-        renderFrame(snap);
+        // Decay notification ring intensities
+        {
+            auto now = std::chrono::steady_clock::now();
+            float dt = std::chrono::duration<float>(now - last_frame_time_).count();
+            if (dt > 0.5f) dt = 0.016f;
+            last_frame_time_ = now;
+
+            bool anyRingActive = false;
+            for (auto& [pane, ring] : pane_ring_states_) {
+                if (ring.intensity > 0.0f) {
+                    ring.intensity -= dt * 0.33f;
+                    if (ring.intensity < 0.0f) ring.intensity = 0.0f;
+                    if (ring.intensity > 0.0f) anyRingActive = true;
+                }
+            }
+            if (anyRingActive) signalInvalidate();
+        }
+
+        // prepareFrame reads Screen cells and builds the cell instance buffer.
+        // This is the expensive part (HarfBuzz shaping per row).
+        renderer->prepareFrame(*snap.screen);
+
+        // Release shared lock so mouse events can proceed.
+        // submitFrame only touches GPU resources and cached data.
+        ReleaseSRWLockShared(&renderLock_);
+
+        // Phase 2: GPU work without lock — atlas upload, buffer map, draw calls.
+        renderer->submitFrame();
+
+        if (swapChain) {
+            UINT syncInterval = snap.inLiveResize ? 0 : 1;
+            swapChain->Present(syncInterval, 0);
+        }
     }
 }
 
@@ -582,14 +619,12 @@ void TerminalWindowState::renderFrame(const RenderSnapshot& snap) {
         if (anyRingActive) signalInvalidate();
     }
 
-    // Push renderer state was done under shared lock in renderThreadFunc
-    // Now do the actual GPU work — no lock held
+    // Build cell buffer + issue draw calls.
+    // When called from renderThreadFunc, shared lock is held so Screen is stable.
     renderer->render(*screen);
 
-    if (swapChain) {
-        UINT syncInterval = snap.inLiveResize ? 0 : 1;
-        swapChain->Present(syncInterval, 0);
-    }
+    // Present() is handled by the caller (renderThreadFunc moves it outside the lock
+    // to avoid blocking the main thread during vsync).
 }
 
 // --- Helpers ---

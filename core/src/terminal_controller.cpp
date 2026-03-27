@@ -444,15 +444,6 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
 
     bool forwardMouse = (scr && scr->mouseMode() != MouseMode::None);
 
-#if defined(_WIN32)
-    if (!forwardMouse && scr && tabCtrl_) {
-        auto* pane = tabCtrl_->activePane();
-        if (pane && pane->pty && !pane->pty->isShellForeground()) {
-            forwardMouse = true;
-        }
-    }
-#endif
-
     // Shift overrides: let user select text / scroll viewport even in TUI apps
     if (forwardMouse && (e.modifiers & ModShift) != 0) {
         forwardMouse = false;

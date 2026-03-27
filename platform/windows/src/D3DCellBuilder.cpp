@@ -138,6 +138,60 @@ static std::vector<RowShapedGlyph> shapeRow(
             bool cursorInRun = (row == cursorRow &&
                                cursorCol >= run_start && cursorCol < run_end);
 
+            // Helper: emit glyphs from shaped runs into result.
+            // Each ShapedRun may contain multiple glyphs for contiguous cells.
+            // - Ligature: glyphs.size() < cell_count → first glyph covers all cells
+            // - Normal: glyphs.size() == cell_count → one glyph per cell
+            auto emitRuns = [&](const std::vector<ShapedRun>& shaped_runs,
+                                int colOffset) {
+                for (const auto& sr : shaped_runs) {
+                    if (sr.glyphs.empty()) continue;
+
+                    bool isLigature = (sr.glyphs.size() < static_cast<size_t>(sr.cell_count));
+                    if (isLigature) {
+                        // Ligature: single composite glyph spanning multiple cells
+                        const auto& g = sr.glyphs[0];
+                        RowShapedGlyph rsg;
+                        rsg.col = colOffset + sr.start_cell;
+                        rsg.glyph_index = g.glyph_index;
+                        rsg.shaper_face_id = shaperFace;
+                        rsg.raster_face_id = rasterFace;
+                        rsg.x_offset_26_6 = g.x_offset;
+                        rsg.cell_span = sr.cell_count;
+                        result.push_back(rsg);
+                    } else {
+                        // Normal: each glyph maps to its own cell(s)
+                        int cellIdx = sr.start_cell;
+                        for (size_t gi = 0; gi < sr.glyphs.size(); ++gi) {
+                            const auto& g = sr.glyphs[gi];
+                            // Determine this glyph's cell span from cluster info
+                            int nextCell;
+                            if (gi + 1 < sr.glyphs.size()) {
+                                uint32_t nextCluster = sr.glyphs[gi + 1].cluster;
+                                uint32_t thisCluster = g.cluster;
+                                nextCell = cellIdx + static_cast<int>(nextCluster - thisCluster);
+                                if (nextCell <= cellIdx) nextCell = cellIdx + 1;
+                            } else {
+                                nextCell = sr.start_cell + sr.cell_count;
+                            }
+                            int span = nextCell - cellIdx;
+                            if (span < 1) span = 1;
+
+                            RowShapedGlyph rsg;
+                            rsg.col = colOffset + cellIdx;
+                            rsg.glyph_index = g.glyph_index;
+                            rsg.shaper_face_id = shaperFace;
+                            rsg.raster_face_id = rasterFace;
+                            rsg.x_offset_26_6 = g.x_offset;
+                            rsg.cell_span = span;
+                            result.push_back(rsg);
+
+                            cellIdx = nextCell;
+                        }
+                    }
+                }
+            };
+
             if (cursorInRun) {
                 // Shape three segments: before cursor, cursor cell, after cursor
                 int segments[][2] = {
@@ -158,36 +212,12 @@ static std::vector<RowShapedGlyph> shapeRow(
 
                     auto shaped_runs = fontCollection->shaper().shapeForGrid(
                         shaperFace, segCp, cellWidth, config);
-
-                    for (const auto& sr : shaped_runs) {
-                        if (sr.glyphs.empty()) continue;
-                        const auto& g = sr.glyphs[0];
-                        RowShapedGlyph rsg;
-                        rsg.col = segStart + sr.start_cell;
-                        rsg.glyph_index = g.glyph_index;
-                        rsg.shaper_face_id = shaperFace;
-                        rsg.raster_face_id = rasterFace;
-                        rsg.x_offset_26_6 = g.x_offset;
-                        rsg.cell_span = sr.cell_count;
-                        result.push_back(rsg);
-                    }
+                    emitRuns(shaped_runs, segStart);
                 }
             } else {
                 auto shaped_runs = fontCollection->shaper().shapeForGrid(
                     shaperFace, run_codepoints, cellWidth, config);
-
-                for (const auto& sr : shaped_runs) {
-                    if (sr.glyphs.empty()) continue;
-                    const auto& g = sr.glyphs[0];
-                    RowShapedGlyph rsg;
-                    rsg.col = run_start + sr.start_cell;
-                    rsg.glyph_index = g.glyph_index;
-                    rsg.shaper_face_id = shaperFace;
-                    rsg.raster_face_id = rasterFace;
-                    rsg.x_offset_26_6 = g.x_offset;
-                    rsg.cell_span = sr.cell_count;
-                    result.push_back(rsg);
-                }
+                emitRuns(shaped_runs, run_start);
             }
         } else {
             // Fallback: no shaping, just individual glyphs
@@ -371,8 +401,8 @@ void D3DTextRenderer::Impl::buildCellBuffer(const Screen& screen) {
     for (int row = 0; row < rows; ++row) {
 
         // --- Row-level shaping (replaces per-cell ligature detection) ---
-        // When fontLigatures is enabled and fontCollection is available,
-        // shape entire font runs per row using shapeForGrid().
+        // When fontCollection is available, shape entire font runs per row
+        // using shapeForGrid() for improved text layout and ligature support.
         auto shapedRow = shapeRow(screen, row, cols, fontCollection,
                                   ShaperConfig{fontLigatures, fontLigatures},
                                   cursorRow, cursorCol);
