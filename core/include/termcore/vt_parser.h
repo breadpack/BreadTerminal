@@ -147,6 +147,7 @@ private:
     std::string intermediates_;
     int current_param_ = -1;
     bool param_started_ = false;
+    bool pending_param_ = false;       ///< Semicolon seen, next param slot open
     bool in_sub_param_ = false;        ///< Currently collecting colon sub-params
     std::vector<int> current_subs_;    ///< Sub-params for current param
 

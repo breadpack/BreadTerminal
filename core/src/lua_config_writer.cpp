@@ -146,6 +146,13 @@ std::string serializeConfigLua(const Config& config) {
         o << "})\n\n";
     }
 
+    // Accessibility
+    o << "terminal.config({\n";
+    o << "    auto_detect_high_contrast = " << (config.auto_detect_high_contrast ? "true" : "false") << ",\n";
+    o << "    respect_reduced_motion = " << (config.respect_reduced_motion ? "true" : "false") << ",\n";
+    o << "    font_ligatures = " << (config.font_ligatures ? "true" : "false") << ",\n";
+    o << "})\n\n";
+
     // Sidebar
     o << "terminal.config({\n";
     o << "    sidebar_visible = " << (config.sidebar_visible ? "true" : "false") << ",\n";

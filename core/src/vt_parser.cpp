@@ -115,6 +115,7 @@ void VtParser::clear() {
     intermediates_.clear();
     current_param_ = -1;
     param_started_ = false;
+    pending_param_ = false;
     in_sub_param_ = false;
     current_subs_.clear();
     osc_number_ = -1;
@@ -158,6 +159,7 @@ void VtParser::collectParam(uint8_t byte) {
         params_.push_back(std::move(vp));
         current_param_ = -1;
         param_started_ = false;
+        pending_param_ = true;
         current_subs_.clear();
     } else if (byte == ':') {
         // Colon: start/continue sub-parameter collection
@@ -175,6 +177,7 @@ void VtParser::collectParam(uint8_t byte) {
         if (!param_started_) {
             current_param_ = 0;
             param_started_ = true;
+            pending_param_ = false;
         }
         if (current_param_ > 6553) {
             current_param_ = 65535;
@@ -206,6 +209,7 @@ void VtParser::csiDispatch(uint8_t byte) {
         params_.push_back(std::move(vp));
         current_subs_.clear();
     }
+    pending_param_ = false;
     if (inspector_ && inspector_->isEnabled()) {
         inspector_->logCSI(
             formatCsiRaw(params_, intermediates_, static_cast<char32_t>(byte)),

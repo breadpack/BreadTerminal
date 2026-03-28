@@ -4,6 +4,11 @@
 #include "bench_font.h"
 #include "bench_cell_builder.h"
 #include "bench_e2e.h"
+#include "bench_image_protocols.h"
+#include "bench_scrollback.h"
+#include "bench_threading.h"
+#include "bench_agent.h"
+#include "bench_lua.h"
 
 #include <ctime>
 #include <fstream>
@@ -268,7 +273,7 @@ static void printTable(const std::vector<BenchmarkResult>& results,
 static void printUsage(const char* prog) {
     std::cout << "Usage: " << prog << " [OPTIONS] [SUITE...]\n"
               << "\n"
-              << "Suites: vt_parser, screen, font, cell_builder, e2e\n"
+              << "Suites: vt_parser, screen, font, cell_builder, e2e, image_protocols, scrollback, threading, agent, lua\n"
               << "If no suite is specified, all suites are run.\n"
               << "\n"
               << "Options:\n"
@@ -372,6 +377,56 @@ int main(int argc, char* argv[]) {
         bench::BenchmarkRunner runner("e2e", warmup, iterations);
         if (!quiet) std::cout << "Running e2e benchmarks..." << std::flush;
         bench::runE2EBenchmarks(runner);
+        if (!quiet) std::cout << " done.\n";
+        for (const auto& r : runner.results())
+            all_results.push_back(r);
+    }
+
+    // Image protocol benchmarks
+    if (run_all || suites.count("image_protocols")) {
+        bench::BenchmarkRunner runner("image_protocols", warmup, iterations);
+        if (!quiet) std::cout << "Running image_protocols benchmarks..." << std::flush;
+        bench::runImageProtocolBenchmarks(runner);
+        if (!quiet) std::cout << " done.\n";
+        for (const auto& r : runner.results())
+            all_results.push_back(r);
+    }
+
+    // Scrollback benchmarks
+    if (run_all || suites.count("scrollback")) {
+        bench::BenchmarkRunner runner("scrollback", warmup, iterations);
+        if (!quiet) std::cout << "Running scrollback benchmarks..." << std::flush;
+        bench::runScrollbackBenchmarks(runner);
+        if (!quiet) std::cout << " done.\n";
+        for (const auto& r : runner.results())
+            all_results.push_back(r);
+    }
+
+    // Threading benchmarks
+    if (run_all || suites.count("threading")) {
+        bench::BenchmarkRunner runner("threading", warmup, iterations);
+        if (!quiet) std::cout << "Running threading benchmarks..." << std::flush;
+        bench::runThreadingBenchmarks(runner);
+        if (!quiet) std::cout << " done.\n";
+        for (const auto& r : runner.results())
+            all_results.push_back(r);
+    }
+
+    // Agent benchmarks
+    if (run_all || suites.count("agent")) {
+        bench::BenchmarkRunner runner("agent", warmup, iterations);
+        if (!quiet) std::cout << "Running agent benchmarks..." << std::flush;
+        bench::runAgentBenchmarks(runner);
+        if (!quiet) std::cout << " done.\n";
+        for (const auto& r : runner.results())
+            all_results.push_back(r);
+    }
+
+    // Lua engine benchmarks
+    if (run_all || suites.count("lua")) {
+        bench::BenchmarkRunner runner("lua", warmup, iterations);
+        if (!quiet) std::cout << "Running lua benchmarks..." << std::flush;
+        bench::runLuaBenchmarks(runner);
         if (!quiet) std::cout << " done.\n";
         for (const auto& r : runner.results())
             all_results.push_back(r);

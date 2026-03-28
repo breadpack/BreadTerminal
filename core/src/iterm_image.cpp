@@ -7,48 +7,14 @@
 #include "stb_image.h"
 
 #include "termcore/iterm_image.h"
+#include "termcore/base64.h"
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
 
 namespace termcore {
 
 namespace {
-
-/// Standard base64 decode table (shared logic, but kept local to avoid
-/// linker conflicts with the Kitty graphics decoder).
-std::vector<uint8_t> base64DecodeImpl(const std::string& input) {
-    static const std::array<int, 256> table = []() {
-        std::array<int, 256> t;
-        t.fill(-1);
-        const char* chars =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        for (int i = 0; chars[i]; ++i) {
-            t[static_cast<unsigned char>(chars[i])] = i;
-        }
-        return t;
-    }();
-
-    std::vector<uint8_t> result;
-    result.reserve(input.size() * 3 / 4);
-
-    int val = 0;
-    int bits = 0;
-    for (unsigned char c : input) {
-        if (c == '=' || c == '\n' || c == '\r') continue;
-        int d = table[c];
-        if (d < 0) continue;
-
-        val = (val << 6) | d;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            result.push_back(static_cast<uint8_t>((val >> bits) & 0xFF));
-        }
-    }
-    return result;
-}
 
 /// Parse a dimension string like "auto", "80", "100px", "50%".
 ITermDimension parseDimension(const std::string& s) {
@@ -105,7 +71,7 @@ bool parseITermImageOsc(const std::string& osc_after_file,
 
             if (key == "name") {
                 // name is base64-encoded
-                auto decoded = base64DecodeImpl(value);
+                auto decoded = termcore::base64Decode(value);
                 params.name = std::string(decoded.begin(), decoded.end());
             } else if (key == "size") {
                 params.size = std::atoi(value.c_str());
@@ -126,7 +92,7 @@ bool parseITermImageOsc(const std::string& osc_after_file,
 }
 
 std::vector<uint8_t> iTermBase64Decode(const std::string& input) {
-    return base64DecodeImpl(input);
+    return termcore::base64Decode(input);
 }
 
 bool decodeImageData(const std::vector<uint8_t>& encoded_data,

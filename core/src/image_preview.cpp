@@ -2,6 +2,7 @@
 #include "stb_image.h"
 
 #include "termcore/image_preview.h"
+#include "termcore/base64.h"
 
 #include <algorithm>
 #include <array>
@@ -87,26 +88,6 @@ std::vector<uint8_t> resizeRGBA(const uint8_t* src, int src_w, int src_h,
         }
     }
     return dst;
-}
-
-/// Standard base64 encode.
-std::string base64Encode(const uint8_t* data, size_t len) {
-    static const char table[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string result;
-    result.reserve((len + 2) / 3 * 4);
-
-    for (size_t i = 0; i < len; i += 3) {
-        uint32_t n = static_cast<uint32_t>(data[i]) << 16;
-        if (i + 1 < len) n |= static_cast<uint32_t>(data[i + 1]) << 8;
-        if (i + 2 < len) n |= static_cast<uint32_t>(data[i + 2]);
-
-        result.push_back(table[(n >> 18) & 0x3F]);
-        result.push_back(table[(n >> 12) & 0x3F]);
-        result.push_back((i + 1 < len) ? table[(n >> 6) & 0x3F] : '=');
-        result.push_back((i + 2 < len) ? table[n & 0x3F] : '=');
-    }
-    return result;
 }
 
 } // anonymous namespace

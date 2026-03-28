@@ -15,9 +15,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Sanitizers and strict warnings (use -DENABLE_ASAN=ON, -DENABLE_TSAN=ON, etc.)
+include(cmake/Sanitizers.cmake)
+
 # Generate PDB debug symbols in Release builds (for Sentry crash reporting)
 if(MSVC)
-    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_compile_options(/FS "$<$<CONFIG:Release>:/Zi>")
     add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
 endif()
 

@@ -1,4 +1,5 @@
 #include "termcore/ssh_terminfo.h"
+#include "termcore/base64.h"
 #include "termcore/terminfo.h"
 
 #include <cstdint>
@@ -9,32 +10,11 @@
 namespace termcore {
 
 // ---------------------------------------------------------------------------
-// Base64 encoder
+// Base64 encoder - delegate to shared implementation
 // ---------------------------------------------------------------------------
 
-static const char kBase64Chars[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 std::string SshTerminfoHelper::base64Encode(const std::string& input) {
-    std::string output;
-    output.reserve(((input.size() + 2) / 3) * 4);
-
-    for (size_t i = 0; i < input.size(); i += 3) {
-        uint32_t octet_a = static_cast<uint8_t>(input[i]);
-        uint32_t octet_b = (i + 1 < input.size())
-                               ? static_cast<uint8_t>(input[i + 1]) : 0;
-        uint32_t octet_c = (i + 2 < input.size())
-                               ? static_cast<uint8_t>(input[i + 2]) : 0;
-
-        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
-
-        output += kBase64Chars[(triple >> 18) & 0x3F];
-        output += kBase64Chars[(triple >> 12) & 0x3F];
-        output += (i + 1 < input.size()) ? kBase64Chars[(triple >> 6) & 0x3F] : '=';
-        output += (i + 2 < input.size()) ? kBase64Chars[triple & 0x3F] : '=';
-    }
-
-    return output;
+    return termcore::base64Encode(input);
 }
 
 // ---------------------------------------------------------------------------

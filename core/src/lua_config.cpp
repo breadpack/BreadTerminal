@@ -157,6 +157,11 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
         }
     }
 
+    // Accessibility
+    cfg.auto_detect_high_contrast = getBool(t, "auto_detect_high_contrast", cfg.auto_detect_high_contrast);
+    cfg.respect_reduced_motion = getBool(t, "respect_reduced_motion", cfg.respect_reduced_motion);
+    cfg.font_ligatures = getBool(t, "font_ligatures", cfg.font_ligatures);
+
     // Sidebar
     cfg.sidebar_visible = getBool(t, "sidebar_visible", cfg.sidebar_visible);
     cfg.sidebar_width = getInt(t, "sidebar_width", cfg.sidebar_width);

@@ -20,12 +20,14 @@ void LuaViModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.vi.set_word_chars("a-zA-Z0-9_-")
     vi.set_function("set_word_chars",
         [this](const std::string& chars) {
+            if (!vi_) return;
             vi_->setWordChars(chars);
         });
 
     // terminal.vi.on_yank(function(text) end)
     vi.set_function("on_yank",
         [this](sol::protected_function fn) {
+            if (!vi_) return;
             auto luaFn = std::make_shared<sol::protected_function>(std::move(fn));
             vi_->setOnYank([luaFn](const std::string& text) {
                 auto result = (*luaFn)(text);
@@ -36,6 +38,7 @@ void LuaViModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.vi.map("gd", function() end)
     vi.set_function("map",
         [this](const std::string& key, sol::protected_function fn) {
+            if (!vi_) return;
             auto luaFn = std::make_shared<sol::protected_function>(std::move(fn));
             vi_->mapKey(key, [luaFn]() {
                 auto result = (*luaFn)();

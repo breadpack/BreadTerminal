@@ -60,6 +60,7 @@ set(TERMCORE_SOURCES
     src/url_detector.cpp
     src/url_highlight.cpp
     src/kitty_keyboard.cpp
+    src/base64.cpp
     src/sixel.cpp
     src/sixel_animation.cpp
     src/kitty_graphics.cpp
@@ -180,7 +181,11 @@ if(WIN32)
         endif()
         if(LUA_VERSION_STRING VERSION_LESS "5.5")
             set(LUA_INCLUDE_DIRS ${LUA_INCLUDE_DIR})
-            set(LUA_LIBRARIES ${LUA_LIBRARY})
+            # Preserve LUA_LIBRARIES if already set (e.g. by vcpkg wrapper);
+            # only override when LUA_LIBRARY is explicitly provided.
+            if(LUA_LIBRARY)
+                set(LUA_LIBRARIES ${LUA_LIBRARY})
+            endif()
             set(LUA_LIBRARY_DIRS "")
             set(TERMCORE_HAS_LUA ON)
         endif()
@@ -326,3 +331,6 @@ if(TERMCORE_HAS_LIBSSH2)
 else()
     message(STATUS "SSH transport: STUB (libssh2 not found)")
 endif()
+
+# Apply sanitizers and strict warnings to the core library
+enable_sanitizers(termcore)

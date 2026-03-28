@@ -34,6 +34,15 @@ void ConfigApplier::applyFull(Config& config, const Config& newConfig,
         host->onGridSizeChanged(rows, cols);
     }
 
+    // Update scrollback limit on all screens
+    if (config.scrollback_limit > 0) {
+        tabs.forEachPane([&](PaneState& ps) {
+            if (ps.screen) {
+                ps.screen->setMaxScrollback(static_cast<size_t>(config.scrollback_limit));
+            }
+        });
+    }
+
     // Update colors on all screens
     tabs.forEachPane([&](PaneState& ps) {
         if (ps.screen) {

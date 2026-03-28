@@ -16,6 +16,7 @@ add_executable(termcore_tests
     test_screen_osc.cpp
     test_screen_osc_colors.cpp
     test_screen_csi_ext.cpp
+    test_screen_dirty_viewport.cpp
     test_pty.cpp
     test_capi.cpp
     test_unicode_width.cpp
@@ -24,6 +25,7 @@ add_executable(termcore_tests
     test_glyph_atlas.cpp
     test_glyph_cache.cpp
     test_font_collection.cpp
+    test_font_integration.cpp
     test_mouse.cpp
     test_mux.cpp
     test_lua_engine.cpp
@@ -70,6 +72,7 @@ add_executable(termcore_tests
     test_ssh.cpp
     test_ssh_mux.cpp
     test_ssh_transport.cpp
+    test_ssh_state_machine.cpp
     test_accessibility.cpp
     test_grapheme.cpp
     test_ligature.cpp
@@ -84,13 +87,24 @@ add_executable(termcore_tests
     test_subpixel.cpp
     test_screen_export.cpp
     test_lua_plugin_integration.cpp
+    test_lua_module_null_safety.cpp
     test_lua_defaults.cpp
+    test_lua_cross_module.cpp
     test_agent_tree_tracker.cpp
     test_hook_bridge.cpp
     test_osc_7770.cpp
+    test_agent_e2e_flow.cpp
     test_provider_registry.cpp
     test_sidebar_model.cpp
     test_osc_emitter.cpp
+    test_input_ring_buffer.cpp
+    test_scrollback_ring.cpp
+    test_wide_char_grapheme.cpp
+    test_agent_orchestrator.cpp
+    test_threading_stress.cpp
+    test_ring_buffer.cpp
+    test_cell_builder_logic.cpp
+    test_plugin_sandbox.cpp
 )
 
 target_link_libraries(termcore_tests
@@ -128,6 +142,8 @@ if(UNIX AND NOT APPLE)
     )
 endif()
 
+enable_sanitizers(termcore_tests)
+
 include(GoogleTest)
 gtest_discover_tests(termcore_tests)
 
@@ -142,4 +158,5 @@ target_include_directories(bread_tmux_compat_test PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/bread
 )
 target_link_libraries(bread_tmux_compat_test PRIVATE nlohmann_json::nlohmann_json GTest::gtest_main)
+enable_sanitizers(bread_tmux_compat_test)
 gtest_discover_tests(bread_tmux_compat_test)

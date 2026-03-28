@@ -227,6 +227,9 @@ PaneId TabController::createPaneState(int rows, int cols) {
     ps->id = id;
     ps->screen = std::make_unique<Screen>();
     ps->screen->resize(rows, cols);
+    if (config_.scrollback_limit > 0) {
+        ps->screen->setMaxScrollback(static_cast<size_t>(config_.scrollback_limit));
+    }
     ps->parser = std::make_unique<VtParser>(*ps->screen);
 
     // Resolve profile from pendingProfileId_

@@ -46,9 +46,72 @@ const TermCell& Screen::cellAt(int row, int col) const {
             int sb_idx = sb_size - viewport_offset_ + row;
             if (sb_idx < 0 || sb_idx >= sb_size)
                 return empty;
-            // Cache reconstructed cell in thread-local static to return by reference
+
+            // Use cached row view to avoid resolveIndex per cell.
+            // When rendering iterates cols in a row, this saves a division+modulo
+            // and segment lookup per cell.
+            if (sb_idx != cached_sb_idx_) {
+                if (!scrollback_ring_.rowAt(sb_idx, cached_sb_row_))
+                    return empty;
+                cached_sb_idx_ = sb_idx;
+            }
+
+            // Reconstruct TermCell inline from cached row pointers
             static thread_local TermCell cached_cell;
-            cached_cell = scrollback_ring_.cellAt(sb_idx, col);
+            const CpuCell& cpu = cached_sb_row_.cpu[col];
+            const GpuCell& gpu = cached_sb_row_.gpu[col];
+            cached_cell.codepoint = cpu.codepoint;
+            cached_cell.width = cpu.width;
+            cached_cell.extra_count = cpu.extra_count;
+            // Resolve colors from segment color table (fast path avoids
+            // redundant gpuCellAt lookup since we already have the gpu ref)
+            const auto* seg = cached_sb_row_.segment;
+            if (gpu.fg_color_idx == GpuCell::kOverflowIdx) {
+                uint32_t key = (static_cast<uint32_t>(cached_sb_row_.row_in_segment)
+                               * static_cast<uint32_t>(cached_sb_row_.col_count)
+                               + static_cast<uint32_t>(col)) | 0x80000000u;
+                auto it = seg->overflow_colors.find(key);
+                cached_cell.fg_color = (it != seg->overflow_colors.end()) ? it->second : kColorDefault;
+            } else {
+                cached_cell.fg_color = seg->color_table.resolve(gpu.fg_color_idx);
+            }
+            if (gpu.bg_color_idx == GpuCell::kOverflowIdx) {
+                uint32_t key = static_cast<uint32_t>(cached_sb_row_.row_in_segment)
+                               * static_cast<uint32_t>(cached_sb_row_.col_count)
+                               + static_cast<uint32_t>(col);
+                auto it = seg->overflow_colors.find(key);
+                cached_cell.bg_color = (it != seg->overflow_colors.end()) ? it->second : kColorDefault;
+            } else {
+                cached_cell.bg_color = seg->color_table.resolve(gpu.bg_color_idx);
+            }
+            cached_cell.attributes = gpu.getAttributes();
+            cached_cell.underline_style = gpu.getUnderlineStyle();
+            cached_cell.underline_color = kColorDefault;
+
+            // Restore grapheme extras from the store (rare path)
+            if (cpu.grapheme_idx != 0) {
+                uint8_t count = 0;
+                const char32_t* extras = cached_sb_row_.segment->grapheme_store.get(
+                    cpu.grapheme_idx, count);
+                if (extras) {
+                    int n = (count < kMaxExtraCodepoints) ? count : kMaxExtraCodepoints;
+                    for (int i = 0; i < n; ++i)
+                        cached_cell.extra[i] = extras[i];
+                    cached_cell.extra_count = static_cast<uint8_t>(n);
+                }
+            }
+
+            // Restore underline_color from sparse map (skip lookup if map is empty)
+            if (!cached_sb_row_.segment->underline_colors.empty()) {
+                uint32_t key = static_cast<uint32_t>(cached_sb_row_.row_in_segment)
+                               * static_cast<uint32_t>(cached_sb_row_.col_count)
+                               + static_cast<uint32_t>(col);
+                auto it = cached_sb_row_.segment->underline_colors.find(key);
+                if (it != cached_sb_row_.segment->underline_colors.end()) {
+                    cached_cell.underline_color = it->second;
+                }
+            }
+
             return cached_cell;
         } else {
             // This row comes from the grid
@@ -61,6 +124,18 @@ const TermCell& Screen::cellAt(int row, int col) const {
 
     if (row >= gridSize) return empty;
     return grid_[row][col];
+}
+
+bool Screen::scrollbackRowView(int viewport_row, ScrollbackRing::RowView& out) const {
+    if (viewport_offset_ <= 0) return false;
+    int scrollback_rows_visible = std::min(viewport_offset_, rows_);
+    if (viewport_row >= scrollback_rows_visible) return false;
+
+    int sb_size = static_cast<int>(scrollback_ring_.size());
+    int sb_idx = sb_size - viewport_offset_ + viewport_row;
+    if (sb_idx < 0 || sb_idx >= sb_size) return false;
+
+    return scrollback_ring_.rowAt(sb_idx, out);
 }
 
 TermCell& Screen::mutableCellAt(int row, int col) {
@@ -118,18 +193,38 @@ void Screen::clampCursor() {
 void Screen::scrollUp(int top, int bottom, int count) {
     count = std::min(count, bottom - top + 1);
 
-    // Mark affected rows dirty
-    for (int r = top; r <= bottom; ++r)
-        markRowDirty(r);
+    // Invalidate scrollback row cache (scrollback content is about to change)
+    cached_sb_idx_ = -1;
+
+    // Mark affected rows dirty (use memset for full-range case)
+    if (top == 0 && bottom == rows_ - 1) {
+        std::fill(row_dirty_.begin(), row_dirty_.end(), true);
+    } else {
+        for (int r = top; r <= bottom; ++r)
+            row_dirty_[r] = true;
+    }
+    screen_dirty_ = true;
+
+    // Precompute default cell for clearing recycled rows
+    TermCell defaultCell;
 
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
+    // Recycle the evicted row instead of deallocating + reallocating.
     if (top == 0 && bottom == rows_ - 1) {
+        const bool pushToScrollback = (top == scroll_top_ && bottom == scroll_bottom_);
         for (int i = 0; i < count; ++i) {
-            if (top == scroll_top_ && bottom == scroll_bottom_) {
-                scrollback_ring_.pushRow(grid_.front().cells);
+            if (pushToScrollback) {
+                scrollback_ring_.pushRow(grid_.front().cells, grid_.front().occ);
             }
+            // Recycle: move front row to back, then clear it
+            Row recycled = std::move(grid_.front());
             grid_.pop_front();
-            grid_.push_back(makeRow());
+            recycled.clear(defaultCell);
+            // Ensure recycled row has correct column count
+            if (static_cast<int>(recycled.size()) != cols_) {
+                recycled.resize(cols_);
+            }
+            grid_.push_back(std::move(recycled));
         }
         return;
     }
@@ -137,12 +232,19 @@ void Screen::scrollUp(int top, int bottom, int count) {
     // Slow path: partial scroll region — O(region) shift
     for (int i = 0; i < count; ++i) {
         if (top == scroll_top_ && bottom == scroll_bottom_ && top == 0) {
-            scrollback_ring_.pushRow(grid_[top].cells);
+            scrollback_ring_.pushRow(grid_[top].cells, grid_[top].occ);
         }
+        // Save the top row for recycling
+        Row recycled = std::move(grid_[top]);
         for (int r = top; r < bottom; ++r) {
             grid_[r] = std::move(grid_[r + 1]);
         }
-        grid_[bottom] = makeRow();
+        // Recycle into bottom position
+        recycled.clear(defaultCell);
+        if (static_cast<int>(recycled.size()) != cols_) {
+            recycled.resize(cols_);
+        }
+        grid_[bottom] = std::move(recycled);
     }
 }
 
@@ -153,21 +255,33 @@ void Screen::scrollDown(int top, int bottom, int count) {
     for (int r = top; r <= bottom; ++r)
         markRowDirty(r);
 
+    TermCell defaultCell;
+
     // Fast path: scrolling entire grid from row 0 — O(1) per line via deque
     if (top == 0 && bottom == rows_ - 1) {
         for (int i = 0; i < count; ++i) {
+            Row recycled = std::move(grid_.back());
             grid_.pop_back();
-            grid_.push_front(makeRow());
+            recycled.clear(defaultCell);
+            if (static_cast<int>(recycled.size()) != cols_) {
+                recycled.resize(cols_);
+            }
+            grid_.push_front(std::move(recycled));
         }
         return;
     }
 
     // Slow path: partial scroll region
     for (int i = 0; i < count; ++i) {
+        Row recycled = std::move(grid_[bottom]);
         for (int r = bottom; r > top; --r) {
             grid_[r] = std::move(grid_[r - 1]);
         }
-        grid_[top] = makeRow();
+        recycled.clear(defaultCell);
+        if (static_cast<int>(recycled.size()) != cols_) {
+            recycled.resize(cols_);
+        }
+        grid_[top] = std::move(recycled);
     }
 }
 
@@ -343,6 +457,36 @@ void Screen::onPrint(char32_t codepoint) {
         row.occ = std::min(row.occ + shift, cols_);
     }
 
+    // --- Wide character orphan cleanup ---
+    // If we're overwriting a continuation cell (width==0, codepoint==0),
+    // clear the primary cell to the left.
+    {
+        const TermCell& target = grid_[cursor_.row][cursor_.col];
+        if (target.width == 0 && target.codepoint == 0 && cursor_.col > 0) {
+            TermCell& primary = mutableCellAt(cursor_.row, cursor_.col - 1);
+            if (primary.width == 2) {
+                eraseCell(primary);
+            }
+        }
+        // If we're overwriting a wide char primary (width==2) with a narrow char,
+        // clear the continuation cell to the right.
+        if (target.width == 2 && char_width == 1 && cursor_.col + 1 < cols_) {
+            TermCell& cont = mutableCellAt(cursor_.row, cursor_.col + 1);
+            eraseCell(cont);
+        }
+    }
+    // If printing a wide char, check if the continuation cell (col+1) is itself
+    // a wide char primary — if so, clear its continuation cell at col+2.
+    if (char_width == 2 && cursor_.col + 1 < cols_) {
+        const TermCell& cont_target = grid_[cursor_.row][cursor_.col + 1];
+        if (cont_target.width == 2 && cursor_.col + 2 < cols_) {
+            TermCell& orphan = mutableCellAt(cursor_.row, cursor_.col + 2);
+            if (orphan.width == 0 && orphan.codepoint == 0) {
+                eraseCell(orphan);
+            }
+        }
+    }
+
     TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
     cell.codepoint = codepoint;
     cell.fg_color = pen_.fg_color;
@@ -382,12 +526,20 @@ void Screen::onPrint(char32_t codepoint) {
 }
 
 void Screen::onPrintAscii(const char* data, size_t len) {
-    for (size_t i = 0; i < len; ++i) {
-        char32_t cp = static_cast<char32_t>(data[i]);
-        last_printed_ = cp;
+    if (len == 0) return;
 
-        markRowDirty(cursor_.row);
+    // Cache pen values on the stack to avoid repeated member access
+    const uint32_t pen_fg = pen_.fg_color;
+    const uint32_t pen_bg = pen_.bg_color;
+    const uint16_t pen_attr = pen_.attributes;
+    const uint8_t pen_ul_style = pen_.underline_style;
+    const uint32_t pen_ul_color = pen_.underline_color;
+    const int colsMinusOne = cols_ - 1;
 
+    size_t i = 0;
+
+    while (i < len) {
+        // Handle wrap from previous character
         if (wrap_pending_) {
             wrap_pending_ = false;
             cursor_.col = 0;
@@ -396,37 +548,151 @@ void Screen::onPrintAscii(const char* data, size_t len) {
             } else if (cursor_.row < rows_ - 1) {
                 cursor_.row++;
             }
-            markRowDirty(cursor_.row);
         }
 
+        // --- Insert mode: slow path (rare) ---
         if (insert_mode_) {
-            auto& row = grid_[cursor_.row];
-            row.insert(row.begin() + cursor_.col, TermCell{});
-            row.resize(cols_);
-            row.occ = std::min(row.occ + 1, cols_);
+            // Fall back to per-character processing for insert mode
+            for (; i < len; ++i) {
+                char32_t cp = static_cast<char32_t>(data[i]);
+                last_printed_ = cp;
+                markRowDirty(cursor_.row);
+
+                if (wrap_pending_) {
+                    wrap_pending_ = false;
+                    cursor_.col = 0;
+                    if (cursor_.row == scroll_bottom_) {
+                        scrollUp(scroll_top_, scroll_bottom_);
+                    } else if (cursor_.row < rows_ - 1) {
+                        cursor_.row++;
+                    }
+                    markRowDirty(cursor_.row);
+                }
+
+                auto& row = grid_[cursor_.row];
+                row.insert(row.begin() + cursor_.col, TermCell{});
+                row.resize(cols_);
+                row.occ = std::min(row.occ + 1, cols_);
+
+                // Wide character orphan cleanup
+                {
+                    const TermCell& target = row[cursor_.col];
+                    if (target.width == 0 && target.codepoint == 0 && cursor_.col > 0) {
+                        TermCell& primary = row[cursor_.col - 1];
+                        if (primary.width == 2) eraseCell(primary);
+                    }
+                    if (target.width == 2 && cursor_.col + 1 < cols_) {
+                        eraseCell(row[cursor_.col + 1]);
+                    }
+                }
+
+                TermCell& cell = row[cursor_.col];
+                cell.codepoint = cp;
+                cell.fg_color = pen_fg;
+                cell.bg_color = pen_bg;
+                cell.attributes = pen_attr;
+                cell.width = 1;
+                cell.underline_style = pen_ul_style;
+                cell.underline_color = pen_ul_color;
+                cell.extra_count = 0;
+                row.markOccupied(cursor_.col);
+                grapheme_row_ = cursor_.row;
+                grapheme_col_ = cursor_.col + 1;
+
+                if (cursor_.col < colsMinusOne) {
+                    cursor_.col++;
+                } else if (autowrap_) {
+                    wrap_pending_ = true;
+                } else {
+                    cursor_.col = colsMinusOne;
+                }
+            }
+            return;
         }
 
-        TermCell& cell = mutableCellAt(cursor_.row, cursor_.col);
-        cell.codepoint = cp;
-        cell.fg_color = pen_.fg_color;
-        cell.bg_color = pen_.bg_color;
-        cell.attributes = pen_.attributes;
-        cell.width = 1;
-        cell.underline_style = pen_.underline_style;
-        cell.underline_color = pen_.underline_color;
-        cell.extra_count = 0;
+        // --- Fast path: batch ASCII writes within the current row ---
+        // Compute how many characters fit on this row
+        int avail = colsMinusOne - cursor_.col + 1; // columns available
+        size_t remaining = len - i;
+        int runLen = (remaining < static_cast<size_t>(avail))
+                     ? static_cast<int>(remaining) : avail;
 
-        grid_[cursor_.row].markOccupied(cursor_.col);
+        // Direct access to the row's cells vector (bypass mutableCellAt overhead)
+        Row& row = grid_[cursor_.row];
+        TermCell* cells = row.cells.data();
+        int col = cursor_.col;
 
+        // Wide character orphan cleanup for the first cell only.
+        // Subsequent cells are overwritten by us (ASCII width=1), so no orphan risk.
+        {
+            const TermCell& target = cells[col];
+            if (target.width == 0 && target.codepoint == 0 && col > 0) {
+                TermCell& primary = cells[col - 1];
+                if (primary.width == 2) eraseCell(primary);
+            }
+            if (target.width == 2 && col + 1 < cols_) {
+                eraseCell(cells[col + 1]);
+            }
+        }
+
+        // Check if last cell in our run might trample a wide char
+        if (runLen > 1) {
+            int lastCol = col + runLen - 1;
+            const TermCell& lastTarget = cells[lastCol];
+            if (lastTarget.width == 2 && lastCol + 1 < cols_) {
+                eraseCell(cells[lastCol + 1]);
+            }
+        }
+
+        // Build a template cell with current pen attributes.
+        // We memcpy this for each cell, then stamp the codepoint.
+        // This is faster than 8 separate field stores because the compiler
+        // can emit a single wide store for the template copy.
+        TermCell tmpl;
+        tmpl.codepoint = 0; // will be overwritten per-cell
+        tmpl.fg_color = pen_fg;
+        tmpl.bg_color = pen_bg;
+        tmpl.attributes = pen_attr;
+        tmpl.width = 1;
+        tmpl.underline_style = pen_ul_style;
+        tmpl.underline_color = pen_ul_color;
+        tmpl.extra_count = 0;
+
+        // Bulk write cells
+        TermCell* dst = cells + col;
+        for (int j = 0; j < runLen; ++j) {
+            dst[j] = tmpl;
+            dst[j].codepoint = static_cast<char32_t>(data[i + j]);
+        }
+
+        // Update occupancy once for the entire run
+        int lastWrittenCol = col + runLen - 1;
+        if (lastWrittenCol + 1 > row.occ) {
+            row.occ = lastWrittenCol + 1;
+        }
+
+        // Mark row dirty once
+        row_dirty_[cursor_.row] = true;
+        screen_dirty_ = true;
+
+        // Update grapheme tracking to end of run
         grapheme_row_ = cursor_.row;
-        grapheme_col_ = cursor_.col + 1;
+        grapheme_col_ = col + runLen;
 
-        if (cursor_.col < cols_ - 1) {
-            cursor_.col++;
-        } else if (autowrap_) {
-            wrap_pending_ = true;
+        // Update last_printed_ to the last character in the run
+        last_printed_ = static_cast<char32_t>(data[i + runLen - 1]);
+
+        // Advance cursor
+        i += runLen;
+        int newCol = col + runLen;
+        if (newCol <= colsMinusOne) {
+            cursor_.col = newCol;
         } else {
-            cursor_.col = cols_ - 1;
+            // We filled up to the last column
+            cursor_.col = colsMinusOne;
+            if (autowrap_) {
+                wrap_pending_ = true;
+            }
         }
     }
 }
@@ -734,31 +1000,88 @@ void Screen::onApcDispatch(const std::string& data) {
 void Screen::resize(int rows, int cols) {
     if (rows <= 0 || cols <= 0) return;
 
-    // Resize columns for existing rows
-    for (auto& row : grid_) {
-        row.resize(cols);
-    }
+    // Invalidate scrollback row cache (scrollback content may change)
+    cached_sb_idx_ = -1;
 
-    // Adjust row count — use actual grid size to avoid mismatch with rows_
     int currentGridRows = static_cast<int>(grid_.size());
-    if (rows > currentGridRows) {
-        for (int i = currentGridRows; i < rows; ++i) {
-            Row row;
-            row.cells.resize(cols);
-            row.occ = 0;
-            grid_.push_back(std::move(row));
+    bool shrinkingRows = rows < currentGridRows;
+
+    // When shrinking rows: determine how many rows can be removed from the bottom
+    // vs. how many must be pushed to scrollback from the top (to keep cursor visible).
+    // Only resize columns on rows we actually keep.
+    if (shrinkingRows) {
+        int excessRows = currentGridRows - rows;
+
+        // How many rows can we remove from the bottom without losing the cursor?
+        // cursor_.row is 0-based, so rows below cursor_.row+1 can be discarded first.
+        int removableFromBottom = currentGridRows - 1 - cursor_.row;
+        if (removableFromBottom < 0) removableFromBottom = 0;
+        int removeBottom = std::min(excessRows, removableFromBottom);
+        int removeTop = excessRows - removeBottom;
+
+        // Remove from bottom first (O(1) per row for deque::pop_back, no scrollback needed)
+        for (int i = 0; i < removeBottom; ++i) {
+            grid_.pop_back();
         }
-    } else if (rows < currentGridRows) {
-        grid_.resize(rows);
+
+        // If cursor is still below new height, push top rows to scrollback
+        if (removeTop > 0) {
+            if (!alt_screen_active_) {
+                for (int i = 0; i < removeTop; ++i) {
+                    scrollback_ring_.pushRow(grid_.front().cells, grid_.front().occ);
+                    grid_.pop_front();
+                }
+            } else {
+                // Alt screen: discard from front without scrollback
+                for (int i = 0; i < removeTop; ++i) {
+                    grid_.pop_front();
+                }
+            }
+            // Adjust cursor row to account for rows removed from top
+            cursor_.row -= removeTop;
+        }
+
+        // Resize columns only on the remaining rows we keep
+        if (cols != cols_) {
+            for (auto& row : grid_) {
+                row.resize(cols);
+            }
+        }
+    } else {
+        // Growing rows or same row count: resize columns on all existing rows
+        if (cols != cols_) {
+            for (auto& row : grid_) {
+                row.resize(cols);
+            }
+        }
+
+        // Add new rows if growing
+        if (rows > currentGridRows) {
+            for (int i = currentGridRows; i < rows; ++i) {
+                Row row;
+                row.cells.resize(cols);
+                row.occ = 0;
+                grid_.push_back(std::move(row));
+            }
+        }
     }
 
     rows_ = rows;
     cols_ = cols;
     scroll_bottom_ = rows_ - 1;
     scroll_top_ = 0;
-    row_dirty_.assign(rows_, true);
+
+    // Reuse dirty vector capacity when possible
+    row_dirty_.resize(rows_);
+    std::fill(row_dirty_.begin(), row_dirty_.end(), true);
     screen_dirty_ = true;
-    initTabStops();
+
+    // Reuse tab_stops_ capacity: resize and reinitialize
+    tab_stops_.resize(cols_);
+    std::fill(tab_stops_.begin(), tab_stops_.end(), false);
+    for (int i = 0; i < cols_; i += 8)
+        tab_stops_[i] = true;
+
     clampCursor();
     wrap_pending_ = false;
 
@@ -771,19 +1094,23 @@ void Screen::resize(int rows, int cols) {
     // If in alt screen, also resize the saved primary grid so that
     // switching back won't cause a size mismatch with rows_/cols_.
     if (alt_screen_active_) {
-        for (auto& row : saved_primary_.grid) {
-            row.resize(cols);
-        }
         int savedRows = static_cast<int>(saved_primary_.grid.size());
-        if (rows > savedRows) {
+        if (rows < savedRows) {
+            // Shrink: just truncate from back (no scrollback for saved primary)
+            saved_primary_.grid.resize(rows);
+        } else if (rows > savedRows) {
             for (int i = savedRows; i < rows; ++i) {
                 Row row;
                 row.cells.resize(cols);
                 row.occ = 0;
                 saved_primary_.grid.push_back(std::move(row));
             }
-        } else if (rows < savedRows) {
-            saved_primary_.grid.resize(rows);
+        }
+        // Resize columns on remaining saved primary rows
+        if (cols != static_cast<int>(saved_primary_.grid.empty() ? 0 : saved_primary_.grid[0].size())) {
+            for (auto& row : saved_primary_.grid) {
+                row.resize(cols);
+            }
         }
     }
 }

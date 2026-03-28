@@ -1,4 +1,5 @@
 #include "termcore/session.h"
+#include "termcore/base64.h"
 #include "termcore/mux.h"
 
 #include <nlohmann/json.hpp>
@@ -25,36 +26,6 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace termcore {
-
-// ---- Base64 encode/decode (RFC 4648) ----
-
-static const char kBase64Chars[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static std::string base64Encode(const std::vector<uint8_t>& data) {
-    std::string result;
-    result.reserve(((data.size() + 2) / 3) * 4);
-    size_t i = 0;
-    for (; i + 2 < data.size(); i += 3) {
-        uint32_t n = (uint32_t(data[i]) << 16) | (uint32_t(data[i+1]) << 8) | data[i+2];
-        result += kBase64Chars[(n >> 18) & 0x3F];
-        result += kBase64Chars[(n >> 12) & 0x3F];
-        result += kBase64Chars[(n >>  6) & 0x3F];
-        result += kBase64Chars[ n        & 0x3F];
-    }
-    if (i < data.size()) {
-        uint32_t n = uint32_t(data[i]) << 16;
-        if (i + 1 < data.size()) n |= uint32_t(data[i+1]) << 8;
-        result += kBase64Chars[(n >> 18) & 0x3F];
-        result += kBase64Chars[(n >> 12) & 0x3F];
-        if (i + 1 < data.size())
-            result += kBase64Chars[(n >> 6) & 0x3F];
-        else
-            result += '=';
-        result += '=';
-    }
-    return result;
-}
 
 // ---- Zlib compress ----
 

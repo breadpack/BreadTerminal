@@ -1,7 +1,7 @@
 #include "termcore/kitty_graphics.h"
+#include "termcore/base64.h"
 #include "termcore/iterm_image.h"
 #include <algorithm>
-#include <array>
 #include <sstream>
 
 namespace termcore {
@@ -50,35 +50,7 @@ KittyGraphicsManager::parseControl(const std::string& control) {
 }
 
 std::vector<uint8_t> KittyGraphicsManager::base64Decode(const std::string& input) {
-    // Standard base64 decoding table
-    static const std::array<int, 256> decode_table = []() {
-        std::array<int, 256> t;
-        t.fill(-1);
-        const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        for (int i = 0; chars[i]; ++i) {
-            t[static_cast<unsigned char>(chars[i])] = i;
-        }
-        return t;
-    }();
-
-    std::vector<uint8_t> result;
-    result.reserve(input.size() * 3 / 4);
-
-    int val = 0;
-    int bits = 0;
-    for (unsigned char c : input) {
-        if (c == '=' || c == '\n' || c == '\r') continue;
-        int d = decode_table[c];
-        if (d < 0) continue; // skip invalid characters
-
-        val = (val << 6) | d;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            result.push_back(static_cast<uint8_t>((val >> bits) & 0xFF));
-        }
-    }
-    return result;
+    return termcore::base64Decode(input);
 }
 
 std::string KittyGraphicsManager::processCommand(

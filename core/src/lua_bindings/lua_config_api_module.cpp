@@ -153,12 +153,14 @@ void LuaConfigApiModule::registerBindings(void* luaState, void* terminalTable) {
 
     // terminal.config({...}) — apply config values
     terminal.set_function("config", [this](sol::table t) {
+        if (!config_) return;
         applyConfigTable(*config_, t);
     });
 
     // terminal.keymap("trigger", "action") — register keybinding
     terminal.set_function("keymap", [this](const std::string& trigger,
                                            const std::string& action) {
+        if (!keybindings_) return;
         auto combo = KeybindingManager::parseCombo(trigger);
         auto act = KeybindingManager::parseAction(action);
         keybindings_->bind(combo, act, act == Action::Custom ? action : "");
@@ -166,6 +168,7 @@ void LuaConfigApiModule::registerBindings(void* luaState, void* terminalTable) {
 
     // terminal.keymap_preset("name") — load preset keybindings
     terminal.set_function("keymap_preset", [this](const std::string& name) {
+        if (!keybindings_) return;
         auto preset = parseKeymapPreset(name);
         keybindings_->loadPreset(preset);
     });
@@ -173,6 +176,7 @@ void LuaConfigApiModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.colorscheme("name", { ... }) — define/apply a color theme
     terminal.set_function("colorscheme",
         [this](const std::string& name, sol::table t) {
+            if (!config_) return;
             if (config_->theme == name || config_->theme.empty()) {
                 if (auto v = t["background"]; v.valid()) config_->background = parseColor(v);
                 if (auto v = t["foreground"]; v.valid()) config_->foreground = parseColor(v);

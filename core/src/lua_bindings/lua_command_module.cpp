@@ -27,6 +27,7 @@ void LuaCommandModule::registerBindings(void* luaState, void* terminalTable) {
                 if (cat.has_value()) category = *cat;
             }
             auto luaFn = std::make_shared<sol::protected_function>(std::move(fn));
+            if (!palette_) return;
             palette_->registerLuaCommand(name,
                 [luaFn]() {
                     auto result = (*luaFn)();
@@ -38,6 +39,7 @@ void LuaCommandModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.command.remove("name")
     cmd.set_function("remove",
         [this](std::string name) {
+            if (!palette_) return;
             palette_->removeLuaCommand(name);
         });
 }

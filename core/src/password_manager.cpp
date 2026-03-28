@@ -1,4 +1,5 @@
 #include "termcore/password_manager.h"
+#include "termcore/base64.h"
 
 #include <algorithm>
 #include <cctype>
@@ -16,47 +17,6 @@ using json = nlohmann::json;
 
 // Static counter for ID generation
 static uint64_t sIdCounter = 0;
-
-// Base64 encoding/decoding for storing encrypted binary data in JSON
-static const char kBase64Chars[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static std::string base64Encode(const std::string& input) {
-    std::string output;
-    int val = 0, valb = -6;
-    for (unsigned char c : input) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            output.push_back(kBase64Chars[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6)
-        output.push_back(kBase64Chars[((val << 8) >> (valb + 8)) & 0x3F]);
-    while (output.size() % 4)
-        output.push_back('=');
-    return output;
-}
-
-static std::string base64Decode(const std::string& input) {
-    std::string output;
-    std::vector<int> T(256, -1);
-    for (int i = 0; i < 64; i++)
-        T[static_cast<unsigned char>(kBase64Chars[i])] = i;
-
-    int val = 0, valb = -8;
-    for (unsigned char c : input) {
-        if (T[c] == -1) break;
-        val = (val << 6) + T[c];
-        valb += 6;
-        if (valb >= 0) {
-            output.push_back(static_cast<char>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return output;
-}
 
 PasswordManager::PasswordManager()
     : lastActivity_(std::chrono::steady_clock::now()) {}
@@ -255,7 +215,7 @@ bool PasswordManager::loadEntries() {
     file.close();
 
     // The file stores base64-encoded encrypted JSON
-    std::string decrypted = decrypt(base64Decode(content));
+    std::string decrypted = decrypt(base64DecodeToString(content));
 
     json j;
     try {

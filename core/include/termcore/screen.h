@@ -71,6 +71,11 @@ public:
     int rows() const { return rows_; }
     int cols() const { return cols_; }
 
+    /// Access scrollback via RowView for zero-copy bulk iteration.
+    /// Returns true if the row comes from scrollback (and fills `out`).
+    /// Returns false if the row is from the live grid (use cellAt or grid access).
+    bool scrollbackRowView(int viewport_row, ScrollbackRing::RowView& out) const;
+
     // --- Cursor ---
     int cursorRow() const { return cursor_.row; }
     int cursorCol() const { return cursor_.col; }
@@ -287,9 +292,7 @@ private:
         void clear(const TermCell& default_cell) {
             int sz = static_cast<int>(cells.size());
             int limit = (occ < sz) ? occ : sz;
-            for (int i = 0; i < limit; ++i) {
-                cells[i] = default_cell;
-            }
+            std::fill(cells.begin(), cells.begin() + limit, default_cell);
             occ = 0;
         }
 
@@ -307,6 +310,11 @@ private:
     std::deque<Row> grid_;
     ScrollbackRing scrollback_ring_;
     int viewport_offset_ = 0;  // 0 = bottom (live), >0 = scrolled up
+
+    // Scrollback cell access cache: avoids re-resolving segment for consecutive
+    // cellAt() calls to the same scrollback row (common in rendering loops).
+    mutable int cached_sb_idx_ = -1;
+    mutable ScrollbackRing::RowView cached_sb_row_ = {};
 
     // Cursor
     CursorState cursor_;

@@ -6,38 +6,300 @@ on:
   pull_request:
     branches: [master, main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-windows
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  LUA_VERSION: "5.4.7"
+
 jobs:
+  # ── Build + Test with Address Sanitizer ──────────────────────────────
   build-and-test:
+    timeout-minutes: 30
     strategy:
+      fail-fast: true
       matrix:
-        os: [macos-14, ubuntu-24.04]
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-14
+            platform: macos
+          - os: ubuntu-24.04
+            platform: linux
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
+      # ── Windows dependencies ──
+      - name: Set up MSVC Developer Environment (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up vcpkg (Windows)
+        if: matrix.platform == 'windows'
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 'a7b6122f6b6504d16d96117336a0562693579933'  # 2024.11.16
+
+      - name: Install vcpkg packages (Windows)
+        if: matrix.platform == 'windows'
+        run: vcpkg install harfbuzz icu zlib --triplet x64-windows
+
+      - name: Cache Lua build (Windows)
+        if: matrix.platform == 'windows'
+        id: cache-lua
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lua-${{ env.LUA_VERSION }}
+          key: lua-${{ env.LUA_VERSION }}-msvc-x64
+
+      - name: Build Lua 5.4 from source (Windows)
+        if: matrix.platform == 'windows' && steps.cache-lua.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L "https://www.lua.org/ftp/lua-$env:LUA_VERSION.tar.gz" -o lua.tar.gz
+          tar xzf lua.tar.gz -C "$env:RUNNER_TEMP"
+          $luaSrc = "$env:RUNNER_TEMP\lua-$env:LUA_VERSION\src"
+          Push-Location $luaSrc
+          $sources = Get-ChildItem *.c | Where-Object { $_.Name -notin @('lua.c','luac.c') }
+          cl.exe /c /O2 /MD /DLUA_COMPAT_5_3 /W3 /nologo $($sources.Name)
+          lib.exe /OUT:lua54.lib /nologo *.obj
+          Pop-Location
+
+      - name: Set Lua env (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: echo "LUA_DIR=${RUNNER_TEMP}/lua-${LUA_VERSION}" >> $GITHUB_ENV
+
+      # ── macOS dependencies ──
       - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.platform == 'macos'
         run: brew install harfbuzz icu4c@77 lua@5.4
 
+      # ── Linux dependencies ──
       - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake pkg-config \
             libharfbuzz-dev libicu-dev libfreetype-dev libfontconfig-dev \
-            libgtk-4-dev libepoxy-dev lua5.4 liblua5.4-dev
+            libgtk-4-dev libepoxy-dev lua5.4 liblua5.4-dev zlib1g-dev
 
-      - name: Configure
+      # ── Cache CMake build directory ──
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-${{ matrix.platform }}-asan-${{ hashFiles('CMakeLists.txt', 'core/CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            cmake-${{ matrix.platform }}-asan-
+
+      # ── Configure ──
+      - name: CMake configure (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            cmake -B build -DICU_ROOT="$(brew --prefix icu4c@77)"
-          else
-            cmake -B build
-          fi
+          cmake -B build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+            -DENABLE_ASAN=ON \
+            -DLUA_INCLUDE_DIR="${LUA_DIR}/src" \
+            -DLUA_LIBRARY="${LUA_DIR}/src/lua54.lib"
 
+      - name: CMake configure (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_ASAN=ON \
+            -DICU_ROOT="$(brew --prefix icu4c@77)"
+
+      - name: CMake configure (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_ASAN=ON
+
+      # ── Build ──
       - name: Build
-        run: cmake --build build
+        run: cmake --build build --config Debug
 
-      - name: Test
-        run: cd build && ctest --output-on-failure
+      # ── Test ──
+      - name: Run tests
+        working-directory: build
+        run: ctest --build-config Debug --output-on-failure --timeout 120
+
+      # ── Upload test results on failure ──
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-asan-${{ matrix.platform }}
+          path: |
+            build/Testing/
+            build/**/test*.xml
+          retention-days: 7
+
+  # ── Build with strict warnings (Windows only) ───────────────────────
+  build-and-test-strict:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC Developer Environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 'a7b6122f6b6504d16d96117336a0562693579933'
+
+      - name: Install vcpkg packages
+        run: vcpkg install harfbuzz icu zlib --triplet x64-windows
+
+      - name: Cache Lua build
+        id: cache-lua-strict
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lua-${{ env.LUA_VERSION }}
+          key: lua-${{ env.LUA_VERSION }}-msvc-x64
+
+      - name: Build Lua 5.4 from source
+        if: steps.cache-lua-strict.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L "https://www.lua.org/ftp/lua-$env:LUA_VERSION.tar.gz" -o lua.tar.gz
+          tar xzf lua.tar.gz -C "$env:RUNNER_TEMP"
+          $luaSrc = "$env:RUNNER_TEMP\lua-$env:LUA_VERSION\src"
+          Push-Location $luaSrc
+          $sources = Get-ChildItem *.c | Where-Object { $_.Name -notin @('lua.c','luac.c') }
+          cl.exe /c /O2 /MD /DLUA_COMPAT_5_3 /W3 /nologo $($sources.Name)
+          lib.exe /OUT:lua54.lib /nologo *.obj
+          Pop-Location
+
+      - name: Set Lua env
+        shell: bash
+        run: echo "LUA_DIR=${RUNNER_TEMP}/lua-${LUA_VERSION}" >> $GITHUB_ENV
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-windows-strict-${{ hashFiles('CMakeLists.txt', 'core/CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            cmake-windows-strict-
+
+      - name: CMake configure (strict warnings)
+        shell: bash
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+            -DENABLE_STRICT_WARNINGS=ON \
+            -DLUA_INCLUDE_DIR="${LUA_DIR}/src" \
+            -DLUA_LIBRARY="${LUA_DIR}/src/lua54.lib"
+
+      - name: Build (strict warnings)
+        run: cmake --build build --config Debug
+
+      - name: Run tests
+        working-directory: build
+        run: ctest --build-config Debug --output-on-failure --timeout 120
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-strict
+          path: |
+            build/Testing/
+            build/**/test*.xml
+          retention-days: 7
+
+  # ── Benchmark baseline (master push only) ───────────────────────────
+  benchmark-baseline:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC Developer Environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 'a7b6122f6b6504d16d96117336a0562693579933'
+
+      - name: Install vcpkg packages
+        run: vcpkg install harfbuzz icu zlib --triplet x64-windows
+
+      - name: Cache Lua build
+        id: cache-lua-bench
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lua-${{ env.LUA_VERSION }}
+          key: lua-${{ env.LUA_VERSION }}-msvc-x64
+
+      - name: Build Lua 5.4 from source
+        if: steps.cache-lua-bench.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L "https://www.lua.org/ftp/lua-$env:LUA_VERSION.tar.gz" -o lua.tar.gz
+          tar xzf lua.tar.gz -C "$env:RUNNER_TEMP"
+          $luaSrc = "$env:RUNNER_TEMP\lua-$env:LUA_VERSION\src"
+          Push-Location $luaSrc
+          $sources = Get-ChildItem *.c | Where-Object { $_.Name -notin @('lua.c','luac.c') }
+          cl.exe /c /O2 /MD /DLUA_COMPAT_5_3 /W3 /nologo $($sources.Name)
+          lib.exe /OUT:lua54.lib /nologo *.obj
+          Pop-Location
+
+      - name: Set Lua env
+        shell: bash
+        run: echo "LUA_DIR=${RUNNER_TEMP}/lua-${LUA_VERSION}" >> $GITHUB_ENV
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-windows-release-${{ hashFiles('CMakeLists.txt', 'core/CMakeLists.txt', 'benchmarks/CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            cmake-windows-release-
+
+      - name: CMake configure (Release)
+        shell: bash
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLUA_INCLUDE_DIR="${LUA_DIR}/src" \
+            -DLUA_LIBRARY="${LUA_DIR}/src/lua54.lib"
+
+      - name: Build (Release)
+        run: cmake --build build --config Release
+
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          ./build/benchmarks/Release/bread_benchmarks.exe 2>&1 | tee benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: benchmark-results.txt
+          retention-days: 30

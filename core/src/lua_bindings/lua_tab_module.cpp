@@ -54,12 +54,14 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.tab.set_title(tab_id, title)
     tab.set_function("set_title",
         [this](int tab_id, const std::string& title) {
+            if (!tabCtrl_) return;
             tabCtrl_->setCustomTitle(tab_id, title);
         });
 
     // terminal.tab.get_info(tab_id) -- returns a table with tab info
     tab.set_function("get_info",
         [this, luaPtr](int tab_id) -> sol::object {
+            if (!tabCtrl_) return sol::make_object(luaPtr->lua_state(), sol::lua_nil);
             auto tabs = tabCtrl_->tabBarInfo();
             if (tab_id < 0 || tab_id >= static_cast<int>(tabs.size())) {
                 return sol::nil;
@@ -81,6 +83,7 @@ void LuaTabModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.tab.list() -- returns array of tab info tables
     tab.set_function("list",
         [this, luaPtr]() -> sol::table {
+            if (!tabCtrl_) return luaPtr->create_table();
             auto tabs = tabCtrl_->tabBarInfo();
             sol::table result = luaPtr->create_table();
             for (int i = 0; i < static_cast<int>(tabs.size()); ++i) {

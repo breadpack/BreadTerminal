@@ -22,6 +22,7 @@ void LuaWorkspaceModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.workspace.on_status_change(function() end)
     workspace.set_function("on_status_change",
         [this](sol::protected_function fn) {
+            if (!provider_) return;
             auto luaFn = std::make_shared<sol::protected_function>(std::move(fn));
             provider_->setOnChanged(
                 [luaFn](const std::vector<WorkspaceStatusSnapshot>&) {
@@ -33,12 +34,14 @@ void LuaWorkspaceModule::registerBindings(void* luaState, void* terminalTable) {
     // terminal.workspace.set_cwd(workspace_id, "/path")
     workspace.set_function("set_cwd",
         [this](uint32_t ws_id, const std::string& cwd) {
+            if (!provider_) return;
             provider_->setCwd(ws_id, cwd);
         });
 
     // terminal.workspace.get_status() -- returns current status snapshot as array of tables
     workspace.set_function("get_status",
         [this, luaPtr]() -> sol::table {
+            if (!provider_) return luaPtr->create_table();
             auto snapshots = provider_->currentSnapshots();
             sol::table result = luaPtr->create_table();
             int i = 1;

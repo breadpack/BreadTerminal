@@ -1,6 +1,7 @@
 #if defined(_WIN32)
 
 #include "termcore/pty.h"
+#include "termcore/ring_buffer.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -11,6 +12,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <set>
@@ -101,59 +103,16 @@ static const ConPtyApi& conPty() {
         OutputDebugStringW(a.fromWT
             ? L"BreadTerminal: Using bundled ConPTY (OpenConsole.exe)\n"
             : L"BreadTerminal: Using system ConPTY (conhost.exe)\n");
+        if (!a.fromWT) {
+            fprintf(stderr, "[BreadTerminal] WARNING: Bundled ConPTY (conpty.dll) not found. "
+                "Falling back to system ConPTY (conhost.exe). Some VT sequences "
+                "(mouse mode, alt screen, sync update) may be filtered. "
+                "Place conpty.dll + OpenConsole.exe next to the executable to fix.\n");
+        }
         return a;
     }();
     return api;
 }
-
-// --------------------------------------------------------------------
-// Thread-safe ring buffer for PTY output
-// --------------------------------------------------------------------
-class RingBuffer {
-public:
-    static constexpr size_t kCapacity = 128 * 1024; // 128 KB
-
-    size_t readAvailable() const {
-        return write_pos_ - read_pos_;
-    }
-
-    // Write data into the ring buffer.  Returns number of bytes written.
-    size_t write(const char* data, size_t len) {
-        size_t avail = kCapacity - readAvailable();
-        if (len > avail) len = avail;
-        if (len == 0) return 0;
-
-        size_t wpos = write_pos_ % kCapacity;
-        size_t first = (std::min)(len, kCapacity - wpos);
-        std::memcpy(buf_ + wpos, data, first);
-        if (first < len) {
-            std::memcpy(buf_, data + first, len - first);
-        }
-        write_pos_ += len;
-        return len;
-    }
-
-    // Read data out of the ring buffer.  Returns number of bytes read.
-    size_t read(char* dst, size_t len) {
-        size_t avail = readAvailable();
-        if (len > avail) len = avail;
-        if (len == 0) return 0;
-
-        size_t rpos = read_pos_ % kCapacity;
-        size_t first = (std::min)(len, kCapacity - rpos);
-        std::memcpy(dst, buf_ + rpos, first);
-        if (first < len) {
-            std::memcpy(dst + first, buf_, len - first);
-        }
-        read_pos_ += len;
-        return len;
-    }
-
-private:
-    char buf_[kCapacity]{};
-    size_t write_pos_ = 0;
-    size_t read_pos_ = 0;
-};
 
 // --------------------------------------------------------------------
 // WindowsPty – Named Pipe + Overlapped I/O + dedicated reader thread
@@ -583,7 +542,7 @@ private:
                         // Buffer full – wait for main thread to drain some data.
                         // This applies natural back-pressure to the child process.
                         buf_space_cv_.wait(lock, [this] {
-                            return ring_.readAvailable() < RingBuffer::kCapacity
+                            return ring_.readAvailable() < RingBuffer<>::kCapacity
                                 || !reader_running_.load(std::memory_order_relaxed);
                         });
                         if (!reader_running_.load(std::memory_order_relaxed)) break;
@@ -803,7 +762,7 @@ private:
     std::atomic<bool> reader_running_{false};
     std::mutex buf_mutex_;
     std::condition_variable buf_space_cv_;  // signaled when ring buffer has space
-    RingBuffer ring_;
+    RingBuffer<> ring_;
 
     // Cached process info (expensive syscalls — refresh at most every 500ms)
     mutable std::string cached_process_name_;

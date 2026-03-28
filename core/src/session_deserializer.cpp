@@ -1,4 +1,5 @@
 #include "termcore/session.h"
+#include "termcore/base64.h"
 
 #include <nlohmann/json.hpp>
 #include <zlib.h>
@@ -15,35 +16,6 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace termcore {
-
-// ---- Base64 decode ----
-
-static int base64DecodeChar(char c) {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-static std::vector<uint8_t> base64Decode(const std::string& encoded) {
-    std::vector<uint8_t> result;
-    result.reserve((encoded.size() / 4) * 3);
-    int val = 0, valb = -8;
-    for (char c : encoded) {
-        if (c == '=' || c == '\n' || c == '\r') continue;
-        int d = base64DecodeChar(c);
-        if (d < 0) continue;
-        val = (val << 6) + d;
-        valb += 6;
-        if (valb >= 0) {
-            result.push_back(static_cast<uint8_t>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return result;
-}
 
 // ---- Zlib decompress ----
 

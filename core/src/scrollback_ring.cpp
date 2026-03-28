@@ -82,6 +82,10 @@ TermCell ScrollbackSegment::cellAt(int row, int col) const {
 
     TermCell tc = fromCells(cpu, gpu);
 
+    // Resolve colors from segment color table
+    tc.fg_color = resolveFgColor(row, col);
+    tc.bg_color = resolveBgColor(row, col);
+
     // Restore grapheme extras from the store
     if (cpu.grapheme_idx != 0) {
         uint8_t count = 0;
@@ -107,52 +111,97 @@ TermCell ScrollbackSegment::cellAt(int row, int col) const {
 }
 
 void ScrollbackSegment::writeRow(int row, const std::vector<TermCell>& cells) {
-    int ncols = std::min(static_cast<int>(cells.size()), col_count);
-    int occ = 0;
+    writeRow(row, cells, -1);
+}
 
-    for (int c = 0; c < ncols; ++c) {
+void ScrollbackSegment::writeRow(int row, const std::vector<TermCell>& cells, int occ_hint) {
+    int ncols = std::min(static_cast<int>(cells.size()), col_count);
+
+    // Pre-compute base pointers to avoid repeated row * col_count multiply
+    const int base_offset = row * col_count;
+    CpuCell* cpu_row = cpu_cells + base_offset;
+    GpuCell* gpu_row = gpu_cells + base_offset;
+
+    // If caller provided occupancy hint, only process up to that many cells.
+    // Cells beyond occ_hint are known to be default (space, default colors, no attrs).
+    int process_cols = ncols;
+    int occ = 0;
+    bool need_occ_calc = true;
+
+    if (occ_hint >= 0) {
+        // Trust the caller's occupancy hint
+        process_cols = std::min(occ_hint, ncols);
+        occ = process_cols;
+        need_occ_calc = false;
+    }
+
+    // Track whether we need any rare-path processing
+    bool has_extras = false;
+    bool has_underline_colors = false;
+
+    for (int c = 0; c < process_cols; ++c) {
         const TermCell& tc = cells[c];
-        CpuCell& cpu = cpuCellAt(row, c);
-        GpuCell& gpu = gpuCellAt(row, c);
+        CpuCell& cpu = cpu_row[c];
+        GpuCell& gpu = gpu_row[c];
 
         cpu.codepoint = tc.codepoint;
         cpu.width = tc.width;
         cpu.extra_count = tc.extra_count;
+        cpu.grapheme_idx = 0;
 
-        // Store grapheme extras
-        if (tc.extra_count > 0) {
-            cpu.grapheme_idx = grapheme_store.store(tc.extra, tc.extra_count);
-        } else {
-            cpu.grapheme_idx = 0;
+        // Intern colors through the segment color table
+        gpu.fg_color_idx = color_table.intern(tc.fg_color);
+        gpu.bg_color_idx = color_table.intern(tc.bg_color);
+        gpu.setAttributes(tc.attributes);
+        gpu.setUnderlineStyle(tc.underline_style);
+
+        // If color overflowed, store in overflow map
+        if (gpu.fg_color_idx == GpuCell::kOverflowIdx) {
+            uint32_t key = (static_cast<uint32_t>(row) * static_cast<uint32_t>(col_count)
+                           + static_cast<uint32_t>(c)) | 0x80000000u;
+            overflow_colors[key] = tc.fg_color;
         }
-
-        gpu.fg_color = tc.fg_color;
-        gpu.bg_color = tc.bg_color;
-        gpu.attributes = tc.attributes;
-        gpu.underline_style = tc.underline_style;
-
-        // Store underline_color in sparse map if non-default
-        if (tc.underline_color != kColorDefault) {
+        if (gpu.bg_color_idx == GpuCell::kOverflowIdx) {
             uint32_t key = static_cast<uint32_t>(row) * static_cast<uint32_t>(col_count)
                            + static_cast<uint32_t>(c);
-            underline_colors[key] = tc.underline_color;
+            overflow_colors[key] = tc.bg_color;
         }
 
-        // Track occupancy: any non-space/non-default cell
-        if (tc.codepoint != ' ' || tc.extra_count > 0 ||
-            tc.fg_color != kColorDefault || tc.bg_color != kColorDefault ||
-            tc.attributes != 0) {
-            occ = c + 1;
+        // Defer rare-path processing
+        has_extras |= (tc.extra_count > 0);
+        has_underline_colors |= (tc.underline_color != kColorDefault);
+
+        // Track occupancy only if not provided by caller
+        if (need_occ_calc) {
+            if (tc.codepoint != ' ' || tc.extra_count > 0 ||
+                tc.fg_color != kColorDefault || tc.bg_color != kColorDefault ||
+                tc.attributes != 0) {
+                occ = c + 1;
+            }
         }
     }
 
-    // Zero remaining columns (already zero from VirtualAlloc, but needed if
-    // segment is recycled with a narrower row)
-    for (int c = ncols; c < col_count; ++c) {
-        CpuCell& cpu = cpuCellAt(row, c);
-        cpu = CpuCell{};
-        GpuCell& gpu = gpuCellAt(row, c);
-        gpu = GpuCell{};
+    // Second pass for rare features (grapheme extras, underline colors)
+    if (has_extras || has_underline_colors) {
+        for (int c = 0; c < process_cols; ++c) {
+            const TermCell& tc = cells[c];
+            if (tc.extra_count > 0) {
+                cpu_row[c].grapheme_idx = grapheme_store.store(tc.extra, tc.extra_count);
+            }
+            if (tc.underline_color != kColorDefault) {
+                uint32_t key = static_cast<uint32_t>(row) * static_cast<uint32_t>(col_count)
+                               + static_cast<uint32_t>(c);
+                underline_colors[key] = tc.underline_color;
+            }
+        }
+    }
+
+    // Zero remaining columns beyond processed range
+    if (process_cols < col_count) {
+        std::memset(cpu_row + process_cols, 0,
+                    static_cast<size_t>(col_count - process_cols) * sizeof(CpuCell));
+        std::memset(gpu_row + process_cols, 0,
+                    static_cast<size_t>(col_count - process_cols) * sizeof(GpuCell));
     }
 
     row_occupancy[row] = static_cast<uint16_t>(occ);
@@ -288,7 +337,9 @@ void ScrollbackRing::evict(int count) {
         // Reset the segment's state
         old_seg->used_rows = 0;
         old_seg->grapheme_store.clear();
+        old_seg->color_table.clear();
         old_seg->underline_colors.clear();
+        old_seg->overflow_colors.clear();
 
         // Zero the cell arrays - reuse the VirtualAlloc memory
         size_t cpu_bytes = static_cast<size_t>(ScrollbackSegment::kRowsPerSegment)
@@ -335,6 +386,13 @@ void ScrollbackRing::evict(int count) {
 }
 
 void ScrollbackRing::pushRow(const std::vector<TermCell>& row_cells) {
+    pushRow(row_cells, -1);
+}
+
+void ScrollbackRing::pushRow(const std::vector<TermCell>& row_cells, int occ_hint) {
+    // When max capacity is zero, scrollback is disabled — discard immediately.
+    if (max_rows_ == 0) return;
+
     // Check if we need to evict rows to stay under max
     if (total_rows_ >= max_rows_) {
         evict(1);
@@ -348,7 +406,7 @@ void ScrollbackRing::pushRow(const std::vector<TermCell>& row_cells) {
     }
 
     // Write the row
-    segments_[tail_segment_]->writeRow(tail_row_, row_cells);
+    segments_[tail_segment_]->writeRow(tail_row_, row_cells, occ_hint);
     tail_row_++;
     total_rows_++;
 }
@@ -360,6 +418,22 @@ TermCell ScrollbackRing::cellAt(int scrollback_idx, int col) const {
 
     auto [seg_idx, row_in_seg] = resolveIndex(scrollback_idx);
     return segments_[seg_idx]->cellAt(row_in_seg, col);
+}
+
+bool ScrollbackRing::rowAt(int scrollback_idx, RowView& out) const {
+    if (scrollback_idx < 0 || static_cast<size_t>(scrollback_idx) >= total_rows_) {
+        return false;
+    }
+
+    auto [seg_idx, row_in_seg] = resolveIndex(scrollback_idx);
+    const auto* seg = segments_[seg_idx];
+    int offset = row_in_seg * seg->col_count;
+    out.cpu = seg->cpu_cells + offset;
+    out.gpu = seg->gpu_cells + offset;
+    out.segment = seg;
+    out.row_in_segment = row_in_seg;
+    out.col_count = seg->col_count;
+    return true;
 }
 
 std::string ScrollbackRing::rowText(int scrollback_idx) const {
@@ -393,7 +467,9 @@ void ScrollbackRing::clear() {
         auto* seg = segments_[0];
         seg->used_rows = 0;
         seg->grapheme_store.clear();
+        seg->color_table.clear();
         seg->underline_colors.clear();
+        seg->overflow_colors.clear();
 
         size_t cpu_bytes = static_cast<size_t>(ScrollbackSegment::kRowsPerSegment)
                            * seg->col_count * sizeof(CpuCell);
