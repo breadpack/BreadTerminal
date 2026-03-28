@@ -84,6 +84,7 @@ void TerminalWindowState::enqueueChar(WPARAM wParam) {
     // Filter control chars early (same as handleChar)
     wchar_t wc = static_cast<wchar_t>(wParam);
     if (wc < 0x20) return;
+    if (wc == 0x7F) return;  // DEL from Ctrl+Backspace — already handled in KeyDown
     if (searchActive) return;
     if (!controller) return;
 
@@ -156,6 +157,7 @@ void TerminalWindowState::handleChar(WPARAM wParam) {
     wchar_t wc = static_cast<wchar_t>(wParam);
     // Filter control chars; \r and \t are already handled in handleKeyDown
     if (wc < 0x20) return;
+    if (wc == 0x7F) return;  // DEL from Ctrl+Backspace — already handled in handleKeyDown
 
     char utf8[4];
     int len = WideCharToMultiByte(CP_UTF8, 0, &wc, 1,

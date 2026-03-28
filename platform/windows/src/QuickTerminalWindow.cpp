@@ -107,6 +107,7 @@ LRESULT CALLBACK QuickTerminalWindow::WndProc(
             return 0;
 
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
             if (self && self->state_) {
                 self->state_->handleKeyDown(wParam, lParam);
             }

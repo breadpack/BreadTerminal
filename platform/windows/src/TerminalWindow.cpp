@@ -237,6 +237,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             break;
 
         case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
             if (state) {
                 state->enqueueKeyDown(wParam);
             }

@@ -47,7 +47,7 @@ public:
     void onMouseEvent(const InputMouseEvent& e);
 
 private:
-    void sendVtKey(uint32_t keycode);
+    void sendVtKey(uint32_t keycode, uint8_t modifiers = 0);
 
     Deps d_;
 };

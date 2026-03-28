@@ -105,7 +105,7 @@ void InputHandler::onKeyEvent(const KeyEvent& e) {
     }
 
     // 6. Send VT key sequence for special keys
-    sendVtKey(e.keycode);
+    sendVtKey(e.keycode, e.modifiers);
 }
 
 void InputHandler::onCharInput(const std::string& utf8) {
@@ -258,7 +258,7 @@ void InputHandler::onMouseEvent(const InputMouseEvent& e) {
     }
 }
 
-void InputHandler::sendVtKey(uint32_t keycode) {
+void InputHandler::sendVtKey(uint32_t keycode, uint8_t modifiers) {
     Screen* scr = d_.activeScreen();
     bool appCursor = scr && scr->appCursorKeys();
     const char* pfx = appCursor ? "\x1bO" : "\x1b[";
@@ -275,8 +275,22 @@ void InputHandler::sendVtKey(uint32_t keycode) {
         case 0xF708: d_.sendPtyData("\t", 1); return;        // Tab
         case 0xF709: d_.sendPtyData("\r", 1); return;        // Return
         case 0xF70A: d_.sendPtyData("\x1b", 1); return;      // Escape
-        case 0xF70B: d_.sendPtyData("\x7f", 1); return;      // Backspace
-        case 0xF70D: d_.sendPtyData("\x1b[3~", 4); return;   // Delete
+        case 0xF70B:
+            if (modifiers & ModAlt) {
+                d_.sendPtyData("\x1b\x7f", 2); // Alt+Backspace: word delete
+            } else if (modifiers & ModCtrl) {
+                d_.sendPtyData("\x17", 1);      // Ctrl+Backspace: word delete (Ctrl+W)
+            } else {
+                d_.sendPtyData("\x7f", 1);      // Backspace
+            }
+            return;
+        case 0xF70D:
+            if (modifiers & ModAlt) {
+                d_.sendPtyData("\x1b\x1b[3~", 5); // Alt+Delete: forward word delete
+            } else {
+                d_.sendPtyData("\x1b[3~", 4);      // Delete
+            }
+            return;
         // F-keys
         case 0xF710: d_.sendPtyData("\x1bOP", 3); return;
         case 0xF711: d_.sendPtyData("\x1bOQ", 3); return;
