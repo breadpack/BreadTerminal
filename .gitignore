@@ -39,3 +39,4 @@ build-linux/
 *.msi
 *.wixpdb
 package/
+*.zip
