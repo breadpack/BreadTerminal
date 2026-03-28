@@ -217,6 +217,87 @@ target_link_libraries(termcore_socket_transport PUBLIC nlohmann_json::nlohmann_j
 enable_sanitizers(termcore_socket_transport)
 
 # ===========================================================================
+# Sub-library: termcore_keybinding (zero internal dependencies)
+# ===========================================================================
+set(TERMCORE_KEYBINDING_SOURCES
+    src/keybinding.cpp
+    src/keybinding_presets.cpp
+)
+
+add_library(termcore_keybinding STATIC ${TERMCORE_KEYBINDING_SOURCES})
+
+target_include_directories(termcore_keybinding
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+enable_sanitizers(termcore_keybinding)
+
+# ===========================================================================
+# Sub-library: termcore_workspace_detectors (zero internal dependencies)
+# ===========================================================================
+set(TERMCORE_WORKSPACE_DETECTORS_SOURCES
+    src/git_branch_detector.cpp
+    src/port_detector.cpp
+    src/pr_detector.cpp
+)
+
+add_library(termcore_workspace_detectors STATIC ${TERMCORE_WORKSPACE_DETECTORS_SOURCES})
+
+target_include_directories(termcore_workspace_detectors
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+enable_sanitizers(termcore_workspace_detectors)
+
+# ===========================================================================
+# Sub-library: termcore_config_core (depends on config.h/profile.h headers)
+# ===========================================================================
+set(TERMCORE_CONFIG_CORE_SOURCES
+    src/config_diff.cpp
+    src/config_field_registry.cpp
+    src/config_themes.cpp
+    src/config_value_adapter.cpp
+    src/settings_model.cpp
+    src/ghostty_config_import.cpp
+)
+
+add_library(termcore_config_core STATIC ${TERMCORE_CONFIG_CORE_SOURCES})
+
+target_include_directories(termcore_config_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(termcore_config_core PUBLIC nlohmann_json::nlohmann_json)
+
+enable_sanitizers(termcore_config_core)
+
+# ===========================================================================
+# Sub-library: termcore_session (depends on mux.h, result.h, base64.h headers)
+# ===========================================================================
+set(TERMCORE_SESSION_SOURCES
+    src/session_paths.cpp
+    src/session_serializer.cpp
+    src/session_deserializer.cpp
+    src/pane_status.cpp
+    src/session_manager.cpp
+    src/session_autosave.cpp
+)
+
+add_library(termcore_session STATIC ${TERMCORE_SESSION_SOURCES})
+
+target_include_directories(termcore_session
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(termcore_session PUBLIC nlohmann_json::nlohmann_json ZLIB::ZLIB)
+
+enable_sanitizers(termcore_session)
+
+# ===========================================================================
 # Main library: termcore (reduced source list)
 # ===========================================================================
 set(TERMCORE_SOURCES
@@ -237,17 +318,8 @@ set(TERMCORE_SOURCES
     src/notification.cpp
     src/notification_visual.cpp
     src/config.cpp
-    src/config_diff.cpp
-    src/config_field_registry.cpp
-    src/ghostty_config_import.cpp
-    src/config_themes.cpp
     src/agent.cpp
     src/agent_orchestrator.cpp
-    src/keybinding.cpp
-    src/keybinding_presets.cpp
-    src/git_branch_detector.cpp
-    src/port_detector.cpp
-    src/pr_detector.cpp
     src/workspace_status.cpp
     src/search.cpp
     src/url_detector.cpp
@@ -259,12 +331,6 @@ set(TERMCORE_SOURCES
     src/vi_copy_mode.cpp
     src/webview_stub.cpp
     src/terminfo.cpp
-    src/session_paths.cpp
-    src/session_serializer.cpp
-    src/session_deserializer.cpp
-    src/pane_status.cpp
-    src/session_manager.cpp
-    src/session_autosave.cpp
     src/socket/command_dispatcher_mux.cpp
     src/socket/command_dispatcher_misc.cpp
     src/socket/command_dispatcher_browser.cpp
@@ -286,8 +352,6 @@ set(TERMCORE_SOURCES
     src/search_history.cpp
     src/tab_controller.cpp
     src/config_applier.cpp
-    src/settings_model.cpp
-    src/config_value_adapter.cpp
     src/profile_manager.cpp
     src/profile_dropdown.cpp
     src/shell_detector.cpp
@@ -406,6 +470,8 @@ target_include_directories(termcore
 target_link_libraries(termcore PUBLIC
     termcore_font termcore_ssh termcore_image
     termcore_shader termcore_theme termcore_socket_transport
+    termcore_keybinding termcore_workspace_detectors
+    termcore_config_core termcore_session
     ICU::uc nlohmann_json::nlohmann_json ZLIB::ZLIB
 )
 target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
