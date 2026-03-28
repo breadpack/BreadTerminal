@@ -8,148 +8,6 @@ FetchContent_MakeAvailable(nlohmann_json)
 # zlib for scrollback compression
 find_package(ZLIB REQUIRED)
 
-set(TERMCORE_SOURCES
-    src/termcore_api.cpp
-    src/vt_parser.cpp
-    src/vt_parser_simd.cpp
-    src/dynamic_colors.cpp
-    src/contrast.cpp
-    src/compressed_row.cpp
-    src/scrollback_ring.cpp
-    src/screen.cpp
-    src/screen_csi.cpp
-    src/screen_csi_ext.cpp
-    src/screen_osc.cpp
-    src/mouse.cpp
-    src/font/unicode_width.cpp
-    src/font/box_drawing.cpp
-    src/font/box_drawing_lines.cpp
-    src/font/font_shaper.cpp
-    src/font/glyph_atlas.cpp
-    src/font/glyph_cache.cpp
-    src/font/raster_queue.cpp
-    src/font/font_collection.cpp
-    src/font/variable_font.cpp
-    src/font/ligature.cpp
-    src/font/color_font.cpp
-    src/font/subpixel.cpp
-    src/mux.cpp
-    src/mux_layout.cpp
-    src/notification.cpp
-    src/notification_visual.cpp
-    src/config.cpp
-    src/config_diff.cpp
-    src/config_field_registry.cpp
-    src/ghostty_config_import.cpp
-    src/config_themes.cpp
-    src/theme_loader.cpp
-    src/theme_index.cpp
-    src/theme_importer.cpp
-    src/theme_repository.cpp
-    src/theme_preview.cpp
-    src/font_index.cpp
-    src/agent.cpp
-    src/agent_orchestrator.cpp
-    src/keybinding.cpp
-    src/keybinding_presets.cpp
-    src/git_branch_detector.cpp
-    src/port_detector.cpp
-    src/pr_detector.cpp
-    src/workspace_status.cpp
-    src/search.cpp
-    src/url_detector.cpp
-    src/url_highlight.cpp
-    src/kitty_keyboard.cpp
-    src/base64.cpp
-    src/sixel.cpp
-    src/sixel_animation.cpp
-    src/kitty_graphics.cpp
-    src/iterm_image.cpp
-    src/image_preview.cpp
-    src/shell_integration.cpp
-    src/paste_guard.cpp
-    src/vi_copy_mode.cpp
-    src/webview_stub.cpp
-    src/terminfo.cpp
-    src/ssh_integration_deploy.cpp
-    src/ssh_session.cpp
-    src/session_paths.cpp
-    src/session_serializer.cpp
-    src/session_deserializer.cpp
-    src/pane_status.cpp
-    src/session_manager.cpp
-    src/session_autosave.cpp
-    src/socket/jsonrpc.cpp
-    src/socket/command_dispatcher_mux.cpp
-    src/socket/command_dispatcher_misc.cpp
-    src/socket/command_dispatcher_browser.cpp
-    src/socket/command_dispatcher_agent.cpp
-    src/socket/command_dispatcher_orchestrator.cpp
-    src/socket/command_dispatcher_terminal.cpp
-    src/socket/command_dispatcher_status.cpp
-    src/socket/socket_server.cpp
-    src/screen_capture.cpp
-    src/screen_export.cpp
-    src/mcp_server_spec.cpp
-    src/quick_terminal.cpp
-    src/clipboard_history.cpp
-    src/terminal_inspector.cpp
-    src/terminal_controller.cpp
-    src/input_handler.cpp
-    src/font_manager.cpp
-    src/selection_manager.cpp
-    src/search_controller.cpp
-    src/search_history.cpp
-    src/tab_controller.cpp
-    src/config_applier.cpp
-    src/settings_model.cpp
-    src/config_value_adapter.cpp
-    src/profile_manager.cpp
-    src/profile_dropdown.cpp
-    src/shell_detector.cpp
-    src/update_checker.cpp
-    src/command_palette.cpp
-    src/ssh_session.cpp
-    src/ssh_terminfo.cpp
-    src/ssh_profile.cpp
-    src/ssh_mux.cpp
-    src/ssh_mux_manager.cpp
-    src/ssh_transport.cpp
-    src/ssh_known_hosts.cpp
-    src/ssh_transport_libssh2.cpp
-    src/ssh_transport_libssh2_channel.cpp
-    src/grapheme.cpp
-    src/shader_effect.cpp
-    src/shader_builtins.cpp
-    src/instant_replay.cpp
-    src/annotations.cpp
-    src/serial_port.cpp
-    src/password_manager.cpp
-    src/tmux_integration.cpp
-    src/history_provider.cpp
-    src/completion_manager.cpp
-    src/agent_tree_tracker.cpp
-    src/hook_bridge.cpp
-    src/provider_registry.cpp
-    src/sidebar_model.cpp
-)
-
-if(UNIX)
-    list(APPEND TERMCORE_SOURCES
-        src/pty_unix.cpp
-        src/socket/unix_socket_transport.cpp
-        src/shell_detector_unix.cpp
-    )
-endif()
-
-if(WIN32)
-    list(APPEND TERMCORE_SOURCES
-        src/pty_windows.cpp
-        src/shell_detector_windows.cpp
-        src/socket/win_pipe_transport.cpp
-    )
-endif()
-
 # ICU for Unicode properties
 if(NOT ICU_ROOT AND APPLE AND EXISTS "/opt/homebrew/opt/icu4c@77")
     set(ICU_ROOT "/opt/homebrew/opt/icu4c@77")
@@ -168,6 +26,300 @@ if(WIN32)
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(HARFBUZZ REQUIRED harfbuzz)
+endif()
+
+# libssh2 (optional — real SSH transport)
+set(TERMCORE_HAS_LIBSSH2 OFF)
+if(WIN32)
+    find_package(Libssh2 CONFIG QUIET)
+    if(Libssh2_FOUND)
+        set(TERMCORE_HAS_LIBSSH2 ON)
+    endif()
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBSSH2 libssh2)
+        if(LIBSSH2_FOUND)
+            set(TERMCORE_HAS_LIBSSH2 ON)
+        endif()
+    endif()
+    if(NOT TERMCORE_HAS_LIBSSH2)
+        find_package(Libssh2 CONFIG QUIET)
+        if(Libssh2_FOUND)
+            set(TERMCORE_HAS_LIBSSH2 ON)
+        endif()
+    endif()
+endif()
+
+# ===========================================================================
+# Sub-library: termcore_font (no internal dependencies)
+# ===========================================================================
+set(TERMCORE_FONT_SOURCES
+    src/font/unicode_width.cpp
+    src/font/box_drawing.cpp
+    src/font/box_drawing_lines.cpp
+    src/font/font_shaper.cpp
+    src/font/glyph_atlas.cpp
+    src/font/glyph_cache.cpp
+    src/font/raster_queue.cpp
+    src/font/font_collection.cpp
+    src/font/variable_font.cpp
+    src/font/ligature.cpp
+    src/font/color_font.cpp
+    src/font/subpixel.cpp
+    src/font_manager.cpp
+    src/font_index.cpp
+)
+
+add_library(termcore_font STATIC ${TERMCORE_FONT_SOURCES})
+
+target_include_directories(termcore_font
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${HARFBUZZ_INCLUDE_DIRS}
+)
+
+target_link_libraries(termcore_font PUBLIC
+    ${HARFBUZZ_LIBRARIES} ICU::uc nlohmann_json::nlohmann_json
+)
+target_link_directories(termcore_font PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
+
+enable_sanitizers(termcore_font)
+
+# ===========================================================================
+# Sub-library: termcore_ssh (conditional libssh2)
+# ===========================================================================
+set(TERMCORE_SSH_SOURCES
+    src/ssh_transport.cpp
+    src/ssh_session.cpp
+    src/ssh_mux.cpp
+    src/ssh_mux_manager.cpp
+    src/ssh_profile.cpp
+    src/ssh_known_hosts.cpp
+    src/ssh_terminfo.cpp
+    src/ssh_integration_deploy.cpp
+    src/ssh_transport_libssh2.cpp
+    src/ssh_transport_libssh2_channel.cpp
+)
+
+add_library(termcore_ssh STATIC ${TERMCORE_SSH_SOURCES})
+
+target_include_directories(termcore_ssh
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(TERMCORE_HAS_LIBSSH2)
+    target_compile_definitions(termcore_ssh PUBLIC TERMCORE_HAS_LIBSSH2=1)
+    if(WIN32)
+        target_link_libraries(termcore_ssh PUBLIC Libssh2::libssh2 ws2_32)
+    elseif(TARGET Libssh2::libssh2)
+        target_link_libraries(termcore_ssh PUBLIC Libssh2::libssh2)
+    else()
+        target_include_directories(termcore_ssh PUBLIC ${LIBSSH2_INCLUDE_DIRS})
+        target_link_libraries(termcore_ssh PUBLIC ${LIBSSH2_LIBRARIES})
+        target_link_directories(termcore_ssh PUBLIC ${LIBSSH2_LIBRARY_DIRS})
+    endif()
+    message(STATUS "SSH transport: ENABLED (libssh2)")
+else()
+    message(STATUS "SSH transport: STUB (libssh2 not found)")
+endif()
+
+enable_sanitizers(termcore_ssh)
+
+# ===========================================================================
+# Sub-library: termcore_image (image protocols)
+# ===========================================================================
+set(TERMCORE_IMAGE_SOURCES
+    src/sixel.cpp
+    src/sixel_animation.cpp
+    src/kitty_graphics.cpp
+    src/iterm_image.cpp
+    src/image_preview.cpp
+)
+
+add_library(termcore_image STATIC ${TERMCORE_IMAGE_SOURCES})
+
+target_include_directories(termcore_image
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+enable_sanitizers(termcore_image)
+
+# ===========================================================================
+# Sub-library: termcore_shader (zero internal dependencies)
+# ===========================================================================
+set(TERMCORE_SHADER_SOURCES
+    src/shader_effect.cpp
+    src/shader_builtins.cpp
+)
+
+add_library(termcore_shader STATIC ${TERMCORE_SHADER_SOURCES})
+
+target_include_directories(termcore_shader
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+enable_sanitizers(termcore_shader)
+
+# ===========================================================================
+# Sub-library: termcore_theme (depends on config.h/profile.h headers only)
+# ===========================================================================
+set(TERMCORE_THEME_SOURCES
+    src/theme_loader.cpp
+    src/theme_index.cpp
+    src/theme_importer.cpp
+    src/theme_repository.cpp
+    src/theme_preview.cpp
+)
+
+add_library(termcore_theme STATIC ${TERMCORE_THEME_SOURCES})
+
+target_include_directories(termcore_theme
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(termcore_theme PUBLIC nlohmann_json::nlohmann_json)
+
+enable_sanitizers(termcore_theme)
+
+# ===========================================================================
+# Sub-library: termcore_socket_transport (IPC transport + JSON-RPC protocol)
+# ===========================================================================
+set(TERMCORE_SOCKET_TRANSPORT_SOURCES
+    src/socket/jsonrpc.cpp
+)
+
+if(UNIX)
+    list(APPEND TERMCORE_SOCKET_TRANSPORT_SOURCES
+        src/socket/unix_socket_transport.cpp
+    )
+endif()
+
+if(WIN32)
+    list(APPEND TERMCORE_SOCKET_TRANSPORT_SOURCES
+        src/socket/win_pipe_transport.cpp
+    )
+endif()
+
+add_library(termcore_socket_transport STATIC ${TERMCORE_SOCKET_TRANSPORT_SOURCES})
+
+target_include_directories(termcore_socket_transport
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(termcore_socket_transport PUBLIC nlohmann_json::nlohmann_json)
+
+enable_sanitizers(termcore_socket_transport)
+
+# ===========================================================================
+# Main library: termcore (reduced source list)
+# ===========================================================================
+set(TERMCORE_SOURCES
+    src/termcore_api.cpp
+    src/vt_parser.cpp
+    src/vt_parser_simd.cpp
+    src/dynamic_colors.cpp
+    src/contrast.cpp
+    src/compressed_row.cpp
+    src/scrollback_ring.cpp
+    src/screen.cpp
+    src/screen_csi.cpp
+    src/screen_csi_ext.cpp
+    src/screen_osc.cpp
+    src/mouse.cpp
+    src/mux.cpp
+    src/mux_layout.cpp
+    src/notification.cpp
+    src/notification_visual.cpp
+    src/config.cpp
+    src/config_diff.cpp
+    src/config_field_registry.cpp
+    src/ghostty_config_import.cpp
+    src/config_themes.cpp
+    src/agent.cpp
+    src/agent_orchestrator.cpp
+    src/keybinding.cpp
+    src/keybinding_presets.cpp
+    src/git_branch_detector.cpp
+    src/port_detector.cpp
+    src/pr_detector.cpp
+    src/workspace_status.cpp
+    src/search.cpp
+    src/url_detector.cpp
+    src/url_highlight.cpp
+    src/kitty_keyboard.cpp
+    src/base64.cpp
+    src/shell_integration.cpp
+    src/paste_guard.cpp
+    src/vi_copy_mode.cpp
+    src/webview_stub.cpp
+    src/terminfo.cpp
+    src/session_paths.cpp
+    src/session_serializer.cpp
+    src/session_deserializer.cpp
+    src/pane_status.cpp
+    src/session_manager.cpp
+    src/session_autosave.cpp
+    src/socket/command_dispatcher_mux.cpp
+    src/socket/command_dispatcher_misc.cpp
+    src/socket/command_dispatcher_browser.cpp
+    src/socket/command_dispatcher_agent.cpp
+    src/socket/command_dispatcher_orchestrator.cpp
+    src/socket/command_dispatcher_terminal.cpp
+    src/socket/command_dispatcher_status.cpp
+    src/socket/socket_server.cpp
+    src/screen_capture.cpp
+    src/screen_export.cpp
+    src/mcp_server_spec.cpp
+    src/quick_terminal.cpp
+    src/clipboard_history.cpp
+    src/terminal_inspector.cpp
+    src/terminal_controller.cpp
+    src/input_handler.cpp
+    src/selection_manager.cpp
+    src/search_controller.cpp
+    src/search_history.cpp
+    src/tab_controller.cpp
+    src/config_applier.cpp
+    src/settings_model.cpp
+    src/config_value_adapter.cpp
+    src/profile_manager.cpp
+    src/profile_dropdown.cpp
+    src/shell_detector.cpp
+    src/update_checker.cpp
+    src/command_palette.cpp
+    src/grapheme.cpp
+    src/instant_replay.cpp
+    src/annotations.cpp
+    src/serial_port.cpp
+    src/password_manager.cpp
+    src/tmux_integration.cpp
+    src/history_provider.cpp
+    src/completion_manager.cpp
+    src/agent_tree_tracker.cpp
+    src/hook_bridge.cpp
+    src/hooks_installer.cpp
+    src/provider_registry.cpp
+    src/sidebar_model.cpp
+)
+
+if(UNIX)
+    list(APPEND TERMCORE_SOURCES
+        src/pty_unix.cpp
+        src/shell_detector_unix.cpp
+    )
+endif()
+
+if(WIN32)
+    list(APPEND TERMCORE_SOURCES
+        src/pty_windows.cpp
+        src/shell_detector_windows.cpp
+    )
 endif()
 
 # Lua 5.4 (optional — disabled if not found or incompatible)
@@ -251,7 +403,11 @@ target_include_directories(termcore
         ${HARFBUZZ_INCLUDE_DIRS}
 )
 
-target_link_libraries(termcore PUBLIC ICU::uc ${HARFBUZZ_LIBRARIES} nlohmann_json::nlohmann_json ZLIB::ZLIB)
+target_link_libraries(termcore PUBLIC
+    termcore_font termcore_ssh termcore_image
+    termcore_shader termcore_theme termcore_socket_transport
+    ICU::uc nlohmann_json::nlohmann_json ZLIB::ZLIB
+)
 target_link_directories(termcore PUBLIC ${HARFBUZZ_LIBRARY_DIRS})
 
 # Embed defaults/*.lua as C byte arrays
@@ -293,44 +449,5 @@ if(TERMCORE_HAS_LUA)
     target_compile_definitions(termcore PUBLIC TERMCORE_HAS_LUA=1)
 endif()
 
-# libssh2 (optional — real SSH transport)
-set(TERMCORE_HAS_LIBSSH2 OFF)
-if(WIN32)
-    find_package(Libssh2 CONFIG QUIET)
-    if(Libssh2_FOUND)
-        set(TERMCORE_HAS_LIBSSH2 ON)
-    endif()
-else()
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(LIBSSH2 libssh2)
-        if(LIBSSH2_FOUND)
-            set(TERMCORE_HAS_LIBSSH2 ON)
-        endif()
-    endif()
-    if(NOT TERMCORE_HAS_LIBSSH2)
-        find_package(Libssh2 CONFIG QUIET)
-        if(Libssh2_FOUND)
-            set(TERMCORE_HAS_LIBSSH2 ON)
-        endif()
-    endif()
-endif()
-
-if(TERMCORE_HAS_LIBSSH2)
-    target_compile_definitions(termcore PUBLIC TERMCORE_HAS_LIBSSH2=1)
-    if(WIN32)
-        target_link_libraries(termcore PUBLIC Libssh2::libssh2 ws2_32)
-    elseif(TARGET Libssh2::libssh2)
-        target_link_libraries(termcore PUBLIC Libssh2::libssh2)
-    else()
-        target_include_directories(termcore PUBLIC ${LIBSSH2_INCLUDE_DIRS})
-        target_link_libraries(termcore PUBLIC ${LIBSSH2_LIBRARIES})
-        target_link_directories(termcore PUBLIC ${LIBSSH2_LIBRARY_DIRS})
-    endif()
-    message(STATUS "SSH transport: ENABLED (libssh2)")
-else()
-    message(STATUS "SSH transport: STUB (libssh2 not found)")
-endif()
-
-# Apply sanitizers and strict warnings to the core library
+# Apply sanitizers and strict warnings to all targets
 enable_sanitizers(termcore)
