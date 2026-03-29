@@ -8,6 +8,7 @@ extern "C" {
 #include <lauxlib.h>
 }
 
+#include <filesystem>
 #include <unordered_map>
 
 #include "default_config_lua.h"
@@ -48,7 +49,8 @@ struct LuaEngine::Impl {
 
     Impl() {
         lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table,
-                           sol::lib::math);
+                           sol::lib::math, sol::lib::coroutine,
+                           sol::lib::package);
 
         // Remove dangerous functions that allow arbitrary code execution
         lua["load"] = sol::nil;
@@ -57,6 +59,15 @@ struct LuaEngine::Impl {
         lua["loadfile"] = sol::nil;
         lua["rawget"] = sol::nil;
         lua["rawset"] = sol::nil;
+
+        // Restrict package loaders — only file-based loading from plugins dir
+        lua["package"]["loadlib"] = sol::nil;     // no C modules
+        lua["package"]["searchpath"] = sol::nil;   // hide search internals
+
+        // Default to empty to prevent loading from system paths.
+        // package.path will be set when plugins directory is known via setPluginsPath().
+        lua["package"]["path"] = "";
+        lua["package"]["cpath"] = "";  // no C modules
 
         // Set execution limit to prevent infinite loops
         lua_sethook(lua.lua_state(), [](lua_State* L, lua_Debug*) {
@@ -206,6 +217,40 @@ void LuaEngine::loadDefaults() {
             // Log error but continue loading remaining defaults
         }
     }
+}
+
+void LuaEngine::setPluginsPath(const std::string& plugins_dir) {
+    if (plugins_dir.empty()) return;
+
+    // Validate that module names don't contain path traversal sequences.
+    // Override package.searchers to add a pre-check before file search.
+    impl_->lua["package"]["path"] = "";
+
+    // Store the allowed base directory for validation
+    namespace fs = std::filesystem;
+    auto canonical_base = fs::weakly_canonical(fs::path(plugins_dir));
+
+    // Set the actual search path
+    std::string path = plugins_dir + "/lib/?.lua;"
+                     + plugins_dir + "/lib/?/init.lua;"
+                     + plugins_dir + "/?.lua;"
+                     + plugins_dir + "/?/init.lua";
+    impl_->lua["package"]["path"] = path;
+
+    // Install a custom require guard that rejects dangerous module names
+    impl_->lua["__bt_plugins_dir"] = canonical_base.string();
+    impl_->lua.safe_script(
+        "local original_require = require\n"
+        "require = function(modname)\n"
+        "  if type(modname) ~= 'string' then\n"
+        "    error('require: module name must be a string')\n"
+        "  end\n"
+        "  if modname:find('%.%.') or modname:find('/') or modname:find('\\\\') then\n"
+        "    error('require: invalid module name ' .. modname .. ' (path traversal not allowed)')\n"
+        "  end\n"
+        "  return original_require(modname)\n"
+        "end\n"
+    );
 }
 
 } // namespace termcore

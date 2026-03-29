@@ -167,6 +167,9 @@ std::string defaultConfigPath();
 /// Get the plugins directory path (~/.bt/plugins/).
 std::string pluginsDirectory();
 
+/// Get the data directory path (~/.bt/data/).
+std::string dataDirectory();
+
 /// Named color themes
 struct Theme {
     std::string name;

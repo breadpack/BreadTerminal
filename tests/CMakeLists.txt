@@ -107,6 +107,19 @@ add_executable(termcore_tests
     test_ring_buffer.cpp
     test_cell_builder_logic.cpp
     test_plugin_sandbox.cpp
+    test_lua_timer.cpp
+    test_lua_async.cpp
+    test_lua_require.cpp
+    test_lua_window.cpp
+    test_lua_picker.cpp
+    test_lua_pane.cpp
+    test_plugin_lifecycle.cpp
+    test_plugin_dependencies.cpp
+    test_plugin_lazy.cpp
+    test_custom_events.cpp
+    test_lua_storage.cpp
+    test_lua_json.cpp
+    test_lua_http.cpp
 )
 
 target_link_libraries(termcore_tests

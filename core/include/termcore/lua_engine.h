@@ -48,6 +48,10 @@ public:
     using ActionHandler = std::function<void(const std::string&)>;
     void setActionHandler(ActionHandler handler);
 
+    // Set the plugins directory for restricted require() path resolution.
+    // Allows require() to load from plugins_dir/lib/ and plugins_dir/.
+    void setPluginsPath(const std::string& plugins_dir);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

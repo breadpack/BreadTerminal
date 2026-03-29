@@ -26,6 +26,13 @@ std::string pluginsDirectory() {
     return (fs::path(base).parent_path() / "plugins").string();
 }
 
+std::string dataDirectory() {
+    std::string base = defaultConfigPath();
+    if (base.empty()) return "";
+    namespace fs = std::filesystem;
+    return (fs::path(base).parent_path() / "data").string();
+}
+
 Config loadConfig() {
     // Try config.lua from the standard Lua config path
     std::string luaPath = defaultLuaConfigPath();
