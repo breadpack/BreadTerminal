@@ -45,7 +45,7 @@ jobs:
         if: matrix.platform == 'windows'
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'a7b6122f6b6504d16d96117336a0562693579933'  # 2024.11.16
+          vcpkgGitCommitId: 'b5d1a94fb7f88fd835e360fd23a45a09ceedbf48'  # 2026.03.29
 
       - name: Install vcpkg packages (Windows)
         if: matrix.platform == 'windows'
