@@ -5,6 +5,7 @@
 #include "termcore/notification.h"
 #include "termcore/agent.h"
 #include "termcore/agent_orchestrator.h"
+#include "termcore/hook_bridge.h"
 
 #include <chrono>
 #include <deque>
@@ -96,6 +97,9 @@ public:
     /// Set the callback for triggering visual attention on panes.
     void setAttentionCallback(AttentionCallback cb) { attention_cb_ = std::move(cb); }
 
+    /// Set the HookBridge for routing hook.event requests to agent tree tracker.
+    void setHookBridge(HookBridge* bridge) { hook_bridge_ = bridge; }
+
     /// Access stored status metadata for a pane.
     std::vector<PaneStatus> getPaneStatuses(PaneId pane_id) const;
 
@@ -182,6 +186,15 @@ private:
     rpc::Response handleAgentSendToAgent(std::optional<int64_t> id, const nlohmann::json& p);
     rpc::Response handleAgentListAgents(std::optional<int64_t> id, const nlohmann::json& p);
 
+    // hook.*
+    rpc::Response handleHookEvent(std::optional<int64_t> id, const nlohmann::json& p);
+
+    // Dispatch table: method name → handler function pointer
+    using DispatchHandler = rpc::Response (CommandDispatcher::*)(
+        std::optional<int64_t>, const nlohmann::json&);
+    std::unordered_map<std::string, DispatchHandler> dispatch_table_;
+    void initDispatchTable();
+
     Mux& mux_;
     NotificationStore& notifications_;
     AgentTracker& agent_tracker_;
@@ -192,6 +205,7 @@ private:
     SelectionReadCallback selection_cb_;
     CursorPositionCallback cursor_cb_;
     AttentionCallback attention_cb_;
+    HookBridge* hook_bridge_ = nullptr;
 
     // Agent orchestrator
     AgentOrchestrator orchestrator_;

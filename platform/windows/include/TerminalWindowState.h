@@ -18,6 +18,11 @@
 #include "termcore/accessibility.h"
 #include "termcore/notification.h"
 #include "termcore/agent.h"
+#include "termcore/agent_tree_tracker.h"
+#include "termcore/hook_bridge.h"
+#include "termcore/sidebar_model.h"
+#include "termcore/socket/socket_server.h"
+#include "termcore/socket/command_dispatcher.h"
 #include "UnifiedSettingsWindow.h"
 #include "ClipboardHistoryPopup.h"
 
@@ -117,6 +122,13 @@ struct TerminalWindowState : public termcore::IPlatformHost {
     // Notifications, agent tracking
     std::unique_ptr<termcore::NotificationStore> notifications;
     std::unique_ptr<termcore::AgentTracker> agentTracker;
+    std::unique_ptr<termcore::AgentTreeTracker> agentTreeTracker;
+    std::unique_ptr<termcore::HookBridge> hookBridge;
+    std::unique_ptr<termcore::SidebarModel> sidebarModel;
+
+    // Socket API
+    std::unique_ptr<termcore::SocketServer> socketServer;
+    std::shared_ptr<termcore::CommandDispatcher> commandDispatcher;
 
     // UI windows
     std::unique_ptr<termcore::UnifiedSettingsWindow> unifiedSettings;
@@ -291,6 +303,9 @@ private:
     void updateProfileDropdown();
     // Helper: update sidebar on renderer from controller/agent state
     void updateSidebar();
+
+    // Sidebar dirty-check: skip full rebuild when agent tree hasn't changed
+    uint64_t lastSidebarGeneration_ = 0;
 
     // Notification ring animation state per pane
     struct PaneRingState {

@@ -19,6 +19,13 @@ std::string defaultConfigPath() {
     return std::string(home) + "/.bt/config";
 }
 
+std::string pluginsDirectory() {
+    std::string base = defaultConfigPath();
+    if (base.empty()) return "";
+    namespace fs = std::filesystem;
+    return (fs::path(base).parent_path() / "plugins").string();
+}
+
 Config loadConfig() {
     // Try config.lua from the standard Lua config path
     std::string luaPath = defaultLuaConfigPath();

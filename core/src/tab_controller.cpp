@@ -1,4 +1,5 @@
 #include "termcore/tab_controller.h"
+#include "termcore/provider_registry.h"
 #include "lua_bindings/lua_tab_module.h"  // for TabTitleInfo
 #include <algorithm>
 
@@ -212,6 +213,34 @@ std::vector<TabController::TabInfo> TabController::tabBarInfo() const {
         info.push_back(std::move(ti));
     }
     return info;
+}
+
+void TabController::pollAgentDetection() {
+    if (!agent_tracker_) return;
+
+    for (auto& [paneId, ps] : panes_) {
+        if (!ps->pty) continue;
+
+        std::string processName = ps->pty->foregroundProcessName();
+        if (processName.empty()) continue;
+
+        auto type = agent_tracker_->detectAgent(processName);
+        if (type == AgentType::Unknown) continue;
+
+        // Only call reportStart once per pane
+        auto* existing = agent_tracker_->getAgent(paneId);
+        if (existing && existing->type != AgentType::Unknown) continue;
+
+        agent_tracker_->reportStart(paneId, type, ps->pty->pid());
+
+        // Fire Lua callback for hook installation
+        if (onProviderDetected_ && provider_registry_) {
+            auto* provider = provider_registry_->detect(processName, {});
+            if (provider) {
+                onProviderDetected_(provider->id, paneId);
+            }
+        }
+    }
 }
 
 int TabController::tabCount() const {

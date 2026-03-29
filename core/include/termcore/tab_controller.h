@@ -98,7 +98,17 @@ public:
     WorkspaceId workspaceId() const { return wsId_; }
 
     void setProfileManager(ProfileManager* mgr) { profileMgr_ = mgr; }
-    void setAgentTracker(const AgentTracker* tracker) { agent_tracker_ = tracker; }
+    void setAgentTracker(AgentTracker* tracker) { agent_tracker_ = tracker; }
+    void setProviderRegistry(class ProviderRegistry* registry) { provider_registry_ = registry; }
+
+    /// Callback fired when a new AI CLI provider is detected in a pane.
+    using OnProviderDetectedFn = std::function<void(const std::string& provider_id, uint32_t pane_id)>;
+    void setOnProviderDetected(OnProviderDetectedFn fn) { onProviderDetected_ = std::move(fn); }
+
+    /// Poll foreground processes and detect AI CLI agents.
+    /// Call from main loop. Triggers reportStart() on AgentTracker
+    /// and fires OnProviderDetected callback for hook installation.
+    void pollAgentDetection();
 
     // Callback invoked after each new pane's Screen is created.
     using OnPaneCreatedFn = std::function<void(Screen*)>;
@@ -124,7 +134,9 @@ private:
     WorkspaceId wsId_;
     PtyFactory ptyFactory_;
     ProfileManager* profileMgr_ = nullptr;
-    const AgentTracker* agent_tracker_ = nullptr;
+    AgentTracker* agent_tracker_ = nullptr;
+    class ProviderRegistry* provider_registry_ = nullptr;
+    OnProviderDetectedFn onProviderDetected_;
     std::string pendingProfileId_;
 
     std::unordered_map<PaneId, std::unique_ptr<PaneState>> panes_;

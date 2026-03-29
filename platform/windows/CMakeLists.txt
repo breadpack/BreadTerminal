@@ -89,6 +89,7 @@ add_executable(BreadTerminal WIN32
     src/main.cpp
     src/TerminalWindow.cpp
     src/TerminalWindowState.cpp
+    src/TerminalWindowStateRender.cpp
     src/TerminalWindowStateEvents.cpp
     src/TerminalWindowInput.cpp
     src/QuickTerminalWindow.cpp

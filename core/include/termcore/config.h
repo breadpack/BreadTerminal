@@ -140,6 +140,9 @@ Config loadConfig();
 /// Used internally to locate config.lua.
 std::string defaultConfigPath();
 
+/// Get the plugins directory path (~/.bt/plugins/).
+std::string pluginsDirectory();
+
 /// Named color themes
 struct Theme {
     std::string name;

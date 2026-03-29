@@ -1,6 +1,4 @@
 #include "termcore/agent.h"
-#include "termcore/provider_registry.h"
-#include "termcore/notification.h"
 #include "termcore/string_utils.h"
 
 #include <algorithm>
@@ -49,11 +47,11 @@ AgentTracker::~AgentTracker() = default;
 
 void AgentTracker::initDefaultPatterns() {
     registerAgent(AgentType::ClaudeCode, "Claude Code", "claude",
-                  {"CLAUDE_CODE_SESSION"});
+                  {"CLAUDE_CODE_SESSION"}, "claude_code");
     registerAgent(AgentType::Codex, "Codex", "codex",
-                  {"CODEX_SESSION"});
+                  {"CODEX_SESSION"}, "codex");
     registerAgent(AgentType::GeminiCli, "Gemini CLI", "gemini",
-                  {"GEMINI_CLI"});
+                  {"GEMINI_CLI"}, "gemini_cli");
     registerAgent(AgentType::Aider, "Aider", "aider", {});
     registerAgent(AgentType::OpenCode, "OpenCode", "opencode", {});
     registerAgent(AgentType::Goose, "Goose", "goose", {});
@@ -63,8 +61,9 @@ void AgentTracker::initDefaultPatterns() {
 
 void AgentTracker::registerAgent(AgentType type, const std::string& name,
                                  const std::string& process_name,
-                                 const std::vector<std::string>& env_markers) {
-    patterns_.push_back({type, name, process_name, env_markers});
+                                 const std::vector<std::string>& env_markers,
+                                 const std::string& hook_provider_id) {
+    patterns_.push_back({type, name, process_name, env_markers, hook_provider_id});
 }
 
 AgentType AgentTracker::detectAgent(const std::string& process_name,
@@ -124,38 +123,7 @@ void AgentTracker::reportStart(uint32_t pane_id, AgentType type, int pid) {
     if (callback_) {
         callback_(pane_id, info);
     }
-
-    // Check if provider has uninstalled hooks — notify user
-    if (provider_registry_ && notification_store_) {
-        // Convert AgentType to string for registry lookup
-        std::string agent_type_str;
-        switch (type) {
-            case AgentType::ClaudeCode: agent_type_str = "ClaudeCode"; break;
-            case AgentType::Codex: agent_type_str = "Codex"; break;
-            case AgentType::GeminiCli: agent_type_str = "GeminiCli"; break;
-            case AgentType::Aider: agent_type_str = "Aider"; break;
-            case AgentType::OpenCode: agent_type_str = "OpenCode"; break;
-            case AgentType::Goose: agent_type_str = "Goose"; break;
-            case AgentType::Amp: agent_type_str = "Amp"; break;
-            case AgentType::Cline: agent_type_str = "Cline"; break;
-            default: break;
-        }
-        if (!agent_type_str.empty()) {
-            auto* provider = provider_registry_->findByAgentType(agent_type_str);
-            if (provider && !provider->hooks.empty()
-                && !provider_registry_->isInstalled(provider->id)
-                && notified_providers_.count(provider->id) == 0) {
-                notified_providers_.insert(provider->id);
-                notification_store_->add(
-                    pane_id,
-                    NotificationSource::System,
-                    NotificationUrgency::Critical,
-                    provider->display_name + " detected",
-                    "Install hooks for subagent tracking and notifications: "
-                    "bread hooks install --provider " + provider->id);
-            }
-        }
-    }
+    // Hook installation is handled by LuaHooksModule via TabController::pollAgentDetection()
 }
 
 void AgentTracker::reportExit(uint32_t pane_id) {

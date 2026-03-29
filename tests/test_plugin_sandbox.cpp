@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
+#include "termcore/config.h"
 #include "termcore/lua_engine.h"
 #include "termcore/lua_module.h"
 #include "termcore/plugin_manager.h"
@@ -371,4 +372,198 @@ TEST_F(PluginSandbox, PluginUnloadCleansCallbacks) {
     // Attempting to reload a disabled plugin should fail
     auto reload_result = mgr.loadPlugin("cb_plugin");
     EXPECT_FALSE(reload_result.ok());
+}
+
+// --- Plugin auto-load and sandbox restore tests ---
+
+TEST_F(PluginSandbox, ScanAndAutoLoadAllDiscoveredPlugins) {
+    TempPluginDir tmp;
+
+    // Create plugins that set global markers when loaded
+    tmp.createPlugin("plugin_a",
+        R"(return { name = "plugin_a", version = "1.0", capabilities = {"events"} })",
+        R"(__plugin_a_loaded = true)");
+
+    tmp.createPlugin("plugin_b",
+        R"(return { name = "plugin_b", version = "2.0", capabilities = {"config"} })",
+        R"(__plugin_b_loaded = true)");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    // Auto-load all discovered plugins (mirrors initTerminal() logic)
+    for (const auto& info : mgr.plugins()) {
+        if (info.state == PluginState::Discovered) {
+            mgr.loadPlugin(info.metadata.name);
+        }
+    }
+
+    // Verify both plugins were loaded
+    int loaded = 0;
+    for (const auto& info : mgr.plugins()) {
+        if (info.state == PluginState::Loaded) loaded++;
+    }
+    EXPECT_EQ(loaded, 2);
+
+    // Verify init.lua was executed for both
+    auto r1 = engine_->loadString("assert(__plugin_a_loaded == true, 'plugin_a not loaded')");
+    EXPECT_TRUE(r1.ok()) << engine_->lastError();
+
+    auto r2 = engine_->loadString("assert(__plugin_b_loaded == true, 'plugin_b not loaded')");
+    EXPECT_TRUE(r2.ok()) << engine_->lastError();
+}
+
+TEST_F(PluginSandbox, SandboxRestoresGlobalsAfterPluginLoad) {
+    TempPluginDir tmp;
+
+    // Plugin without Events capability — terminal.on should be nil'd during load
+    tmp.createPlugin("restricted_plugin",
+        R"(return { name = "restricted_plugin", version = "1.0", capabilities = {"config"} })",
+        R"(
+            -- terminal.on should be nil inside this plugin's sandbox
+            __on_was_nil = (terminal.on == nil)
+        )");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    // Verify terminal.on exists before plugin load
+    auto r_before = engine_->loadString("assert(terminal.on ~= nil, 'on should exist before')");
+    EXPECT_TRUE(r_before.ok()) << engine_->lastError();
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+    auto result = mgr.loadPlugin("restricted_plugin");
+    EXPECT_TRUE(result.ok()) << result.errorMessage();
+
+    // Verify terminal.on was nil'd during plugin execution
+    auto r_check = engine_->loadString("assert(__on_was_nil == true, 'on should have been nil in sandbox')");
+    EXPECT_TRUE(r_check.ok()) << engine_->lastError();
+
+    // Verify terminal.on is restored after plugin load
+    auto r_after = engine_->loadString("assert(terminal.on ~= nil, 'on should be restored after')");
+    EXPECT_TRUE(r_after.ok()) << engine_->lastError();
+}
+
+TEST_F(PluginSandbox, MultiplePluginsDontInterfereWithEachOther) {
+    TempPluginDir tmp;
+
+    // First plugin: has events only
+    tmp.createPlugin("events_only",
+        R"(return { name = "events_only", version = "1.0", capabilities = {"events"} })",
+        R"(
+            __events_plugin_on = (terminal.on ~= nil)
+            __events_plugin_config = (terminal.config ~= nil)
+        )");
+
+    // Second plugin: has config only
+    tmp.createPlugin("config_only",
+        R"(return { name = "config_only", version = "1.0", capabilities = {"config"} })",
+        R"(
+            __config_plugin_on = (terminal.on ~= nil)
+            __config_plugin_config = (terminal.config ~= nil)
+        )");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    // Also set terminal.config to a value so sandbox can nil/restore it
+    engine_->loadString("terminal.config = terminal.config or function() end");
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    // Load events_only first
+    mgr.loadPlugin("events_only");
+    // Load config_only second
+    mgr.loadPlugin("config_only");
+
+    // events_only should have had terminal.on available
+    auto r1 = engine_->loadString("assert(__events_plugin_on == true, 'events plugin should see on')");
+    EXPECT_TRUE(r1.ok()) << engine_->lastError();
+
+    // config_only should NOT have had terminal.on available (events not in caps)
+    auto r2 = engine_->loadString("assert(__config_plugin_on == false, 'config plugin should not see on')");
+    EXPECT_TRUE(r2.ok()) << engine_->lastError();
+
+    // After all plugins loaded, terminal.on should still be available
+    auto r3 = engine_->loadString("assert(terminal.on ~= nil, 'on should be restored')");
+    EXPECT_TRUE(r3.ok()) << engine_->lastError();
+}
+
+TEST_F(PluginSandbox, ErrorPluginDoesNotBlockOthers) {
+    TempPluginDir tmp;
+
+    // First plugin: will error during init
+    tmp.createPlugin("bad_init",
+        R"(return { name = "bad_init", version = "1.0", capabilities = {"events"} })",
+        R"(error("intentional failure"))");
+
+    // Second plugin: should load fine
+    tmp.createPlugin("good_plugin",
+        R"(return { name = "good_plugin", version = "1.0", capabilities = {"events"} })",
+        R"(__good_plugin_loaded = true)");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    // Load all discovered plugins (bad_init will fail)
+    for (const auto& info : mgr.plugins()) {
+        if (info.state == PluginState::Discovered) {
+            mgr.loadPlugin(info.metadata.name);
+        }
+    }
+
+    // bad_init should be in Error state
+    bool found_bad = false, found_good = false;
+    for (const auto& p : mgr.plugins()) {
+        if (p.metadata.name == "bad_init") {
+            found_bad = true;
+            EXPECT_EQ(p.state, PluginState::Error);
+            EXPECT_FALSE(p.error_message.empty());
+        }
+        if (p.metadata.name == "good_plugin") {
+            found_good = true;
+            EXPECT_EQ(p.state, PluginState::Loaded);
+        }
+    }
+    EXPECT_TRUE(found_bad);
+    EXPECT_TRUE(found_good);
+
+    // good_plugin should have executed successfully
+    auto r = engine_->loadString("assert(__good_plugin_loaded == true)");
+    EXPECT_TRUE(r.ok()) << engine_->lastError();
+}
+
+TEST_F(PluginSandbox, EmptyDirectoryProducesNoPlugins) {
+    TempPluginDir tmp;
+    // Don't create any plugins
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    EXPECT_EQ(mgr.plugins().size(), 0u);
+}
+
+TEST_F(PluginSandbox, NonexistentDirectoryProducesNoPlugins) {
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory("/nonexistent/path/that/does/not/exist");
+
+    EXPECT_EQ(mgr.plugins().size(), 0u);
+}
+
+TEST_F(PluginSandbox, PluginsDirectoryHelperReturnsValidPath) {
+    std::string dir = pluginsDirectory();
+    // Should end with "plugins" and contain .bt
+    if (!dir.empty()) {
+        EXPECT_NE(dir.find("plugins"), std::string::npos);
+        EXPECT_NE(dir.find(".bt"), std::string::npos);
+    }
+    // If HOME/USERPROFILE not set, empty is acceptable
 }

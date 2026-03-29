@@ -16,89 +16,89 @@ CommandDispatcher::CommandDispatcher(Mux& mux,
     , scrollback_cb_(std::move(scrollback_cb))
     , orchestrator_(mux)
 {
+    initDispatchTable();
+}
+
+void CommandDispatcher::initDispatchTable() {
+    // workspace.*
+    dispatch_table_["workspace.create"]       = &CommandDispatcher::handleWorkspaceCreate;
+    dispatch_table_["workspace.list"]         = &CommandDispatcher::handleWorkspaceList;
+    dispatch_table_["workspace.switch"]       = &CommandDispatcher::handleWorkspaceSwitch;
+    dispatch_table_["workspace.destroy"]      = &CommandDispatcher::handleWorkspaceDestroy;
+    dispatch_table_["workspace.listPanes"]    = &CommandDispatcher::handleWorkspaceListPanes;
+    dispatch_table_["workspace.getActivePane"]= &CommandDispatcher::handleWorkspaceGetActivePane;
+    dispatch_table_["workspace.getPaneInfo"]  = &CommandDispatcher::handleWorkspaceGetPaneInfo;
+
+    // tab.*
+    dispatch_table_["tab.create"]  = &CommandDispatcher::handleTabCreate;
+    dispatch_table_["tab.list"]    = &CommandDispatcher::handleTabList;
+    dispatch_table_["tab.switch"]  = &CommandDispatcher::handleTabSwitch;
+    dispatch_table_["tab.close"]   = &CommandDispatcher::handleTabClose;
+
+    // pane.*
+    dispatch_table_["pane.split"]        = &CommandDispatcher::handlePaneSplit;
+    dispatch_table_["pane.close"]        = &CommandDispatcher::handlePaneClose;
+    dispatch_table_["pane.focus"]        = &CommandDispatcher::handlePaneFocus;
+    dispatch_table_["pane.list"]         = &CommandDispatcher::handlePaneList;
+    dispatch_table_["pane.send-text"]    = &CommandDispatcher::handlePaneSendText;
+    dispatch_table_["pane.send-keys"]    = &CommandDispatcher::handlePaneSendKeys;
+    dispatch_table_["pane.read-screen"]  = &CommandDispatcher::handlePaneReadScreen;
+    dispatch_table_["pane.set-status"]   = &CommandDispatcher::handlePaneSetStatus;
+    dispatch_table_["pane.set-progress"] = &CommandDispatcher::handlePaneSetProgress;
+
+    // agent.*
+    dispatch_table_["agent.log"]              = &CommandDispatcher::handleAgentLog;
+    dispatch_table_["agent.launch"]           = &CommandDispatcher::handleAgentLaunch;
+    dispatch_table_["agent.orchestrate"]      = &CommandDispatcher::handleAgentOrchestrate;
+    dispatch_table_["agent.readAll"]          = &CommandDispatcher::handleAgentReadAll;
+    dispatch_table_["agent.getIdle"]          = &CommandDispatcher::handleAgentGetIdle;
+    dispatch_table_["agent.closeAll"]         = &CommandDispatcher::handleAgentCloseAll;
+    dispatch_table_["agent.setStatus"]        = &CommandDispatcher::handleAgentSetStatus;
+    dispatch_table_["agent.setProgress"]      = &CommandDispatcher::handleAgentSetProgress;
+    dispatch_table_["agent.setStatusPills"]   = &CommandDispatcher::handleAgentSetStatusPills;
+    dispatch_table_["agent.requestAttention"] = &CommandDispatcher::handleAgentRequestAttention;
+    dispatch_table_["agent.clearStatus"]      = &CommandDispatcher::handleAgentClearStatus;
+    dispatch_table_["agent.addStatePattern"]  = &CommandDispatcher::handleAgentAddStatePattern;
+    dispatch_table_["agent.broadcast"]        = &CommandDispatcher::handleAgentBroadcast;
+    dispatch_table_["agent.sendToAgent"]      = &CommandDispatcher::handleAgentSendToAgent;
+    dispatch_table_["agent.listAgents"]       = &CommandDispatcher::handleAgentListAgents;
+
+    // notify.*
+    dispatch_table_["notify.send"] = &CommandDispatcher::handleNotifySend;
+
+    // browser.*
+    dispatch_table_["browser.open"]      = &CommandDispatcher::handleBrowserOpen;
+    dispatch_table_["browser.navigate"]  = &CommandDispatcher::handleBrowserNavigate;
+    dispatch_table_["browser.executeJS"] = &CommandDispatcher::handleBrowserExecuteJS;
+    dispatch_table_["browser.snapshot"]  = &CommandDispatcher::handleBrowserSnapshot;
+    dispatch_table_["browser.show"]      = &CommandDispatcher::handleBrowserShow;
+    dispatch_table_["browser.hide"]      = &CommandDispatcher::handleBrowserHide;
+    dispatch_table_["browser.click"]     = &CommandDispatcher::handleBrowserClick;
+    dispatch_table_["browser.fill"]      = &CommandDispatcher::handleBrowserFill;
+
+    // query.*
+    dispatch_table_["query.active-pane"]  = &CommandDispatcher::handleQueryActivePane;
+    dispatch_table_["query.pane-info"]    = &CommandDispatcher::handleQueryPaneInfo;
+    dispatch_table_["query.agent-state"]  = &CommandDispatcher::handleQueryAgentState;
+    dispatch_table_["query.scrollback"]   = &CommandDispatcher::handleQueryScrollback;
+
+    // terminal.*
+    dispatch_table_["terminal.getScreenContent"]  = &CommandDispatcher::handleTerminalGetScreenContent;
+    dispatch_table_["terminal.sendInput"]          = &CommandDispatcher::handleTerminalSendInput;
+    dispatch_table_["terminal.getSelection"]       = &CommandDispatcher::handleTerminalGetSelection;
+    dispatch_table_["terminal.getCursorPosition"]  = &CommandDispatcher::handleTerminalGetCursorPosition;
+
+    // hook.*
+    dispatch_table_["hook.event"] = &CommandDispatcher::handleHookEvent;
 }
 
 rpc::Response CommandDispatcher::dispatch(const rpc::Request& req) {
-    const auto& method = req.method;
-    auto id = req.id;
-    const auto& p = req.params;
-
-    // workspace.*
-    if (method == "workspace.create") return handleWorkspaceCreate(id, p);
-    if (method == "workspace.list")   return handleWorkspaceList(id, p);
-    if (method == "workspace.switch") return handleWorkspaceSwitch(id, p);
-    if (method == "workspace.destroy") return handleWorkspaceDestroy(id, p);
-
-    // tab.*
-    if (method == "tab.create") return handleTabCreate(id, p);
-    if (method == "tab.list")   return handleTabList(id, p);
-    if (method == "tab.switch") return handleTabSwitch(id, p);
-    if (method == "tab.close")  return handleTabClose(id, p);
-
-    // pane.*
-    if (method == "pane.split")       return handlePaneSplit(id, p);
-    if (method == "pane.close")       return handlePaneClose(id, p);
-    if (method == "pane.focus")       return handlePaneFocus(id, p);
-    if (method == "pane.list")        return handlePaneList(id, p);
-    if (method == "pane.send-text")   return handlePaneSendText(id, p);
-    if (method == "pane.send-keys")   return handlePaneSendKeys(id, p);
-    if (method == "pane.read-screen") return handlePaneReadScreen(id, p);
-    if (method == "pane.set-status")  return handlePaneSetStatus(id, p);
-    if (method == "pane.set-progress") return handlePaneSetProgress(id, p);
-
-    // agent.*
-    if (method == "agent.log")         return handleAgentLog(id, p);
-    if (method == "agent.launch")      return handleAgentLaunch(id, p);
-    if (method == "agent.orchestrate") return handleAgentOrchestrate(id, p);
-    if (method == "agent.readAll")     return handleAgentReadAll(id, p);
-    if (method == "agent.getIdle")     return handleAgentGetIdle(id, p);
-    if (method == "agent.closeAll")    return handleAgentCloseAll(id, p);
-
-    // notify.*
-    if (method == "notify.send") return handleNotifySend(id, p);
-
-    // browser.*
-    if (method == "browser.open")      return handleBrowserOpen(id, p);
-    if (method == "browser.navigate")  return handleBrowserNavigate(id, p);
-    if (method == "browser.executeJS") return handleBrowserExecuteJS(id, p);
-    if (method == "browser.snapshot")  return handleBrowserSnapshot(id, p);
-    if (method == "browser.show")      return handleBrowserShow(id, p);
-    if (method == "browser.hide")      return handleBrowserHide(id, p);
-    if (method == "browser.click")     return handleBrowserClick(id, p);
-    if (method == "browser.fill")      return handleBrowserFill(id, p);
-
-    // query.*
-    if (method == "query.active-pane")  return handleQueryActivePane(id, p);
-    if (method == "query.pane-info")    return handleQueryPaneInfo(id, p);
-    if (method == "query.agent-state")  return handleQueryAgentState(id, p);
-    if (method == "query.scrollback")  return handleQueryScrollback(id, p);
-
-    // terminal.* (terminal control)
-    if (method == "terminal.getScreenContent")    return handleTerminalGetScreenContent(id, p);
-    if (method == "terminal.sendInput")           return handleTerminalSendInput(id, p);
-    if (method == "terminal.getSelection")        return handleTerminalGetSelection(id, p);
-    if (method == "terminal.getCursorPosition")   return handleTerminalGetCursorPosition(id, p);
-
-    // agent.* (status display)
-    if (method == "agent.setStatus")        return handleAgentSetStatus(id, p);
-    if (method == "agent.setProgress")      return handleAgentSetProgress(id, p);
-    if (method == "agent.setStatusPills")   return handleAgentSetStatusPills(id, p);
-    if (method == "agent.requestAttention") return handleAgentRequestAttention(id, p);
-    if (method == "agent.clearStatus")      return handleAgentClearStatus(id, p);
-    if (method == "agent.addStatePattern")  return handleAgentAddStatePattern(id, p);
-
-    // workspace.* (awareness)
-    if (method == "workspace.listPanes")    return handleWorkspaceListPanes(id, p);
-    if (method == "workspace.getActivePane") return handleWorkspaceGetActivePane(id, p);
-    if (method == "workspace.getPaneInfo")  return handleWorkspaceGetPaneInfo(id, p);
-
-    // agent.* (orchestration enhanced)
-    if (method == "agent.broadcast")        return handleAgentBroadcast(id, p);
-    if (method == "agent.sendToAgent")      return handleAgentSendToAgent(id, p);
-    if (method == "agent.listAgents")       return handleAgentListAgents(id, p);
-
-    return rpc::makeError(id, rpc::kMethodNotFound,
-                          "Method not found: " + method);
+    auto it = dispatch_table_.find(req.method);
+    if (it != dispatch_table_.end()) {
+        return (this->*(it->second))(req.id, req.params);
+    }
+    return rpc::makeError(req.id, rpc::kMethodNotFound,
+                          "Method not found: " + req.method);
 }
 
 // --- notify handlers ---
@@ -256,6 +256,18 @@ rpc::Response CommandDispatcher::handleQueryScrollback(
         {"lines", lines_arr},
         {"count", static_cast<int>(lines.size())}
     });
+}
+
+// --- hook handlers ---
+
+rpc::Response CommandDispatcher::handleHookEvent(
+    std::optional<int64_t> id, const nlohmann::json& p) {
+    if (!hook_bridge_) {
+        return rpc::makeError(id, rpc::kInternalError,
+                              "HookBridge not configured");
+    }
+    hook_bridge_->processHookEvent(p);
+    return rpc::makeResult(id, {{"ok", true}});
 }
 
 }  // namespace termcore

@@ -20,17 +20,18 @@
       <Component Id="MainExecutable" Guid="A1B2C3D4-E5F6-7A8B-9C0D-1E2F3A4B5C6D">
         <File Id="BreadTerminalExe" Source="$(var.PackageDir)\BreadTerminal.exe" KeyPath="yes" />
       </Component>
-      <!-- Runtime DLLs (vcpkg dependencies) -->
-      <Component Id="RuntimeDlls" Guid="B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E">
-        <File Source="$(var.PackageDir)\harfbuzz.dll" />
-        <File Source="$(var.PackageDir)\icudt78.dll" />
-        <File Source="$(var.PackageDir)\icuuc78.dll" />
-        <File Source="$(var.PackageDir)\freetype.dll" />
-        <File Source="$(var.PackageDir)\zlib1.dll" />
-        <File Source="$(var.PackageDir)\libpng16.dll" />
-        <File Source="$(var.PackageDir)\brotlicommon.dll" />
-        <File Source="$(var.PackageDir)\brotlidec.dll" />
-        <File Source="$(var.PackageDir)\bz2.dll" />
+      <!-- bread CLI tool -->
+      <Component Id="BreadCli" Guid="D5E6F7A8-B9C0-1D2E-3F4A-5B6C7D8E9F00">
+        <File Source="$(var.PackageDir)\bread.exe" KeyPath="yes" />
+      </Component>
+      <!-- ConPTY binaries (full VT passthrough) -->
+      <Component Id="ConPtyBinaries" Guid="E6F7A8B9-C0D1-2E3F-4A5B-6C7D8E9F0011">
+        <File Source="$(var.PackageDir)\conpty.dll" />
+        <File Source="$(var.PackageDir)\OpenConsole.exe" />
+      </Component>
+      <!-- Crashpad handler (crash reporting) -->
+      <Component Id="CrashHandler" Guid="F7A8B9C0-D1E2-3F4A-5B6C-7D8E9F001122">
+        <File Source="$(var.PackageDir)\crashpad_handler.exe" KeyPath="yes" />
       </Component>
       <!-- Resource files (theme/font index) -->
       <Component Id="ResourceFiles" Guid="C9D0E1F2-A3B4-5C6D-7E8F-900112233445">

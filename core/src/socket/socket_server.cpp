@@ -70,6 +70,11 @@ void SocketServer::drainMainThreadQueue() {
     }
 }
 
+void SocketServer::queueToMainThread(std::function<void()> fn) {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    pending_.push_back(std::move(fn));
+}
+
 void SocketServer::acceptLoop() {
     while (running_.load()) {
         int client_fd = transport_->acceptClient();

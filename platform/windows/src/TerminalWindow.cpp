@@ -4,6 +4,10 @@
 #include "TerminalAccessibility.h"
 #include "HighContrastDetector.h"
 
+#include "termcore/socket/socket_server.h"
+#include "termcore/socket/socket_transport.h"
+#include "termcore/socket/command_dispatcher.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -57,6 +61,30 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             }
             newState->initTerminal();
             newState->checkAccessibilitySettings();
+
+            // Start Socket API server for bread CLI / agent hooks
+            if (newState->controller && newState->controller->tabs()) {
+                auto socketPath = termcore::resolveSocketPath();
+                auto transport = termcore::createSocketTransport(socketPath);
+                auto dispatcher = std::make_shared<termcore::CommandDispatcher>(
+                    *newState->controller->tabs()->mux(),
+                    *newState->notifications,
+                    *newState->agentTracker);
+
+                if (newState->hookBridge) {
+                    dispatcher->setHookBridge(newState->hookBridge.get());
+                }
+
+                newState->commandDispatcher = dispatcher;
+                newState->socketServer = std::make_unique<termcore::SocketServer>(
+                    std::move(transport), dispatcher);
+
+                if (newState->socketServer->start()) {
+                    _putenv_s("BREADTERMINAL_SOCKET",
+                              newState->socketServer->socketPath().c_str());
+                }
+
+            }
 
             newState->needsRender = true;
 
@@ -367,6 +395,15 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
             break;
 
         case WM_DESTROY:
+            // Stop socket server before destroying resources
+            if (state && state->socketServer) {
+                state->socketServer->stop();
+                // Drain any pending main-thread callbacks (e.g., from reportStart)
+                // before AgentTracker/NotificationStore are destroyed.
+                state->socketServer->drainMainThreadQueue();
+                // Clear environment variable so child processes don't try to connect
+                _putenv_s("BREADTERMINAL_SOCKET", "");
+            }
             // Stop render thread before destroying resources
             if (state) state->stopRenderThread();
             KillTimer(hWnd, kResizeOverlayTimerId);
@@ -551,6 +588,16 @@ int runTerminalWindow(HINSTANCE hInstance, int nCmdShow) {
                 state->pollPty();
                 if (!hadRender && state->needsRender) {
                     lastPollHadData = true;
+                }
+                // Detect AI CLI agents after PTY data arrives
+                state->controller->tabs()->pollAgentDetection();
+                // Drain socket API main-thread queue inside exclusive lock
+                // so posted callbacks (e.g., hook installation) run while
+                // terminal state is safely mutable.
+                // LOCK ORDER: renderLock_ (held) > queue_mutex_ (acquired in drain).
+                // Callbacks must NOT re-acquire renderLock_.
+                if (state->socketServer) {
+                    state->socketServer->drainMainThreadQueue();
                 }
                 ReleaseSRWLockExclusive(&state->renderLock_);
                 state->signalInvalidate();

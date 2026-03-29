@@ -39,6 +39,9 @@ public:
     /// Call from the main thread periodically (e.g., every 16ms).
     void drainMainThreadQueue();
 
+    /// Post a callback to be executed on the main thread (via drainMainThreadQueue).
+    void queueToMainThread(std::function<void()> fn);
+
 private:
     void acceptLoop();
     void clientLoop(int fd);

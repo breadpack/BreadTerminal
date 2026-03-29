@@ -93,13 +93,17 @@ Result<void> PluginManager::loadPlugin(const std::string& name) {
         return Error("plugin is disabled: " + name);
     }
 
-    // Apply sandbox before executing plugin code.
+    // Apply sandbox before executing plugin code, then restore globals.
     applySandbox(it->metadata);
 
     namespace fs = std::filesystem;
     auto init_path = (fs::path(it->directory) / "init.lua").string();
 
     auto result = lua_.loadPlugin(init_path);
+
+    // Restore sandboxed globals so other plugins aren't affected.
+    restoreSandbox(it->metadata);
+
     if (!result.ok()) {
         it->state = PluginState::Error;
         it->error_message = result.errorMessage();
@@ -210,16 +214,32 @@ void PluginManager::applySandbox(const PluginMetadata& meta) {
         return std::find(caps.begin(), caps.end(), c) != caps.end();
     };
 
-    // Always restrict dangerous os functions.
-    lua_.loadString("os.execute = nil");
-    lua_.loadString("os.remove = nil");
-    lua_.loadString("os.rename = nil");
+    // Save references to globals we might nil out, so we can restore later.
+    lua_.loadString(R"(
+        __bt_sandbox_backup = __bt_sandbox_backup or {}
+        __bt_sandbox_backup.io = io
+        if os then
+            __bt_sandbox_backup.os_execute = os.execute
+            __bt_sandbox_backup.os_remove = os.remove
+            __bt_sandbox_backup.os_rename = os.rename
+            __bt_sandbox_backup.os_tmpname = os.tmpname
+        end
+        if terminal then
+            __bt_sandbox_backup.send_text = terminal.send_text
+            __bt_sandbox_backup.config = terminal.config
+            __bt_sandbox_backup.on = terminal.on
+            __bt_sandbox_backup.keymap = terminal.keymap
+        end
+    )");
+
+    // Always restrict dangerous os functions (if os library is available).
+    lua_.loadString("if os then os.execute = nil; os.remove = nil; os.rename = nil end");
 
     // If FileSystem NOT requested: nil out io library functions.
     if (!hasCap(PluginCapability::FileSystem)) {
         lua_.loadString(R"(
             io = nil
-            os.tmpname = nil
+            if os then os.tmpname = nil end
         )");
     }
 
@@ -260,6 +280,27 @@ void PluginManager::applySandbox(const PluginMetadata& meta) {
     }
 }
 
+void PluginManager::restoreSandbox(const PluginMetadata&) {
+    lua_.loadString(R"(
+        if __bt_sandbox_backup then
+            if os then
+                os.execute = __bt_sandbox_backup.os_execute
+                os.remove = __bt_sandbox_backup.os_remove
+                os.rename = __bt_sandbox_backup.os_rename
+                os.tmpname = __bt_sandbox_backup.os_tmpname
+            end
+            io = __bt_sandbox_backup.io
+            if terminal then
+                terminal.send_text = __bt_sandbox_backup.send_text
+                terminal.config = __bt_sandbox_backup.config
+                terminal.on = __bt_sandbox_backup.on
+                terminal.keymap = __bt_sandbox_backup.keymap
+            end
+            __bt_sandbox_backup = nil
+        end
+    )");
+}
+
 } // namespace termcore
 
 #else // !TERMCORE_HAS_LUA
@@ -284,6 +325,7 @@ Result<PluginMetadata> PluginManager::parseMetadata(const std::string&) {
     return Error("Lua not available");
 }
 void PluginManager::applySandbox(const PluginMetadata&) {}
+void PluginManager::restoreSandbox(const PluginMetadata&) {}
 
 } // namespace termcore
 

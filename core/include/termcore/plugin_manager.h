@@ -37,6 +37,9 @@ private:
     // Apply sandbox restrictions based on granted capabilities.
     void applySandbox(const PluginMetadata& meta);
 
+    // Restore globals that were nil'd by applySandbox.
+    void restoreSandbox(const PluginMetadata& meta);
+
     LuaEngine& lua_;
     std::vector<PluginInfo> plugins_;
 };

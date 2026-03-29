@@ -3,7 +3,10 @@
 #include "termcore/agent.h"
 #include "termcore/mux.h"
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,12 +35,16 @@ public:
     void onAgentStateChange(PaneId pane, const std::string& agent_id,
                             AgentState state);
 
-    const std::vector<SubagentNode>& rootAgents(PaneId pane) const;
-    const SubagentNode* findAgent(const std::string& agent_id) const;
+    std::vector<SubagentNode> rootAgents(PaneId pane) const;
+    std::optional<SubagentNode> findAgent(const std::string& agent_id) const;
     size_t activeCount(PaneId pane) const;
 
     void sweepCompleted(std::chrono::seconds max_age = std::chrono::seconds(300));
     void clearForPane(PaneId pane);
+
+    /// Generation counter: incremented on every mutation.
+    /// Callers can use this for dirty-checking (e.g., skip sidebar rebuild if unchanged).
+    uint64_t generation() const;
 
 private:
     SubagentNode* findNode(std::vector<SubagentNode>& nodes, const std::string& id);
@@ -47,8 +54,9 @@ private:
     void sweepNodes(std::vector<SubagentNode>& nodes,
                     std::chrono::steady_clock::time_point cutoff);
 
+    mutable std::mutex mutex_;
     std::unordered_map<PaneId, std::vector<SubagentNode>> pane_trees_;
-    static const std::vector<SubagentNode> empty_vec_;
+    std::atomic<uint64_t> generation_{0};
 };
 
 } // namespace termcore

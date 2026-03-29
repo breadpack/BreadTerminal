@@ -13,7 +13,7 @@ terminal.provider("claude_code", {
         events = {
             {
                 bread_event = "SubagentStart",
-                hook_name = "subagent-start",
+                hook_name = "SubagentStart",
                 env_map = {
                     agent_id = "CLAUDE_AGENT_ID",
                     agent_type = "CLAUDE_AGENT_TYPE",
@@ -22,17 +22,17 @@ terminal.provider("claude_code", {
             },
             {
                 bread_event = "SubagentStop",
-                hook_name = "subagent-stop",
+                hook_name = "SubagentStop",
                 env_map = { agent_id = "CLAUDE_AGENT_ID" },
             },
             {
                 bread_event = "Notification",
-                hook_name = "notification",
+                hook_name = "Notification",
                 env_map = { body = "CLAUDE_NOTIFICATION_MESSAGE" },
             },
             {
-                bread_event = "PostTool",
-                hook_name = "post-tool",
+                bread_event = "PostToolUse",
+                hook_name = "PostToolUse",
                 env_map = { tool_name = "CLAUDE_TOOL_NAME" },
             },
         },
@@ -99,3 +99,10 @@ terminal.provider("cline", {
     detect_process = {"cline"},
     detect_env = {},
 })
+
+-- Auto-install hooks when a provider with hook config is detected
+terminal.hooks.on_provider_detected(function(data)
+    if not terminal.hooks.is_installed(data.provider_id) then
+        terminal.hooks.install(data.provider_id)
+    end
+end)

@@ -54,15 +54,15 @@ TEST_F(AgentE2EFlowTest, OscToHookBridgeToTracker) {
     feedOsc(R"({"event":"SubagentStart","agent_id":"agent-1","agent_type":"claude","description":"coding","pane_id":1})");
 
     // Verify agent exists and is in Starting state
-    const auto* node = tree.findAgent("agent-1");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("agent-1");
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Starting);
 
     // Now send a StateChange event through the full OSC pipeline
     feedOsc(R"({"event":"StateChange","agent_id":"agent-1","pane_id":1,"state":"running"})");
 
     node = tree.findAgent("agent-1");
-    ASSERT_NE(node, nullptr);
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Running);
 }
 
@@ -74,20 +74,25 @@ TEST_F(AgentE2EFlowTest, SubagentStartCreatesTreeNode) {
     // Create parent agent via OSC 7770
     feedOsc(R"({"event":"SubagentStart","agent_id":"parent-1","agent_type":"claude","description":"main task","pane_id":2})");
 
-    const auto& roots = tree.rootAgents(2);
-    ASSERT_EQ(roots.size(), 1u);
-    EXPECT_EQ(roots[0].agent_id, "parent-1");
-    EXPECT_EQ(roots[0].agent_type, "claude");
-    EXPECT_EQ(roots[0].description, "main task");
+    {
+        auto roots = tree.rootAgents(2);
+        ASSERT_EQ(roots.size(), 1u);
+        EXPECT_EQ(roots[0].agent_id, "parent-1");
+        EXPECT_EQ(roots[0].agent_type, "claude");
+        EXPECT_EQ(roots[0].description, "main task");
+    }
 
     // Create child subagent under parent via OSC 7770
     feedOsc(R"({"event":"SubagentStart","agent_id":"child-1","agent_type":"Explore","description":"search files","pane_id":2,"parent_agent_id":"parent-1"})");
 
-    ASSERT_EQ(roots.size(), 1u);
-    ASSERT_EQ(roots[0].children.size(), 1u);
-    EXPECT_EQ(roots[0].children[0].agent_id, "child-1");
-    EXPECT_EQ(roots[0].children[0].agent_type, "Explore");
-    EXPECT_EQ(roots[0].children[0].description, "search files");
+    {
+        auto roots = tree.rootAgents(2);
+        ASSERT_EQ(roots.size(), 1u);
+        ASSERT_EQ(roots[0].children.size(), 1u);
+        EXPECT_EQ(roots[0].children[0].agent_id, "child-1");
+        EXPECT_EQ(roots[0].children[0].agent_type, "Explore");
+        EXPECT_EQ(roots[0].children[0].description, "search files");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,15 +102,15 @@ TEST_F(AgentE2EFlowTest, SubagentStartCreatesTreeNode) {
 TEST_F(AgentE2EFlowTest, SubagentStopRemovesFromTree) {
     feedOsc(R"({"event":"SubagentStart","agent_id":"a1","agent_type":"TDD","description":"test","pane_id":1})");
 
-    const auto* node = tree.findAgent("a1");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("a1");
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Starting);
 
     // Stop the agent via OSC 7770
     feedOsc(R"({"event":"SubagentStop","agent_id":"a1","pane_id":1,"state":"completed"})");
 
     node = tree.findAgent("a1");
-    ASSERT_NE(node, nullptr);
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Exited);
 
     // Active count should be zero now
@@ -191,8 +196,8 @@ TEST_F(AgentE2EFlowTest, RapidStateChanges) {
     }
 
     // Final state should be idle
-    const auto* node = tree.findAgent("rapid");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("rapid");
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Idle);
 }
 
@@ -204,8 +209,8 @@ TEST_F(AgentE2EFlowTest, MalformedOscGracefullyIgnored) {
     // Set up a valid agent first
     feedOsc(R"({"event":"SubagentStart","agent_id":"safe","agent_type":"claude","description":"test","pane_id":1})");
 
-    const auto* node = tree.findAgent("safe");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("safe");
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Starting);
 
     // Now send various malformed payloads through OSC 7770
@@ -219,7 +224,7 @@ TEST_F(AgentE2EFlowTest, MalformedOscGracefullyIgnored) {
 
     // Original agent should be completely unaffected
     node = tree.findAgent("safe");
-    ASSERT_NE(node, nullptr);
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->state, AgentState::Starting);
 
     // No spurious tree entries or notifications
@@ -234,8 +239,8 @@ TEST_F(AgentE2EFlowTest, MalformedOscGracefullyIgnored) {
 TEST_F(AgentE2EFlowTest, BellTerminatorAlsoWorks) {
     feedOscBel(R"({"event":"SubagentStart","agent_id":"bel-agent","agent_type":"claude","description":"bel test","pane_id":5})");
 
-    const auto* node = tree.findAgent("bel-agent");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("bel-agent");
+    ASSERT_TRUE(node.has_value());
     EXPECT_EQ(node->agent_type, "claude");
     EXPECT_EQ(node->state, AgentState::Starting);
 }

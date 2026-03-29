@@ -20,6 +20,7 @@
 #include "termcore/profile_dropdown.h"
 #include "termcore/completion_manager.h"
 #include "termcore/provider_registry.h"
+#include "termcore/plugin_manager.h"
 #include "termcore/lua_engine.h"
 #include <chrono>
 #include <memory>
@@ -99,12 +100,17 @@ public:
     // Completion manager
     CompletionManager& completionManager() { return completionManager_; }
 
+    /// Register a callback invoked for every new Screen (including future tabs/splits).
+    /// Multiple callbacks can be registered; they are called in order after internal setup.
+    void addScreenCreatedCallback(std::function<void(Screen*)> cb);
+
     // Direct access for platform-specific needs
     TabController* tabs() { return tabCtrl_.get(); }
     FontManager* fontMgr() { return fontMgr_.get(); }
     KeybindingManager* keybindings() { return keybindings_.get(); }
     ProfileManager* profileManager() { return profileMgr_.get(); }
     LuaEngine* luaEngine() { return luaEngine_.get(); }
+    PluginManager* pluginManager() { return pluginMgr_.get(); }
 
     void pasteText(const std::string& text);
 
@@ -138,6 +144,7 @@ private:
 
     std::unique_ptr<InputHandler> inputHandler_;
     std::unique_ptr<LuaEngine> luaEngine_;
+    std::unique_ptr<PluginManager> pluginMgr_;
     ClipboardHistory clipboardHistory_;
     CommandPalette commandPalette_;
     ProfileDropdown profileDropdown_;
@@ -145,6 +152,8 @@ private:
     CompletionManager completionManager_;
     ProviderRegistry providerRegistry_;
     std::string lastCompletionInput_;
+
+    std::vector<std::function<void(Screen*)>> screen_created_callbacks_;
 
     int termRows_ = 24;
     int termCols_ = 80;

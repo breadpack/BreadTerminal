@@ -74,7 +74,8 @@ public:
     /// Register an agent detection pattern
     void registerAgent(AgentType type, const std::string& name,
                        const std::string& process_name,
-                       const std::vector<std::string>& env_markers = {});
+                       const std::vector<std::string>& env_markers = {},
+                       const std::string& hook_provider_id = "");
 
     /// Detect agent from process name or environment variables
     AgentType detectAgent(const std::string& process_name,
@@ -138,6 +139,7 @@ private:
         std::string name;
         std::string process_name;
         std::vector<std::string> env_markers;
+        std::string hook_provider_id;  // ID for auto-installing hooks (empty = no hooks)
     };
 
     std::vector<AgentPattern> patterns_;

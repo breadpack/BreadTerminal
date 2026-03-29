@@ -24,8 +24,8 @@ TEST_F(HookBridgeTest, SubagentStopUpdatesState) {
         {"agent_type","TDD"},{"description","d"},{"pane_id",1}});
     bridge.processHookEvent({{"event","SubagentStop"},{"agent_id","a1"},
         {"pane_id",1},{"state","completed"}});
-    auto* node = tree.findAgent("a1");
-    ASSERT_NE(node, nullptr);
+    auto node = tree.findAgent("a1");
+    ASSERT_TRUE(node.has_value());
     ASSERT_EQ(node->state, termcore::AgentState::Exited);
 }
 

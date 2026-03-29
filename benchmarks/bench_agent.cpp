@@ -112,7 +112,7 @@ void runAgentBenchmarks(BenchmarkRunner& runner) {
             t.start();
             for (int i = 0; i < lookups; ++i) {
                 const auto& id = search_ids[i % search_ids.size()];
-                auto* result = tree.findAgent(id);
+                auto result = tree.findAgent(id);
                 (void)result; // prevent optimization
             }
             double sec = t.elapsedSec();

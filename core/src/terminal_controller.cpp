@@ -30,6 +30,7 @@
 #include "lua_bindings/lua_config_api_module.h"
 #include "lua_bindings/lua_completion_module.h"
 #include "lua_bindings/lua_provider_module.h"
+#include "lua_bindings/lua_hooks_module.h"
 #include "termcore/provider_registry.h"
 
 namespace termcore {
@@ -212,6 +213,10 @@ void TerminalController::initTerminal() {
         screen->setCommandCaptureCallback([this](const std::string& cmd) {
             completionManager_.historyProvider().addEntry(cmd);
         });
+        // Invoke any externally registered screen-created callbacks
+        for (const auto& cb : screen_created_callbacks_) {
+            cb(screen);
+        }
     });
 
     // Create initial tab
@@ -251,8 +256,17 @@ void TerminalController::initTerminal() {
     luaEngine_->registerModule(std::make_shared<LuaConfigApiModule>(&config_, keybindings_.get()));
     luaEngine_->registerModule(std::make_shared<LuaCompletionModule>(&completionManager_));
     luaEngine_->registerModule(std::make_shared<LuaProviderModule>(&providerRegistry_));
+    auto hooksModule = std::make_shared<LuaHooksModule>(&providerRegistry_);
+    luaEngine_->registerModule(hooksModule);
 
     luaEngine_->initializeModules();
+
+    // Wire TabController provider detection to Lua hooks module
+    tabCtrl_->setProviderRegistry(&providerRegistry_);
+    tabCtrl_->setOnProviderDetected(
+        [hooksModule](const std::string& provider_id, uint32_t pane_id) {
+            hooksModule->fireProviderDetected(provider_id, pane_id);
+        });
 
     // Register terminal.action() to dispatch C++ actions from Lua
     luaEngine_->setActionHandler([this](const std::string& name) {
@@ -271,6 +285,22 @@ void TerminalController::initTerminal() {
     if (config_.background == 0) config_.background = 0x000000;
     if (config_.scrollback_limit <= 0) config_.scrollback_limit = 10000;
     if (config_.cursor_style.empty()) config_.cursor_style = "block";
+
+    // --- Plugin Discovery & Loading ---
+    pluginMgr_ = std::make_unique<PluginManager>(*luaEngine_);
+    std::string pluginsDir = pluginsDirectory();
+    if (!pluginsDir.empty()) {
+        pluginMgr_->scanDirectory(pluginsDir);
+        for (const auto& info : pluginMgr_->plugins()) {
+            if (info.state == PluginState::Discovered) {
+                pluginMgr_->loadPlugin(info.metadata.name);
+            }
+        }
+    }
+}
+
+void TerminalController::addScreenCreatedCallback(std::function<void(Screen*)> cb) {
+    screen_created_callbacks_.push_back(std::move(cb));
 }
 
 void TerminalController::pollPty() {

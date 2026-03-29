@@ -16,10 +16,10 @@ std::vector<ProviderEntry> getBuiltinProviders() {
             "claude_code", "Claude Code",
             "~/.claude", "settings.json", "json",
             {
-                {"SubagentStart", "subagent-start", {{"agent_id", "CLAUDE_AGENT_ID"}, {"agent_type", "CLAUDE_AGENT_TYPE"}, {"description", "CLAUDE_AGENT_DESCRIPTION"}}},
-                {"SubagentStop", "subagent-stop", {{"agent_id", "CLAUDE_AGENT_ID"}}},
-                {"Notification", "notification", {{"body", "CLAUDE_NOTIFICATION_MESSAGE"}}},
-                {"PostTool", "post-tool", {{"tool_name", "CLAUDE_TOOL_NAME"}}},
+                {"SubagentStart", "SubagentStart", {{"agent_id", "CLAUDE_AGENT_ID"}, {"agent_type", "CLAUDE_AGENT_TYPE"}, {"description", "CLAUDE_AGENT_DESCRIPTION"}}},
+                {"SubagentStop", "SubagentStop", {{"agent_id", "CLAUDE_AGENT_ID"}}},
+                {"Notification", "Notification", {{"body", "CLAUDE_NOTIFICATION_MESSAGE"}}},
+                {"PostToolUse", "PostToolUse", {{"tool_name", "CLAUDE_TOOL_NAME"}}},
             }
         },
         {
@@ -105,9 +105,9 @@ static void updateSettings(const std::filesystem::path& settings_path,
 
     for (const auto& event : events) {
         auto script_path = (hooks_dir / (event.hook_name + ".sh")).string();
-        settings["hooks"][event.hook_name] = nlohmann::json::array({
-            {{"command", script_path}, {"type", "command"}}
-        });
+        nlohmann::json hook_cmd = {{"type", "command"}, {"command", script_path}};
+        nlohmann::json matcher_entry = {{"matcher", ""}, {"hooks", nlohmann::json::array({hook_cmd})}};
+        settings["hooks"][event.hook_name] = nlohmann::json::array({matcher_entry});
     }
 
     std::ofstream ofs(settings_path);

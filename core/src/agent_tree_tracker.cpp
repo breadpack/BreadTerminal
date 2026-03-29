@@ -4,11 +4,11 @@
 
 namespace termcore {
 
-const std::vector<SubagentNode> AgentTreeTracker::empty_vec_;
-
 void AgentTreeTracker::onAgentStart(PaneId pane, const std::string& agent_id,
                                      const std::string& type, const std::string& desc,
                                      const std::string& parent_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     SubagentNode node;
     node.agent_id = agent_id;
     node.agent_type = type;
@@ -22,16 +22,20 @@ void AgentTreeTracker::onAgentStart(PaneId pane, const std::string& agent_id,
         SubagentNode* parent = findNode(roots, parent_id);
         if (parent) {
             parent->children.push_back(std::move(node));
+            ++generation_;
             return;
         }
     }
 
     // No parent_id or parent not found: add as root
     roots.push_back(std::move(node));
+    ++generation_;
 }
 
 void AgentTreeTracker::onAgentStop(PaneId pane, const std::string& agent_id,
                                     AgentState final_state) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     auto it = pane_trees_.find(pane);
     if (it == pane_trees_.end()) return;
 
@@ -39,49 +43,69 @@ void AgentTreeTracker::onAgentStop(PaneId pane, const std::string& agent_id,
     if (node) {
         node->state = final_state;
         node->ended = std::chrono::steady_clock::now();
+        ++generation_;
     }
 }
 
 void AgentTreeTracker::onAgentStateChange(PaneId pane, const std::string& agent_id,
                                            AgentState state) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     auto it = pane_trees_.find(pane);
     if (it == pane_trees_.end()) return;
 
     SubagentNode* node = findNode(it->second, agent_id);
     if (node) {
         node->state = state;
+        ++generation_;
     }
 }
 
-const std::vector<SubagentNode>& AgentTreeTracker::rootAgents(PaneId pane) const {
+std::vector<SubagentNode> AgentTreeTracker::rootAgents(PaneId pane) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     auto it = pane_trees_.find(pane);
-    if (it == pane_trees_.end()) return empty_vec_;
-    return it->second;
+    if (it == pane_trees_.end()) return {};
+    return it->second;  // return by value (copy)
 }
 
-const SubagentNode* AgentTreeTracker::findAgent(const std::string& agent_id) const {
+std::optional<SubagentNode> AgentTreeTracker::findAgent(const std::string& agent_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     for (const auto& [pane, roots] : pane_trees_) {
         const SubagentNode* found = findNodeConst(roots, agent_id);
-        if (found) return found;
+        if (found) return *found;  // return copy — safe after lock release
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 size_t AgentTreeTracker::activeCount(PaneId pane) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     auto it = pane_trees_.find(pane);
     if (it == pane_trees_.end()) return 0;
     return countActive(it->second);
 }
 
 void AgentTreeTracker::sweepCompleted(std::chrono::seconds max_age) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     auto cutoff = std::chrono::steady_clock::now() - max_age;
     for (auto& [pane, roots] : pane_trees_) {
         sweepNodes(roots, cutoff);
     }
+    ++generation_;
 }
 
 void AgentTreeTracker::clearForPane(PaneId pane) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     pane_trees_.erase(pane);
+    ++generation_;
+}
+
+uint64_t AgentTreeTracker::generation() const {
+    return generation_.load(std::memory_order_acquire);
 }
 
 SubagentNode* AgentTreeTracker::findNode(std::vector<SubagentNode>& nodes,
