@@ -52,6 +52,12 @@ enum class Action : uint16_t;
 /// Events category: rendering, focus, config reload, font callbacks, accessors.
 @interface TerminalView (Events)
 
+/// Mark terminal activity (e.g. output received).
+- (void)markActivity;
+
+/// Apply transparency configuration.
+- (void)applyTransparencyConfig:(const termcore::Config&)config;
+
 /// Trigger a render update.
 - (void)setNeedsRender;
 

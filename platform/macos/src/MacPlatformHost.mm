@@ -159,6 +159,14 @@ void MacPlatformHost::showNotification(const std::string& title,
     }];
 }
 
+// --- Clipboard history ---
+
+void MacPlatformHost::showClipboardHistory(
+    const std::vector<termcore::ClipboardEntry>& entries) {
+    (void)entries;
+    // TODO: implement clipboard history popup
+}
+
 // --- Settings/Hub windows ---
 
 void MacPlatformHost::openSettingsWindow(const termcore::Config& config) {

@@ -56,6 +56,9 @@ public:
     void showNotification(const std::string& title,
                           const std::string& body) override;
 
+    // --- Clipboard history ---
+    void showClipboardHistory(const std::vector<termcore::ClipboardEntry>& entries) override;
+
     // --- Settings window ---
     void openSettingsWindow(const termcore::Config& config) override;
 

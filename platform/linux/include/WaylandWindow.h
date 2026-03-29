@@ -63,8 +63,8 @@ struct WaylandState {
 
     // Surface hierarchy
     wl_surface* surface = nullptr;
-    xdg_surface* xdg_surface = nullptr;
-    xdg_toplevel* toplevel = nullptr;
+    struct xdg_surface* xdg_surf = nullptr;
+    struct xdg_toplevel* toplevel = nullptr;
 
     // EGL state
     EGLDisplay egl_display = nullptr;
@@ -75,8 +75,8 @@ struct WaylandState {
 
     // xkbcommon keyboard state
     xkb_context* xkb_ctx = nullptr;
-    xkb_keymap* xkb_keymap = nullptr;
-    xkb_state* xkb_state = nullptr;
+    struct xkb_keymap* xkb_kmap = nullptr;
+    struct xkb_state* xkb_st = nullptr;
 
     // Window geometry
     int width = 800;

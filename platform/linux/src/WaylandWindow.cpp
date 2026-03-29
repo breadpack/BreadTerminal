@@ -211,23 +211,23 @@ static void keyboard_keymap(void* data, wl_keyboard* /*kb*/,
         return;
     }
 
-    if (kd->state->xkb_keymap) {
-        xkb_keymap_unref(kd->state->xkb_keymap);
+    if (kd->state->xkb_kmap) {
+        xkb_keymap_unref(kd->state->xkb_kmap);
     }
-    if (kd->state->xkb_state) {
-        xkb_state_unref(kd->state->xkb_state);
+    if (kd->state->xkb_st) {
+        xkb_state_unref(kd->state->xkb_st);
     }
 
-    kd->state->xkb_keymap = xkb_keymap_new_from_string(
+    kd->state->xkb_kmap = xkb_keymap_new_from_string(
         kd->state->xkb_ctx, map_str, XKB_KEYMAP_FORMAT_TEXT_V1,
         XKB_KEYMAP_COMPILE_NO_FLAGS);
 
     munmap(map_str, size);
     close(fd);
 
-    if (kd->state->xkb_keymap) {
-        kd->state->xkb_state =
-            xkb_state_new(kd->state->xkb_keymap);
+    if (kd->state->xkb_kmap) {
+        kd->state->xkb_st =
+            xkb_state_new(kd->state->xkb_kmap);
     }
 }
 
@@ -247,7 +247,7 @@ static void keyboard_key(void* data, wl_keyboard* /*kb*/,
                          uint32_t key, uint32_t state_val) {
     auto* kd = static_cast<KeyboardData*>(data);
     if (state_val != WL_KEYBOARD_KEY_STATE_PRESSED) return;
-    if (!kd->state->xkb_state) return;
+    if (!kd->state->xkb_st) return;
 
     // Linux evdev keycodes are offset by 8 from XKB keycodes
     uint32_t xkb_keycode = key + 8;
@@ -258,7 +258,7 @@ static void keyboard_key(void* data, wl_keyboard* /*kb*/,
 
     // Get UTF-8 text for the key
     char buf[64] = {};
-    int len = xkb_state_key_get_utf8(kd->state->xkb_state, xkb_keycode,
+    int len = xkb_state_key_get_utf8(kd->state->xkb_st, xkb_keycode,
                                      buf, sizeof(buf));
     if (len > 0) {
         event.text = std::string(buf, len);
@@ -276,23 +276,23 @@ static void keyboard_modifiers(void* data, wl_keyboard* /*kb*/,
                                uint32_t mods_locked,
                                uint32_t group) {
     auto* kd = static_cast<KeyboardData*>(data);
-    if (!kd->state->xkb_state) return;
+    if (!kd->state->xkb_st) return;
 
-    xkb_state_update_mask(kd->state->xkb_state,
+    xkb_state_update_mask(kd->state->xkb_st,
                           mods_depressed, mods_latched, mods_locked,
                           0, 0, group);
 
     uint8_t mods = ModNone;
-    if (xkb_state_mod_name_is_active(kd->state->xkb_state,
+    if (xkb_state_mod_name_is_active(kd->state->xkb_st,
             XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE))
         mods |= ModShift;
-    if (xkb_state_mod_name_is_active(kd->state->xkb_state,
+    if (xkb_state_mod_name_is_active(kd->state->xkb_st,
             XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE))
         mods |= ModCtrl;
-    if (xkb_state_mod_name_is_active(kd->state->xkb_state,
+    if (xkb_state_mod_name_is_active(kd->state->xkb_st,
             XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE))
         mods |= ModAlt;
-    if (xkb_state_mod_name_is_active(kd->state->xkb_state,
+    if (xkb_state_mod_name_is_active(kd->state->xkb_st,
             XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE))
         mods |= ModSuper;
 
@@ -490,7 +490,7 @@ WaylandWindow::~WaylandWindow() {
     if (state_.keyboard) wl_keyboard_destroy(state_.keyboard);
     if (state_.data_device) wl_data_device_destroy(state_.data_device);
     if (state_.toplevel) xdg_toplevel_destroy(state_.toplevel);
-    if (state_.xdg_surface) xdg_surface_destroy(state_.xdg_surface);
+    if (state_.xdg_surf) xdg_surface_destroy(state_.xdg_surf);
     if (state_.surface) wl_surface_destroy(state_.surface);
     if (state_.seat) wl_seat_destroy(state_.seat);
     if (state_.data_device_manager) {
@@ -544,12 +544,12 @@ bool WaylandWindow::init() {
     }
 
     // Create xdg_surface and toplevel
-    state_.xdg_surface =
+    state_.xdg_surf =
         xdg_wm_base_get_xdg_surface(state_.wm_base, state_.surface);
-    xdg_surface_add_listener(state_.xdg_surface,
+    xdg_surface_add_listener(state_.xdg_surf,
                              &xdg_surface_listener_impl, &state_);
 
-    state_.toplevel = xdg_surface_get_toplevel(state_.xdg_surface);
+    state_.toplevel = xdg_surface_get_toplevel(state_.xdg_surf);
 
     // Set up listener data
     listener_data_ = std::make_unique<ListenerData>();
