@@ -31,8 +31,11 @@ public:
                        PluginCapability cap) const;
 
 private:
-    // Parse plugin.lua metadata file.
+    // Parse plugin.lua metadata file (directory-based plugins).
     Result<PluginMetadata> parseMetadata(const std::string& plugin_dir);
+
+    // Parse metadata from a single .lua file plugin.
+    Result<PluginMetadata> parseSingleFileMetadata(const std::string& lua_file);
 
     // Apply sandbox restrictions based on granted capabilities.
     void applySandbox(const PluginMetadata& meta);

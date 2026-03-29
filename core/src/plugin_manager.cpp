@@ -36,6 +36,11 @@ void PluginManager::scanDirectory(const std::string& plugins_dir) {
         return;
     }
 
+    // Collect names of directory-based plugins so single-file plugins
+    // don't conflict (directory takes precedence).
+    std::vector<std::string> dir_plugin_names;
+
+    // Phase 1: scan subdirectories for directory-based plugins.
     for (const auto& entry : fs::directory_iterator(plugins_dir, ec)) {
         if (!entry.is_directory()) {
             continue;
@@ -55,6 +60,7 @@ void PluginManager::scanDirectory(const std::string& plugins_dir) {
                                    return p.directory == dir;
                                });
         if (it != plugins_.end()) {
+            dir_plugin_names.push_back(entry.path().filename().string());
             continue;
         }
 
@@ -64,6 +70,7 @@ void PluginManager::scanDirectory(const std::string& plugins_dir) {
             info.metadata = std::move(result.value());
             info.state = PluginState::Discovered;
             info.directory = dir;
+            dir_plugin_names.push_back(entry.path().filename().string());
             plugins_.push_back(std::move(info));
         } else {
             PluginInfo info;
@@ -71,6 +78,56 @@ void PluginManager::scanDirectory(const std::string& plugins_dir) {
             info.state = PluginState::Error;
             info.error_message = result.errorMessage();
             info.directory = dir;
+            dir_plugin_names.push_back(entry.path().filename().string());
+            plugins_.push_back(std::move(info));
+        }
+    }
+
+    // Phase 2: scan for single-file .lua plugins.
+    for (const auto& entry : fs::directory_iterator(plugins_dir, ec)) {
+        if (entry.is_directory()) {
+            continue;
+        }
+
+        const auto& path = entry.path();
+        if (path.extension() != ".lua") {
+            continue;
+        }
+
+        // Derive plugin name from filename without extension.
+        auto stem = path.stem().string();
+
+        // If a directory-based plugin with the same name exists, skip.
+        auto dir_it = std::find(dir_plugin_names.begin(),
+                                dir_plugin_names.end(), stem);
+        if (dir_it != dir_plugin_names.end()) {
+            continue;
+        }
+
+        // Skip if already discovered.
+        auto file_str = path.string();
+        auto it = std::find_if(plugins_.begin(), plugins_.end(),
+                               [&file_str](const PluginInfo& p) {
+                                   return p.metadata.entry_file == file_str;
+                               });
+        if (it != plugins_.end()) {
+            continue;
+        }
+
+        auto result = parseSingleFileMetadata(file_str);
+        if (result.ok()) {
+            PluginInfo info;
+            info.metadata = std::move(result.value());
+            info.state = PluginState::Discovered;
+            info.directory = plugins_dir;  // parent directory
+            plugins_.push_back(std::move(info));
+        } else {
+            PluginInfo info;
+            info.metadata.name = stem;
+            info.metadata.entry_file = file_str;
+            info.state = PluginState::Error;
+            info.error_message = result.errorMessage();
+            info.directory = plugins_dir;
             plugins_.push_back(std::move(info));
         }
     }
@@ -96,10 +153,9 @@ Result<void> PluginManager::loadPlugin(const std::string& name) {
     // Apply sandbox before executing plugin code, then restore globals.
     applySandbox(it->metadata);
 
-    namespace fs = std::filesystem;
-    auto init_path = (fs::path(it->directory) / "init.lua").string();
-
-    auto result = lua_.loadPlugin(init_path);
+    // For single-file plugins, entry_file IS the plugin code.
+    // For directory-based plugins, entry_file points to init.lua.
+    auto result = lua_.loadPlugin(it->metadata.entry_file);
 
     // Restore sandboxed globals so other plugins aren't affected.
     restoreSandbox(it->metadata);
@@ -203,6 +259,77 @@ Result<PluginMetadata> PluginManager::parseMetadata(
     }
 
     meta.entry_file = (fs::path(plugin_dir) / "init.lua").string();
+
+    return meta;
+}
+
+Result<PluginMetadata> PluginManager::parseSingleFileMetadata(
+    const std::string& lua_file) {
+    namespace fs = std::filesystem;
+
+    // Use a temporary sol state to parse the file safely.
+    sol::state lua;
+    lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table);
+
+    auto result = lua.safe_script_file(lua_file, sol::script_pass_on_error);
+    if (!result.valid()) {
+        sol::error err = result;
+        return Error("failed to parse single-file plugin: " +
+                     std::string(err.what()));
+    }
+
+    PluginMetadata meta;
+    auto stem = fs::path(lua_file).stem().string();
+    meta.entry_file = lua_file;
+
+    // Check for a global 'plugin' table set during execution.
+    sol::object plugin_obj = lua["plugin"];
+    if (plugin_obj.valid() && plugin_obj.get_type() == sol::type::table) {
+        sol::table t = plugin_obj;
+
+        // Name: use from table if present, else filename.
+        if (auto v = t["name"];
+            v.valid() && v.get_type() == sol::type::string) {
+            meta.name = v.get<std::string>();
+        } else {
+            meta.name = stem;
+        }
+
+        // Optional fields.
+        if (auto v = t["version"];
+            v.valid() && v.get_type() == sol::type::string) {
+            meta.version = v.get<std::string>();
+        }
+        if (auto v = t["author"];
+            v.valid() && v.get_type() == sol::type::string) {
+            meta.author = v.get<std::string>();
+        }
+        if (auto v = t["description"];
+            v.valid() && v.get_type() == sol::type::string) {
+            meta.description = v.get<std::string>();
+        }
+
+        // Capabilities list.
+        if (auto caps = t["capabilities"];
+            caps.valid() && caps.get_type() == sol::type::table) {
+            sol::table cap_table = caps;
+            for (auto& [k, v] : cap_table) {
+                if (v.get_type() == sol::type::string) {
+                    auto cap_str = v.as<std::string>();
+                    auto found = kCapabilityMap.find(cap_str);
+                    if (found != kCapabilityMap.end()) {
+                        meta.capabilities.push_back(found->second);
+                    }
+                }
+            }
+        }
+    } else {
+        // No plugin table: use filename as name, grant all capabilities.
+        meta.name = stem;
+        for (const auto& [key, cap] : kCapabilityMap) {
+            meta.capabilities.push_back(cap);
+        }
+    }
 
     return meta;
 }
@@ -322,6 +449,10 @@ bool PluginManager::hasCapability(const std::string&, PluginCapability) const {
     return false;
 }
 Result<PluginMetadata> PluginManager::parseMetadata(const std::string&) {
+    return Error("Lua not available");
+}
+Result<PluginMetadata> PluginManager::parseSingleFileMetadata(
+    const std::string&) {
     return Error("Lua not available");
 }
 void PluginManager::applySandbox(const PluginMetadata&) {}

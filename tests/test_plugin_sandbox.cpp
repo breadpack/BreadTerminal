@@ -109,6 +109,13 @@ protected:
                 f << plugin_lua;
             }
         }
+
+        // Create a single-file plugin (.lua file directly in root)
+        void createSingleFilePlugin(const std::string& filename,
+                                    const std::string& content) {
+            std::ofstream f((root / filename).string());
+            f << content;
+        }
     };
 
     std::unique_ptr<LuaEngine> engine_;
@@ -566,4 +573,142 @@ TEST_F(PluginSandbox, PluginsDirectoryHelperReturnsValidPath) {
         EXPECT_NE(dir.find(".bt"), std::string::npos);
     }
     // If HOME/USERPROFILE not set, empty is acceptable
+}
+
+// --- Single-file plugin tests ---
+
+TEST_F(PluginSandbox, SingleFilePluginScansAndLoads) {
+    TempPluginDir tmp;
+
+    tmp.createSingleFilePlugin("hello.lua",
+        R"(
+            plugin = {
+                name = "hello",
+                version = "1.0",
+                capabilities = {"events"},
+            }
+            __hello_single_loaded = true
+        )");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    // Should be discovered
+    const auto& plugins = mgr.plugins();
+    ASSERT_EQ(plugins.size(), 1u);
+    EXPECT_EQ(plugins[0].metadata.name, "hello");
+    EXPECT_EQ(plugins[0].state, PluginState::Discovered);
+
+    // Should load successfully
+    auto result = mgr.loadPlugin("hello");
+    EXPECT_TRUE(result.ok()) << result.errorMessage();
+
+    // Verify init code executed
+    auto r = engine_->loadString(
+        "assert(__hello_single_loaded == true, 'single file not loaded')");
+    EXPECT_TRUE(r.ok()) << engine_->lastError();
+}
+
+TEST_F(PluginSandbox, SingleFilePluginWithMetadata) {
+    TempPluginDir tmp;
+
+    tmp.createSingleFilePlugin("my-tool.lua",
+        R"(
+            plugin = {
+                name = "my-tool",
+                version = "2.5.0",
+                author = "Test Author",
+                description = "A test tool plugin",
+                capabilities = {"config", "events"},
+            }
+        )");
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    const auto& plugins = mgr.plugins();
+    ASSERT_EQ(plugins.size(), 1u);
+
+    const auto& meta = plugins[0].metadata;
+    EXPECT_EQ(meta.name, "my-tool");
+    EXPECT_EQ(meta.version, "2.5.0");
+    EXPECT_EQ(meta.author, "Test Author");
+    EXPECT_EQ(meta.description, "A test tool plugin");
+    EXPECT_TRUE(mgr.hasCapability("my-tool", PluginCapability::Config));
+    EXPECT_TRUE(mgr.hasCapability("my-tool", PluginCapability::Events));
+    EXPECT_FALSE(mgr.hasCapability("my-tool", PluginCapability::FileSystem));
+}
+
+TEST_F(PluginSandbox, SingleFilePluginWithoutMetadata) {
+    TempPluginDir tmp;
+
+    // No 'plugin' table — should use filename and grant all capabilities
+    tmp.createSingleFilePlugin("auto-plugin.lua",
+        R"(__auto_plugin_loaded = true)");
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    const auto& plugins = mgr.plugins();
+    ASSERT_EQ(plugins.size(), 1u);
+
+    EXPECT_EQ(plugins[0].metadata.name, "auto-plugin");
+    EXPECT_EQ(plugins[0].state, PluginState::Discovered);
+
+    // All mapped capabilities should be granted
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::Events));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::Config));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::FileSystem));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::Keybindings));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::Notifications));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::PaneRead));
+    EXPECT_TRUE(mgr.hasCapability("auto-plugin", PluginCapability::PaneWrite));
+}
+
+TEST_F(PluginSandbox, DirectoryPluginTakesPrecedence) {
+    TempPluginDir tmp;
+
+    // Create both a directory-based and single-file plugin with the same name
+    tmp.createPlugin("dupe",
+        R"(return { name = "dupe", version = "1.0", capabilities = {"events"} })",
+        R"(__dupe_dir_loaded = true)");
+
+    tmp.createSingleFilePlugin("dupe.lua",
+        R"(
+            plugin = {
+                name = "dupe",
+                version = "2.0",
+                capabilities = {"config"},
+            }
+            __dupe_file_loaded = true
+        )");
+
+    engine_->registerModule(std::make_shared<LuaEventModule>());
+    engine_->initializeModules();
+
+    PluginManager mgr(*engine_);
+    mgr.scanDirectory(tmp.root.string());
+
+    // Only one plugin should be discovered (the directory-based one)
+    const auto& plugins = mgr.plugins();
+    ASSERT_EQ(plugins.size(), 1u);
+    EXPECT_EQ(plugins[0].metadata.name, "dupe");
+    EXPECT_EQ(plugins[0].metadata.version, "1.0");
+    EXPECT_TRUE(mgr.hasCapability("dupe", PluginCapability::Events));
+    EXPECT_FALSE(mgr.hasCapability("dupe", PluginCapability::Config));
+
+    // Load and verify directory version runs
+    auto result = mgr.loadPlugin("dupe");
+    EXPECT_TRUE(result.ok()) << result.errorMessage();
+
+    auto r = engine_->loadString(
+        "assert(__dupe_dir_loaded == true, 'directory plugin should load')");
+    EXPECT_TRUE(r.ok()) << engine_->lastError();
+
+    auto r2 = engine_->loadString(
+        "assert(__dupe_file_loaded == nil, 'file plugin should not load')");
+    EXPECT_TRUE(r2.ok()) << engine_->lastError();
 }
