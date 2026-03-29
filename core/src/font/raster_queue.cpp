@@ -1,11 +1,20 @@
 #include "termcore/font/raster_queue.h"
 #include <chrono>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER)
 #include <intrin.h>
 #pragma intrinsic(_mm_pause)
-#else
+#elif defined(__x86_64__) || defined(__i386__)
 #include <emmintrin.h>
+#else
+// ARM64 and other architectures: provide a spin-wait hint
+static inline void _mm_pause() {
+#if defined(__aarch64__)
+    __asm__ volatile("yield");
+#else
+    // no-op for unknown architectures
+#endif
+}
 #endif
 
 namespace termcore {

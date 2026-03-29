@@ -45,7 +45,7 @@ jobs:
         if: matrix.platform == 'windows'
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'b5d1a94fb7f88fd835e360fd23a45a09ceedbf48'  # 2026.03.29
+          vcpkgGitCommitId: '52f5569a8e867859fac967c1e3f10ca0a8a3cc39'  # 2026.03.18
 
       - name: Install vcpkg packages (Windows)
         if: matrix.platform == 'windows'
@@ -163,7 +163,7 @@ jobs:
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'b5d1a94fb7f88fd835e360fd23a45a09ceedbf48'  # 2026.03.29
+          vcpkgGitCommitId: '52f5569a8e867859fac967c1e3f10ca0a8a3cc39'  # 2026.03.18
 
       - name: Install vcpkg packages
         run: vcpkg install harfbuzz icu zlib --triplet x64-windows
@@ -243,7 +243,7 @@ jobs:
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'b5d1a94fb7f88fd835e360fd23a45a09ceedbf48'  # 2026.03.29
+          vcpkgGitCommitId: '52f5569a8e867859fac967c1e3f10ca0a8a3cc39'  # 2026.03.18
 
       - name: Install vcpkg packages
         run: vcpkg install harfbuzz icu zlib --triplet x64-windows
