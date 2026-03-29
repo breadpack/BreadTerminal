@@ -21,6 +21,12 @@ public:
     void selectAll(int rows, int cols);
     void clear();
 
+    /// Set additional characters treated as word characters for double-click selection.
+    /// Default word characters are always: alphanumeric, underscore, and codepoints > 127.
+    /// The provided string adds extra characters on top of those defaults.
+    void setWordChars(const std::string& chars);
+    const std::string& wordChars() const { return wordChars_; }
+
     bool hasSelection() const { return hasSelection_; }
     bool isDragging() const { return isDragging_; }
     GridPos start() const { return start_; }
@@ -40,6 +46,7 @@ private:
     GridPos end_;
     bool hasSelection_ = false;
     bool isDragging_ = false;
+    std::string wordChars_;
 };
 
 } // namespace termcore

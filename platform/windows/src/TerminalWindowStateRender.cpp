@@ -319,7 +319,8 @@ void TerminalWindowState::updateTabBar() {
     float cellH = controller->cellHeight();
 
     D3DTextRenderer::TabBarInfo tabInfo;
-    tabInfo.visible = static_cast<int>(tabs.size()) > 1;
+    tabInfo.visible = config.tab_bar_always_visible || static_cast<int>(tabs.size()) > 1;
+    tabInfo.height_scale = config.tab_bar_height;
 
     // Tab bar uses same background as terminal area
     tabInfo.bg_color = config.background;
@@ -349,8 +350,12 @@ void TerminalWindowState::updateCommandPalette() {
     if (!renderer || !controller) return;
 
     auto& cp = controller->commandPalette();
+    const auto& config = controller->config();
     D3DTextRenderer::CommandPaletteInfo info;
     info.visible = cp.isOpen();
+    info.width_percent = config.command_palette_width_percent;
+    info.max_items = config.command_palette_max_items;
+    info.backdrop_opacity = config.command_palette_backdrop_opacity;
 
     if (info.visible) {
         info.query = cp.query();
@@ -358,7 +363,7 @@ void TerminalWindowState::updateCommandPalette() {
 
         const auto& filtered = cp.filteredCommands();
         int maxItems = (std::min)(static_cast<int>(filtered.size()),
-                                  termcore::CommandPalette::kMaxVisibleItems);
+                                  info.max_items);
         for (int i = 0; i < maxItems; ++i) {
             D3DTextRenderer::CommandPaletteInfo::Item item;
             item.name = filtered[i].name;
@@ -443,6 +448,12 @@ void TerminalWindowState::updateSidebar() {
     info.bg_color = config.background;
     info.fg_color = config.foreground;
     info.accent_color = config.palette[4] ? config.palette[4] : 0x007acc;
+    info.color_running = config.sidebar_color_running;
+    info.color_thinking = config.sidebar_color_thinking;
+    info.color_tool_use = config.sidebar_color_tool_use;
+    info.color_waiting = config.sidebar_color_waiting;
+    info.color_error = config.sidebar_color_error;
+    info.color_idle = config.sidebar_color_idle;
     // Separator is a blend toward foreground
     {
         uint32_t bg = config.background;
@@ -516,8 +527,8 @@ bool TerminalWindowState::handleSidebarClick(int x, int y) {
     // For now, use the tab index as a simple mapping
     auto tabs = controller->tabBarInfo();
     float cellH = controller->cellHeight();
-    float tabBarH = cellH * termcore::D3DTextRenderer::kTabBarHeightScale;
-    float topY = (tabs.size() > 1) ? tabBarH : 0.0f;
+    float tabBarH = cellH * config.tab_bar_height;
+    float topY = (config.tab_bar_always_visible || tabs.size() > 1) ? tabBarH : 0.0f;
     float entryH = cellH * 2.5f; // approximate entry height
 
     int entryIdx = static_cast<int>((y - topY) / entryH);

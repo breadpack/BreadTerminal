@@ -13,11 +13,8 @@ extern "C" {
 #include "default_config_lua.h"
 #include "default_colors_lua.h"
 #include "default_keybindings_lua.h"
-#include "default_commands_lua.h"
 #include "default_tab_title_lua.h"
 #include "default_paste_guard_lua.h"
-#include "default_url_detect_lua.h"
-#include "default_icons_lua.h"
 #include "default_themes_lua.h"
 #include "default_providers_lua.h"
 
@@ -194,11 +191,8 @@ static const DefaultScript kDefaultScripts[] = {
     {"config",      default_config_lua,      default_config_lua_len},
     {"colors",      default_colors_lua,      default_colors_lua_len},
     {"keybindings", default_keybindings_lua,  default_keybindings_lua_len},
-    {"commands",    default_commands_lua,     default_commands_lua_len},
     {"tab_title",   default_tab_title_lua,   default_tab_title_lua_len},
     {"paste_guard", default_paste_guard_lua,  default_paste_guard_lua_len},
-    {"url_detect",  default_url_detect_lua,   default_url_detect_lua_len},
-    {"icons",       default_icons_lua,        default_icons_lua_len},
     {"themes",      default_themes_lua,       default_themes_lua_len},
     {"providers",   default_providers_lua,    default_providers_lua_len},
 };

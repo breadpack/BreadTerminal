@@ -41,12 +41,27 @@ public:
     /// Get all custom schemes registered by Lua plugins.
     const std::vector<std::string>& customSchemes() const { return customSchemes_; }
 
+    /// Set characters that terminate a URL (e.g. space, tab, newline, angle brackets).
+    /// Default: " \t\n\r<>\"'`"
+    void setTerminators(const std::string& chars);
+    const std::string& terminators() const { return terminators_; }
+
+    /// Set characters stripped from the end of a detected URL.
+    /// Default: ".,:;!?"
+    void setTrailingPunctuation(const std::string& chars);
+    const std::string& trailingPunctuation() const { return trailingPunctuation_; }
+
 private:
     /// Find the end position of a URL starting at pos
-    static size_t findUrlEnd(const std::string& text, size_t pos);
+    size_t findUrlEnd(const std::string& text, size_t pos) const;
+
+    bool isTerminator(char c) const;
+    bool isTrailing(char c) const;
 
     std::vector<std::string> builtinSchemes_;
     std::vector<std::string> customSchemes_;
+    std::string terminators_ = " \t\n\r<>\"'`";
+    std::string trailingPunctuation_ = ".,:;!?";
 };
 
 } // namespace termcore

@@ -298,6 +298,9 @@ void TerminalWindowState::initTerminal() {
     agentTracker->setProviderRegistry(&controller->providerRegistry());
     agentTracker->setNotificationStore(notifications.get());
 
+    // Load state patterns from providers.lua (replaces hardcoded defaults)
+    agentTracker->loadStatePatternsFrom(controller->providerRegistry());
+
     // Wire agent tracker to TabController for process-based agent detection
     controller->tabs()->setAgentTracker(agentTracker.get());
 

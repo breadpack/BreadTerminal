@@ -10,16 +10,23 @@ UrlDetector::UrlDetector()
 {
 }
 
-static bool isUrlTerminator(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r'
-        || c == '<' || c == '>' || c == '"' || c == '\'' || c == '`';
+bool UrlDetector::isTerminator(char c) const {
+    return terminators_.find(c) != std::string::npos;
 }
 
-static bool isTrailingPunctuation(char c) {
-    return c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?';
+bool UrlDetector::isTrailing(char c) const {
+    return trailingPunctuation_.find(c) != std::string::npos;
 }
 
-size_t UrlDetector::findUrlEnd(const std::string& text, size_t pos) {
+void UrlDetector::setTerminators(const std::string& chars) {
+    terminators_ = chars;
+}
+
+void UrlDetector::setTrailingPunctuation(const std::string& chars) {
+    trailingPunctuation_ = chars;
+}
+
+size_t UrlDetector::findUrlEnd(const std::string& text, size_t pos) const {
     int parenDepth = 0;
     int bracketDepth = 0;
 
@@ -27,7 +34,7 @@ size_t UrlDetector::findUrlEnd(const std::string& text, size_t pos) {
     while (end < text.size()) {
         char c = text[end];
 
-        if (isUrlTerminator(c)) break;
+        if (isTerminator(c)) break;
 
         // Track balanced parentheses (common in Wikipedia URLs)
         if (c == '(') {
@@ -55,7 +62,7 @@ size_t UrlDetector::findUrlEnd(const std::string& text, size_t pos) {
     }
 
     // Strip trailing punctuation
-    while (end > pos && isTrailingPunctuation(text[end - 1])) {
+    while (end > pos && isTrailing(text[end - 1])) {
         end--;
     }
 

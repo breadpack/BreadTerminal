@@ -6,6 +6,15 @@ terminal.provider("claude_code", {
     agent_type = "ClaudeCode",
     detect_process = {"claude"},
     detect_env = {"CLAUDE_CODE_SESSION"},
+    state_patterns = {
+        { state = "thinking", pattern = "Thinking..." },
+        { state = "tool_use", pattern = "Tool:" },
+        { state = "tool_use", pattern = "Running" },
+        { state = "waiting", pattern = "Do you want to" },
+        { state = "waiting", pattern = "Allow?" },
+        { state = "error", pattern = "Error:" },
+        { state = "idle", pattern = "> " },
+    },
     hooks = {
         config_dir = "~/.claude",
         settings_file = "settings.json",
@@ -44,6 +53,10 @@ terminal.provider("codex", {
     agent_type = "Codex",
     detect_process = {"codex"},
     detect_env = {"CODEX_SESSION"},
+    state_patterns = {
+        { state = "thinking", pattern = "thinking" },
+        { state = "error", pattern = "error" },
+    },
     hooks = {
         config_dir = "~/.codex",
         settings_file = "config.json",
@@ -70,6 +83,12 @@ terminal.provider("aider", {
     agent_type = "Aider",
     detect_process = {"aider"},
     detect_env = {},
+    state_patterns = {
+        { state = "thinking", pattern = "Thinking..." },
+        { state = "tool_use", pattern = "Editing" },
+        { state = "waiting", pattern = "Allow creation" },
+        { state = "error", pattern = "Error" },
+    },
 })
 
 terminal.provider("opencode", {
@@ -98,6 +117,18 @@ terminal.provider("cline", {
     agent_type = "Cline",
     detect_process = {"cline"},
     detect_env = {},
+})
+
+-- Generic patterns (apply to all agent types via a special "_generic" provider)
+terminal.provider("_generic", {
+    display_name = "Generic",
+    agent_type = "Unknown",
+    detect_process = {},
+    detect_env = {},
+    state_patterns = {
+        { state = "error", pattern = "fatal error" },
+        { state = "error", pattern = "FATAL" },
+    },
 })
 
 -- Auto-install hooks when a provider with hook config is detected

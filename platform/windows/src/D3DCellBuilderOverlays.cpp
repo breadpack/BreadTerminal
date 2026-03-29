@@ -184,7 +184,7 @@ void D3DTextRenderer::Impl::buildOverlayPasses(const ScreenT& screen,
     // Pass 8: Tab Bar (Windows Terminal-style with rounded top corners)
     const auto& tabBar = this->tabBar;
     if (tabBar.visible && !tabBar.tabs.empty()) {
-        float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+        float tabBarH = cellH * tabBar.height_scale;
         int tabCount = static_cast<int>(tabBar.tabs.size());
 
         // Layout constants

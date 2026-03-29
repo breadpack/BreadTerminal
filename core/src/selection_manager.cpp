@@ -59,12 +59,19 @@ void SelectionManager::onDoubleClick(int px, int py, float cellW, float cellH,
     int endCol = pos.col;
     int cols = screen.cols();
 
-    auto isWordChar = [](char32_t cp) {
-        return (cp >= 'A' && cp <= 'Z') ||
-               (cp >= 'a' && cp <= 'z') ||
-               (cp >= '0' && cp <= '9') ||
-               cp == '_' || cp == '-' || cp == '.' ||
-               cp > 127;
+    auto isWordChar = [this](char32_t cp) {
+        // Default: alphanumeric + underscore + non-ASCII
+        if ((cp >= 'A' && cp <= 'Z') ||
+            (cp >= 'a' && cp <= 'z') ||
+            (cp >= '0' && cp <= '9') ||
+            cp == '_' || cp > 127) {
+            return true;
+        }
+        // Check additional configured word characters
+        if (!wordChars_.empty() && cp < 128) {
+            return wordChars_.find(static_cast<char>(cp)) != std::string::npos;
+        }
+        return false;
     };
 
     while (startCol > 0) {
@@ -179,6 +186,10 @@ std::string SelectionManager::getSelectedText(const Screen& screen) const {
         }
     }
     return result;
+}
+
+void SelectionManager::setWordChars(const std::string& chars) {
+    wordChars_ = chars;
 }
 
 } // namespace termcore

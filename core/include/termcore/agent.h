@@ -113,6 +113,13 @@ public:
     void setProviderRegistry(class ProviderRegistry* registry) { provider_registry_ = registry; }
     void setNotificationStore(class NotificationStore* store) { notification_store_ = store; }
 
+    /// Set stale timeout (seconds) for sweepStale(). Default 60.
+    void setStaleTimeout(int seconds) { stale_timeout_seconds_ = seconds; }
+    int staleTimeout() const { return stale_timeout_seconds_; }
+
+    /// Load state patterns from ProviderRegistry (replaces hardcoded defaults).
+    void loadStatePatternsFrom(const class ProviderRegistry& registry);
+
     /// Get registered agent patterns count
     size_t registeredCount() const { return patterns_.size(); }
 
@@ -149,6 +156,7 @@ private:
     ProviderRegistry* provider_registry_ = nullptr;
     NotificationStore* notification_store_ = nullptr;
     std::set<std::string> notified_providers_;
+    int stale_timeout_seconds_ = 60;
 
     void initDefaultPatterns();
     void initDefaultStatePatterns();

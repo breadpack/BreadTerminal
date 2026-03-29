@@ -1,11 +1,13 @@
 #include "lua_provider_module.h"
 #include "termcore/provider_registry.h"
+#include "termcore/agent.h"
 #include <sol/sol.hpp>
 
 namespace termcore {
 
-LuaProviderModule::LuaProviderModule(ProviderRegistry* registry)
-    : registry_(registry) {}
+LuaProviderModule::LuaProviderModule(ProviderRegistry* registry,
+                                     AgentTracker* agentTracker)
+    : registry_(registry), agentTracker_(agentTracker) {}
 
 void LuaProviderModule::registerBindings(void* luaState, void* terminalTable) {
     auto& lua = *static_cast<sol::state*>(luaState);
@@ -33,6 +35,21 @@ void LuaProviderModule::registerBindings(void* luaState, void* terminalTable) {
                 for (auto& kv : *envs) {
                     if (kv.second.is<std::string>())
                         info.detect_env.push_back(kv.second.as<std::string>());
+                }
+            }
+
+            // Parse state_patterns
+            sol::optional<sol::table> patterns = opts["state_patterns"];
+            if (patterns) {
+                for (auto& kv : *patterns) {
+                    if (!kv.second.is<sol::table>()) continue;
+                    sol::table entry = kv.second.as<sol::table>();
+                    ProviderStatePattern sp;
+                    sp.state = entry.get_or<std::string>("state", "");
+                    sp.pattern = entry.get_or<std::string>("pattern", "");
+                    if (!sp.state.empty() && !sp.pattern.empty()) {
+                        info.state_patterns.push_back(std::move(sp));
+                    }
                 }
             }
 
@@ -68,6 +85,18 @@ void LuaProviderModule::registerBindings(void* luaState, void* terminalTable) {
             }
 
             registry_->registerProvider(std::move(info));
+        });
+
+    // terminal.agent sub-table with set_stale_timeout()
+    sol::table agent = terminal["agent"].get_or_create<sol::table>();
+    agent.set_function("set_stale_timeout",
+        [this](int seconds) {
+            if (registry_) {
+                registry_->setStaleTimeout(seconds);
+            }
+            if (agentTracker_) {
+                agentTracker_->setStaleTimeout(seconds);
+            }
         });
 }
 

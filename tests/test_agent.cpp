@@ -1,4 +1,5 @@
 #include "termcore/agent.h"
+#include "termcore/provider_registry.h"
 
 #include <gtest/gtest.h>
 
@@ -207,4 +208,153 @@ TEST(AgentTracker, DetectAllDefaultAgents) {
     EXPECT_EQ(tracker.detectAgent("goose"), AgentType::Goose);
     EXPECT_EQ(tracker.detectAgent("amp"), AgentType::Amp);
     EXPECT_EQ(tracker.detectAgent("cline"), AgentType::Cline);
+}
+
+// ==========================================================================
+// State patterns loaded from ProviderRegistry
+// ==========================================================================
+
+TEST(AgentTracker, LoadStatePatternsFromRegistry) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {
+        {"thinking", "Thinking..."},
+        {"tool_use", "Tool:"},
+        {"tool_use", "Running"},
+        {"waiting", "Allow?"},
+        {"error", "Error:"},
+        {"idle", "> "},
+    };
+    registry.registerProvider(std::move(pi));
+
+    AgentTracker tracker;
+    EXPECT_EQ(tracker.statePatterns().size(), 0u);  // empty before load
+
+    tracker.loadStatePatternsFrom(registry);
+    EXPECT_EQ(tracker.statePatterns().size(), 6u);
+}
+
+TEST(AgentTracker, LoadStatePatternsFromMultipleProviders) {
+    ProviderRegistry registry;
+
+    ProviderInfo claude;
+    claude.id = "claude_code";
+    claude.agent_type = "ClaudeCode";
+    claude.state_patterns = {{"thinking", "Thinking..."}};
+    registry.registerProvider(std::move(claude));
+
+    ProviderInfo aider;
+    aider.id = "aider";
+    aider.agent_type = "Aider";
+    aider.state_patterns = {{"thinking", "Thinking..."}, {"error", "Error"}};
+    registry.registerProvider(std::move(aider));
+
+    AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
+    EXPECT_EQ(tracker.statePatterns().size(), 3u);
+}
+
+TEST(AgentTracker, LoadStatePatternsGenericUnknownType) {
+    ProviderRegistry registry;
+    ProviderInfo generic;
+    generic.id = "_generic";
+    generic.agent_type = "Unknown";
+    generic.state_patterns = {{"error", "FATAL"}};
+    registry.registerProvider(std::move(generic));
+
+    AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
+    EXPECT_EQ(tracker.statePatterns().size(), 1u);
+
+    // Generic pattern (Unknown type) should match any agent
+    tracker.reportStart(1, AgentType::ClaudeCode, 100);
+    tracker.reportState(1, AgentType::ClaudeCode, AgentState::Idle);
+    bool changed = tracker.evaluateOutput(1, "FATAL crash");
+    EXPECT_TRUE(changed);
+    EXPECT_EQ(tracker.getAgent(1)->state, AgentState::Error);
+}
+
+TEST(AgentTracker, EvaluateOutputAfterLoadFromRegistry) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {
+        {"thinking", "Thinking..."},
+        {"tool_use", "Tool:"},
+        {"error", "Error:"},
+    };
+    registry.registerProvider(std::move(pi));
+
+    AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
+    tracker.reportStart(1, AgentType::ClaudeCode, 100);
+    tracker.reportState(1, AgentType::ClaudeCode, AgentState::Idle);
+
+    EXPECT_TRUE(tracker.evaluateOutput(1, "Thinking..."));
+    EXPECT_EQ(tracker.getAgent(1)->state, AgentState::Thinking);
+
+    EXPECT_TRUE(tracker.evaluateOutput(1, "Tool: read file"));
+    EXPECT_EQ(tracker.getAgent(1)->state, AgentState::ToolUse);
+
+    EXPECT_TRUE(tracker.evaluateOutput(1, "Error: crash"));
+    EXPECT_EQ(tracker.getAgent(1)->state, AgentState::Error);
+}
+
+// ==========================================================================
+// Configurable stale timeout
+// ==========================================================================
+
+TEST(AgentTracker, DefaultStaleTimeout) {
+    AgentTracker tracker;
+    EXPECT_EQ(tracker.staleTimeout(), 60);
+}
+
+TEST(AgentTracker, SetStaleTimeout) {
+    AgentTracker tracker;
+    tracker.setStaleTimeout(120);
+    EXPECT_EQ(tracker.staleTimeout(), 120);
+}
+
+TEST(AgentTracker, StaleTimeoutFromRegistry) {
+    ProviderRegistry registry;
+    registry.setStaleTimeout(180);
+    EXPECT_EQ(registry.staleTimeout(), 180);
+
+    AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
+    EXPECT_EQ(tracker.staleTimeout(), 180);
+}
+
+TEST(ProviderRegistryTest, StaleTimeoutDefault) {
+    ProviderRegistry registry;
+    EXPECT_EQ(registry.staleTimeout(), 60);
+}
+
+TEST(ProviderRegistryTest, SetStaleTimeout) {
+    ProviderRegistry registry;
+    registry.setStaleTimeout(90);
+    EXPECT_EQ(registry.staleTimeout(), 90);
+}
+
+TEST(ProviderRegistryTest, StatePatternStorage) {
+    ProviderRegistry registry;
+    ProviderInfo info;
+    info.id = "test_provider";
+    info.agent_type = "Custom";
+    info.state_patterns = {
+        {"thinking", "processing..."},
+        {"error", "failed!"},
+    };
+    registry.registerProvider(std::move(info));
+
+    const auto* found = registry.findById("test_provider");
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->state_patterns.size(), 2u);
+    EXPECT_EQ(found->state_patterns[0].state, "thinking");
+    EXPECT_EQ(found->state_patterns[0].pattern, "processing...");
+    EXPECT_EQ(found->state_patterns[1].state, "error");
+    EXPECT_EQ(found->state_patterns[1].pattern, "failed!");
 }

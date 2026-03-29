@@ -11,9 +11,10 @@ void D3DTextRenderer::Impl::buildPaneStatusOverlays(float cellW, float cellH,
                                                      float fontSize) {
     const auto& statusBar = this->statusBar;
 
-    // Per-pane progress bars: 2px bar positioned just above status bar
+    // Per-pane progress bars: configurable bar positioned just above status bar
     if (!paneProgress.empty()) {
-        float progressBarHeight = 2.0f;
+        // Use bar_height from first entry as representative (all share config)
+        float progressBarHeight = paneProgress.begin()->second.bar_height;
         float progressY = statusBar.visible
             ? viewportHeight - cellH - progressBarHeight
             : viewportHeight - progressBarHeight;
@@ -23,14 +24,16 @@ void D3DTextRenderer::Impl::buildPaneStatusOverlays(float cellW, float cellH,
 
             float clampedProgress = (std::min)(1.0f, (std::max)(0.0f, info.progress));
 
-            // Background track (dark gray #1e1e1e)
+            // Background track (configurable color)
+            float trackColor[4];
+            colorFromRGBA(info.track_color | 0xFF000000, trackColor);
             D3DCellInstance track = {};
             track.position[0] = 0;
             track.position[1] = progressY;
             track.atlas_size[0] = viewportWidth;
             track.atlas_size[1] = progressBarHeight;
-            track.bg_color[0] = 0.118f; track.bg_color[1] = 0.118f;
-            track.bg_color[2] = 0.118f; track.bg_color[3] = 1.0f;
+            track.bg_color[0] = trackColor[0]; track.bg_color[1] = trackColor[1];
+            track.bg_color[2] = trackColor[2]; track.bg_color[3] = trackColor[3];
             track.flags = 8; // solid color
             cellInstances.push_back(track);
 

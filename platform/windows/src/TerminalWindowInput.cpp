@@ -303,9 +303,11 @@ bool TerminalWindowState::handleTabBarClick(int x, int y) {
 
     float cellH = controller->cellHeight();
     float cellW = controller->cellWidth();
-    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float tabBarH = cellH * controller->config().tab_bar_height;
 
-    if (controller->tabCount() <= 1 || y >= static_cast<int>(tabBarH))
+    if (!controller->config().tab_bar_always_visible && controller->tabCount() <= 1)
+        return false;
+    if (y >= static_cast<int>(tabBarH))
         return false;
 
     RECT rc;
@@ -383,9 +385,9 @@ void TerminalWindowState::handleTabBarHover(int x, int y) {
 
     float cellH = controller->cellHeight();
     float cellW = controller->cellWidth();
-    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float tabBarH = cellH * controller->config().tab_bar_height;
 
-    if (controller->tabCount() <= 1) return;
+    if (!controller->config().tab_bar_always_visible && controller->tabCount() <= 1) return;
 
     auto tabInfo = renderer->getTabBar();
 

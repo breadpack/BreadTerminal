@@ -148,6 +148,7 @@ public:
         bool hover_close = false;              // mouse over close button area
         bool hover_plus = false;               // mouse over "+" button
         bool visible = false;
+        float height_scale = kTabBarHeightScale; // configurable height multiplier
         // Process name -> icon codepoint hex string (from config)
         const std::unordered_map<std::string, std::string>* process_icon_map = nullptr;
     };
@@ -217,6 +218,13 @@ public:
         uint32_t fg_color = 0xcccccc;
         uint32_t accent_color = 0x007acc;
         uint32_t separator_color = 0x333333;
+        // Configurable state colors
+        uint32_t color_running = 0xEAB308;
+        uint32_t color_thinking = 0xEAB308;
+        uint32_t color_tool_use = 0xF97316;
+        uint32_t color_waiting = 0x3B82F6;
+        uint32_t color_error = 0xEF4444;
+        uint32_t color_idle = 0x22C55E;
     };
 
     /// Set sidebar content for rendering.
@@ -230,6 +238,8 @@ public:
         float progress = -1.0f;   // -1 = hidden, 0.0-1.0 = percentage
         std::string label;
         uint32_t color = 0x007acc; // accent blue
+        float bar_height = 2.0f;          // configurable bar height
+        uint32_t track_color = 0x1e1e1e;  // configurable track color
     };
 
     /// Set progress bar for a specific pane.
@@ -261,6 +271,10 @@ public:
         uint32_t selected_bg = 0x094771;    // selected item background
         uint32_t selected_fg = 0xffffff;    // selected item text
         uint32_t hint_fg = 0x808080;        // shortcut hint color
+        // Configurable layout
+        float width_percent = 0.6f;         // width as fraction of viewport
+        int max_items = 10;                 // maximum visible items
+        float backdrop_opacity = 0.4f;      // dimming overlay opacity
     };
 
     /// Set command palette state for rendering.

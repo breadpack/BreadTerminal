@@ -7,16 +7,16 @@
 
 namespace termcore {
 
-// Map AgentState int to a status dot color
-static uint32_t sidebarStateColor(int state) {
+// Map AgentState int to a status dot color using configurable sidebar colors
+static uint32_t sidebarStateColor(int state, const D3DTextRenderer::SidebarRenderInfo& sb) {
     switch (state) {
-        case 3: /* Running */  return 0xEAB308; // yellow
-        case 4: /* Thinking */ return 0xEAB308;
-        case 5: /* ToolUse */  return 0xF97316; // orange
-        case 6: /* Waiting */  return 0x3B82F6; // blue
-        case 7: /* Error */    return 0xEF4444; // red
-        case 2: /* Idle */     return 0x22C55E; // green
-        case 8: /* Exited */   return 0x22C55E;
+        case 3: /* Running */  return sb.color_running;
+        case 4: /* Thinking */ return sb.color_thinking;
+        case 5: /* ToolUse */  return sb.color_tool_use;
+        case 6: /* Waiting */  return sb.color_waiting;
+        case 7: /* Error */    return sb.color_error;
+        case 2: /* Idle */     return sb.color_idle;
+        case 8: /* Exited */   return sb.color_idle;
         default: return 0x666666; // gray
     }
 }
@@ -78,7 +78,7 @@ void D3DTextRenderer::Impl::buildSidebarOverlay(float cellW, float cellH,
     float separatorH = 1.0f;
 
     // Tab bar offset
-    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float tabBarH = cellH * tabBar.height_scale;
     float topY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
 
     // 1. Sidebar background (full height)
@@ -147,7 +147,7 @@ void D3DTextRenderer::Impl::buildSidebarOverlay(float cellW, float cellH,
                               sb.fg_color, maxTextX - dotSize - 4.0f);
 
             // State color dot (right-aligned)
-            uint32_t dotColor = sidebarStateColor(entry.agent_state);
+            uint32_t dotColor = sidebarStateColor(entry.agent_state, sb);
             D3DCellInstance dot = {};
             dot.position[0] = sidebarW - padX - dotSize;
             dot.position[1] = curY + (titleH - dotSize) * 0.5f;
@@ -217,7 +217,7 @@ void D3DTextRenderer::Impl::buildSidebarOverlay(float cellW, float cellH,
         // d. Status text (e.g., "Thinking... (8s)")
         if (!entry.status_text.empty()) {
             if (curY + subtitleH > topY && curY < bottomY) {
-                uint32_t statusColor = sidebarStateColor(entry.agent_state);
+                uint32_t statusColor = sidebarStateColor(entry.agent_state, sb);
                 renderSidebarText(entry.status_text,
                                   padX, curY, ascent * 0.85f, cellW, fontSize,
                                   statusColor, maxTextX);
@@ -249,7 +249,7 @@ void D3DTextRenderer::Impl::buildSidebarOverlay(float cellW, float cellH,
 
                     // Status text (e.g., "[Running]")
                     if (!sub.status.empty()) {
-                        uint32_t subStatusColor = sidebarStateColor(sub.state);
+                        uint32_t subStatusColor = sidebarStateColor(sub.state, sb);
                         // Right-aligned status before dot
                         float statusW = sub.status.size() * cellW * 0.55f;
                         float statusX = sidebarW - padX - dotSize - 4.0f - statusW;
@@ -261,7 +261,7 @@ void D3DTextRenderer::Impl::buildSidebarOverlay(float cellW, float cellH,
                     }
 
                     // Subagent state dot
-                    uint32_t subDotColor = sidebarStateColor(sub.state);
+                    uint32_t subDotColor = sidebarStateColor(sub.state, sb);
                     D3DCellInstance subDot = {};
                     subDot.position[0] = sidebarW - padX - dotSize;
                     subDot.position[1] = curY + (subagentH - dotSize) * 0.5f;

@@ -286,6 +286,9 @@ void TerminalController::initTerminal() {
     if (config_.scrollback_limit <= 0) config_.scrollback_limit = 10000;
     if (config_.cursor_style.empty()) config_.cursor_style = "block";
 
+    // Wire word_chars config to selection manager
+    selMgr_.setWordChars(config_.word_chars);
+
     // --- Plugin Discovery & Loading ---
     pluginMgr_ = std::make_unique<PluginManager>(*luaEngine_);
     std::string pluginsDir = pluginsDirectory();
@@ -655,6 +658,7 @@ void TerminalController::onMouseEvent(const InputMouseEvent& e) {
 }
 
 bool TerminalController::isTabBarVisible() const {
+    if (config_.tab_bar_always_visible) return true;
     return tabCtrl_ && tabCtrl_->tabCount() > 1;
 }
 
@@ -664,7 +668,7 @@ void TerminalController::recalcGrid() {
     int effectiveW = lastPixelW_;
     int effectiveH = lastPixelH_;
     if (isTabBarVisible()) {
-        float tabBarH = fontMgr_->cellHeight() * kTabBarHeightScale;
+        float tabBarH = fontMgr_->cellHeight() * config_.tab_bar_height;
         effectiveH -= static_cast<int>(tabBarH);
         if (effectiveH < 1) effectiveH = 1;
     }
@@ -816,6 +820,7 @@ void TerminalController::onConfigChanged(const Config& newConfig) {
         configApplier_.persist(config_);
     }
     urlHighlightMgr_.applyConfig(config_);
+    selMgr_.setWordChars(config_.word_chars);
     needsRender_ = true;
 }
 
@@ -1270,6 +1275,8 @@ void TerminalController::pasteText(const std::string& text) {
             msg += "  - Contains rm -rf command\n";
         if (analysis.signals & static_cast<uint32_t>(PasteSignal::CurlPipe))
             msg += "  - Contains curl piped to shell\n";
+        if (analysis.signals & (1u << 16))
+            msg += "  - Contains potentially dangerous command\n";
         msg += "\nDo you want to paste anyway?";
 
         if (host_) {

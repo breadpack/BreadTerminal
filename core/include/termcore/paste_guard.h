@@ -51,7 +51,17 @@ public:
     PasteAnalysis analyze(const std::string& text, bool bracketed_paste_active) const;
 
     /// Add a custom danger pattern with a description (Lua-configurable).
+    /// Simple substring match: triggers if text.find(pattern) succeeds.
     void addCustomDanger(const std::string& pattern, const std::string& description);
+
+    /// Add a compound danger pattern requiring BOTH patterns to match (Lua-configurable).
+    /// Useful for "curl ... | ... sh" style checks where two substrings must co-occur.
+    void addCompoundDanger(const std::string& pattern1, const std::string& pattern2,
+                           const std::string& description);
+
+    /// Add a pipe-to-shell danger: source command piped to sh/bash/zsh.
+    /// Checks that source appears before a pipe and a shell appears after it.
+    void addPipeDanger(const std::string& sourceCmd, const std::string& description);
 
     /// Add a whitelist pattern — pastes matching this are always Safe (Lua-configurable).
     void addWhitelist(const std::string& pattern);
@@ -66,6 +76,19 @@ private:
     Config cfg_;
     std::vector<std::pair<std::string, std::string>> customDangerPatterns_;
     std::vector<std::string> whitelistPatterns_;
+
+    struct CompoundPattern {
+        std::string pattern1;
+        std::string pattern2;
+        std::string description;
+    };
+    std::vector<CompoundPattern> compoundDangerPatterns_;
+
+    struct PipeDangerPattern {
+        std::string sourceCmd;
+        std::string description;
+    };
+    std::vector<PipeDangerPattern> pipeDangerPatterns_;
 
     PasteDanger computeDanger(uint32_t signals, bool bracketed) const;
 

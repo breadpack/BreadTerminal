@@ -152,6 +152,81 @@ TEST(ConfigTest, LoadLuaStringSidebar) {
     EXPECT_EQ(config.sidebar_width, 300);
 }
 
+// --- UI styling config fields ---
+
+TEST(ConfigTest, DefaultSidebarColors) {
+    Config config;
+    EXPECT_EQ(config.sidebar_color_running, 0xEAB308u);
+    EXPECT_EQ(config.sidebar_color_thinking, 0xEAB308u);
+    EXPECT_EQ(config.sidebar_color_tool_use, 0xF97316u);
+    EXPECT_EQ(config.sidebar_color_waiting, 0x3B82F6u);
+    EXPECT_EQ(config.sidebar_color_error, 0xEF4444u);
+    EXPECT_EQ(config.sidebar_color_idle, 0x22C55Eu);
+}
+
+TEST(ConfigTest, DefaultTabBarStyling) {
+    Config config;
+    EXPECT_FLOAT_EQ(config.tab_bar_height, 1.4f);
+    EXPECT_FALSE(config.tab_bar_always_visible);
+}
+
+TEST(ConfigTest, DefaultStatusBarStyling) {
+    Config config;
+    EXPECT_FLOAT_EQ(config.status_bar_progress_height, 2.0f);
+    EXPECT_EQ(config.status_bar_progress_track_color, 0x1e1e1eu);
+}
+
+TEST(ConfigTest, DefaultCommandPaletteStyling) {
+    Config config;
+    EXPECT_FLOAT_EQ(config.command_palette_width_percent, 0.6f);
+    EXPECT_EQ(config.command_palette_max_items, 10);
+    EXPECT_FLOAT_EQ(config.command_palette_backdrop_opacity, 0.4f);
+}
+
+TEST(ConfigTest, LoadLuaSidebarColors) {
+    ASSERT_TRUE(loadConfigLuaString(
+        "terminal.config({ "
+        "sidebar_color_running = 0xFF0000, "
+        "sidebar_color_error = 0x00FF00, "
+        "sidebar_color_idle = 0x0000FF })").ok());
+    const Config& config = luaConfig();
+    EXPECT_EQ(config.sidebar_color_running, 0xFF0000u);
+    EXPECT_EQ(config.sidebar_color_error, 0x00FF00u);
+    EXPECT_EQ(config.sidebar_color_idle, 0x0000FFu);
+    // Unchanged values keep defaults
+    EXPECT_EQ(config.sidebar_color_thinking, 0xEAB308u);
+}
+
+TEST(ConfigTest, LoadLuaTabBarStyling) {
+    ASSERT_TRUE(loadConfigLuaString(
+        "terminal.config({ tab_bar_height = 1.8, tab_bar_always_visible = true })").ok());
+    const Config& config = luaConfig();
+    EXPECT_FLOAT_EQ(config.tab_bar_height, 1.8f);
+    EXPECT_TRUE(config.tab_bar_always_visible);
+}
+
+TEST(ConfigTest, LoadLuaStatusBarStyling) {
+    ASSERT_TRUE(loadConfigLuaString(
+        "terminal.config({ "
+        "status_bar_progress_height = 4.0, "
+        "status_bar_progress_track_color = 0x333333 })").ok());
+    const Config& config = luaConfig();
+    EXPECT_FLOAT_EQ(config.status_bar_progress_height, 4.0f);
+    EXPECT_EQ(config.status_bar_progress_track_color, 0x333333u);
+}
+
+TEST(ConfigTest, LoadLuaCommandPaletteStyling) {
+    ASSERT_TRUE(loadConfigLuaString(
+        "terminal.config({ "
+        "command_palette_width_percent = 0.8, "
+        "command_palette_max_items = 15, "
+        "command_palette_backdrop_opacity = 0.6 })").ok());
+    const Config& config = luaConfig();
+    EXPECT_FLOAT_EQ(config.command_palette_width_percent, 0.8f);
+    EXPECT_EQ(config.command_palette_max_items, 15);
+    EXPECT_FLOAT_EQ(config.command_palette_backdrop_opacity, 0.6f);
+}
+
 TEST(ConfigTest, LoadLuaStringFontFeatures) {
 
     ASSERT_TRUE(loadConfigLuaString(

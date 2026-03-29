@@ -483,8 +483,8 @@ if(TERMCORE_HAS_LUA)
     file(MAKE_DIRECTORY ${LUA_GENERATED_DIR})
 
     set(DEFAULT_LUA_NAMES
-        config colors keybindings commands
-        tab_title paste_guard url_detect icons themes
+        config colors keybindings
+        tab_title paste_guard themes
         providers
     )
 

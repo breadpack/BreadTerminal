@@ -62,6 +62,18 @@ void LuaUrlModule::registerBindings(void* luaState, void* terminalTable) {
             if (highlight_) highlight_->setUrlColor(color);
         });
 
+    // terminal.url.set_terminators(" \t\n<>\"'`")
+    url.set_function("set_terminators",
+        [this](const std::string& chars) {
+            if (detector_) detector_->setTerminators(chars);
+        });
+
+    // terminal.url.set_trailing_punctuation(".,:;!?")
+    url.set_function("set_trailing_punctuation",
+        [this](const std::string& chars) {
+            if (detector_) detector_->setTrailingPunctuation(chars);
+        });
+
     // terminal.url.set_color_by_scheme("ssh", "#ff6600")
     url.set_function("set_color_by_scheme",
         [this](std::string scheme, sol::object colorVal) {

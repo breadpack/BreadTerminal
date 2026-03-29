@@ -15,12 +15,12 @@ void D3DTextRenderer::Impl::buildCommandPaletteOverlay(float cellW, float cellH,
         return;
 
     // Layout constants
-    float paletteW = (std::min)(viewportWidth * 0.6f, cellW * 50.0f);
+    float paletteW = (std::min)(viewportWidth * cp.width_percent, cellW * 50.0f);
     paletteW = (std::max)(paletteW, cellW * 30.0f);
     float inputH = cellH * 1.6f;
     float itemH = cellH * 1.4f;
     int itemCount = static_cast<int>(cp.items.size());
-    int maxItems = (std::min)(itemCount, 10);
+    int maxItems = (std::min)(itemCount, cp.max_items);
     float listH = maxItems * itemH;
     float totalH = inputH + listH;
     float paletteX = (viewportWidth - paletteW) / 2.0f;
@@ -35,7 +35,7 @@ void D3DTextRenderer::Impl::buildCommandPaletteOverlay(float cellW, float cellH,
         dim.atlas_size[0] = viewportWidth;
         dim.atlas_size[1] = viewportHeight;
         dim.bg_color[0] = 0.0f; dim.bg_color[1] = 0.0f;
-        dim.bg_color[2] = 0.0f; dim.bg_color[3] = 0.4f;
+        dim.bg_color[2] = 0.0f; dim.bg_color[3] = cp.backdrop_opacity;
         dim.flags = 8; // solid color
         cellInstances.push_back(dim);
     }

@@ -26,6 +26,24 @@ void LuaPasteModule::registerBindings(void* luaState, void* terminalTable) {
             }
         });
 
+    // terminal.paste.add_compound_danger("rm -rf", "~", "Home directory wipe")
+    // Both pattern1 and pattern2 must appear in the pasted text.
+    paste.set_function("add_compound_danger",
+        [this](std::string pattern1, std::string pattern2, std::string description) {
+            if (pasteGuard_) {
+                pasteGuard_->addCompoundDanger(pattern1, pattern2, description);
+            }
+        });
+
+    // terminal.paste.add_pipe_danger("curl", "Curl piped to shell")
+    // Checks that sourceCmd appears before a pipe and sh/bash/zsh after it.
+    paste.set_function("add_pipe_danger",
+        [this](std::string sourceCmd, std::string description) {
+            if (pasteGuard_) {
+                pasteGuard_->addPipeDanger(sourceCmd, description);
+            }
+        });
+
     // terminal.paste.whitelist("sudo apt update")
     paste.set_function("whitelist",
         [this](std::string pattern) {

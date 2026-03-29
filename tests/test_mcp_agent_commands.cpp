@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "termcore/socket/command_dispatcher.h"
 #include "termcore/agent.h"
+#include "termcore/provider_registry.h"
 
 using namespace termcore;
 
@@ -115,13 +116,40 @@ TEST(AgentStateEnhanced, StringToState) {
 // Pattern-based state detection
 // ==========================================================================
 
-TEST(AgentStatePatterns, DefaultPatternsLoaded) {
+TEST(AgentStatePatterns, DefaultPatternsEmptyBeforeLoad) {
     AgentTracker tracker;
-    EXPECT_GT(tracker.statePatterns().size(), 0u);
+    // State patterns are now loaded from ProviderRegistry, not hardcoded
+    EXPECT_EQ(tracker.statePatterns().size(), 0u);
+}
+
+TEST(AgentStatePatterns, LoadStatePatternsFromRegistry) {
+    ProviderRegistry registry;
+    ProviderInfo info;
+    info.id = "claude_code";
+    info.agent_type = "ClaudeCode";
+    info.detect_process = {"claude"};
+    info.state_patterns = {
+        {"thinking", "Thinking..."},
+        {"tool_use", "Tool:"},
+        {"error", "Error:"},
+    };
+    registry.registerProvider(std::move(info));
+
+    AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
+    EXPECT_EQ(tracker.statePatterns().size(), 3u);
 }
 
 TEST(AgentStatePatterns, EvaluateOutputDetectsThinking) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {{"thinking", "Thinking..."}};
+    registry.registerProvider(std::move(pi));
+
     AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
     tracker.reportStart(1, AgentType::ClaudeCode, 100);
     tracker.reportState(1, AgentType::ClaudeCode, AgentState::Idle);
 
@@ -134,7 +162,15 @@ TEST(AgentStatePatterns, EvaluateOutputDetectsThinking) {
 }
 
 TEST(AgentStatePatterns, EvaluateOutputDetectsToolUse) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {{"tool_use", "Tool:"}};
+    registry.registerProvider(std::move(pi));
+
     AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
     tracker.reportStart(1, AgentType::ClaudeCode, 100);
     tracker.reportState(1, AgentType::ClaudeCode, AgentState::Thinking);
 
@@ -147,7 +183,15 @@ TEST(AgentStatePatterns, EvaluateOutputDetectsToolUse) {
 }
 
 TEST(AgentStatePatterns, EvaluateOutputDetectsError) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {{"error", "Error:"}};
+    registry.registerProvider(std::move(pi));
+
     AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
     tracker.reportStart(1, AgentType::ClaudeCode, 100);
     tracker.reportState(1, AgentType::ClaudeCode, AgentState::Running);
 
@@ -160,7 +204,15 @@ TEST(AgentStatePatterns, EvaluateOutputDetectsError) {
 }
 
 TEST(AgentStatePatterns, NoTransitionOnSameState) {
+    ProviderRegistry registry;
+    ProviderInfo pi;
+    pi.id = "claude_code";
+    pi.agent_type = "ClaudeCode";
+    pi.state_patterns = {{"thinking", "Thinking..."}};
+    registry.registerProvider(std::move(pi));
+
     AgentTracker tracker;
+    tracker.loadStatePatternsFrom(registry);
     tracker.reportStart(1, AgentType::ClaudeCode, 100);
     tracker.reportState(1, AgentType::ClaudeCode, AgentState::Thinking);
 

@@ -38,6 +38,7 @@ add_executable(termcore_tests
     test_search_history.cpp
     test_url_detector.cpp
     test_url_highlight.cpp
+    test_selection_word_chars.cpp
     test_kitty_keyboard.cpp
     test_sixel.cpp
     test_sixel_animation.cpp
@@ -90,6 +91,7 @@ add_executable(termcore_tests
     test_lua_module_null_safety.cpp
     test_lua_defaults.cpp
     test_lua_cross_module.cpp
+    test_default_plugins.cpp
     test_agent_tree_tracker.cpp
     test_hook_bridge.cpp
     test_osc_7770.cpp

@@ -56,6 +56,8 @@ TEST_F(LuaDefaultsTest, PasteGuardApis) {
     auto r = engine_->loadString(R"(
         assert(type(terminal.paste.set_mode) == "function", "set_mode missing")
         assert(type(terminal.paste.add_danger) == "function", "add_danger missing")
+        assert(type(terminal.paste.add_compound_danger) == "function", "add_compound_danger missing")
+        assert(type(terminal.paste.add_pipe_danger) == "function", "add_pipe_danger missing")
         assert(type(terminal.paste.whitelist) == "function", "whitelist missing")
     )");
     EXPECT_TRUE(r.ok()) << engine_->lastError();

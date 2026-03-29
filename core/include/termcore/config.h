@@ -65,6 +65,9 @@ struct Config {
     // OSC 52 clipboard write from applications
     bool allow_clipboard_write = false;
 
+    // Selection
+    std::string word_chars = "-_.";  // additional word chars for double-click selection
+
     // Clickable URLs
     bool clickable_urls = true;
     uint32_t url_color = 0x89b4fa;
@@ -86,6 +89,27 @@ struct Config {
     // Sidebar
     bool sidebar_visible = false;
     int sidebar_width = 220;
+
+    // Sidebar state colors
+    uint32_t sidebar_color_running = 0xEAB308;   // Yellow
+    uint32_t sidebar_color_thinking = 0xEAB308;  // Yellow
+    uint32_t sidebar_color_tool_use = 0xF97316;  // Orange
+    uint32_t sidebar_color_waiting = 0x3B82F6;   // Blue
+    uint32_t sidebar_color_error = 0xEF4444;     // Red
+    uint32_t sidebar_color_idle = 0x22C55E;      // Green
+
+    // Tab bar styling
+    float tab_bar_height = 1.4f;
+    bool tab_bar_always_visible = false;
+
+    // Status bar styling
+    float status_bar_progress_height = 2.0f;
+    uint32_t status_bar_progress_track_color = 0x1e1e1e;
+
+    // Command palette styling
+    float command_palette_width_percent = 0.6f;
+    int command_palette_max_items = 10;
+    float command_palette_backdrop_opacity = 0.4f;
 
     // TMUX compatibility (for Agent Team support)
     bool tmux_compat_enabled = true;

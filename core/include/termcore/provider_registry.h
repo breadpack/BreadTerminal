@@ -25,6 +25,12 @@ struct ProviderHooksConfig {
     bool empty() const { return config_dir.empty(); }
 };
 
+/// State pattern definition stored on a provider.
+struct ProviderStatePattern {
+    std::string state;    // e.g. "thinking", "tool_use", "waiting", "error", "idle"
+    std::string pattern;  // Substring to match in terminal output
+};
+
 struct ProviderInfo {
     std::string id;
     std::string display_name;
@@ -32,6 +38,7 @@ struct ProviderInfo {
     std::vector<std::string> detect_process;
     std::vector<std::string> detect_env;
     ProviderHooksConfig hooks;
+    std::vector<ProviderStatePattern> state_patterns;
 };
 
 class ProviderRegistry {
@@ -44,9 +51,15 @@ public:
     const std::vector<ProviderInfo>& all() const { return providers_; }
     void markInstalled(const std::string& provider_id);
     bool isInstalled(const std::string& provider_id) const;
+
+    /// Configurable stale timeout (seconds). Default 60.
+    void setStaleTimeout(int seconds) { stale_timeout_seconds_ = seconds; }
+    int staleTimeout() const { return stale_timeout_seconds_; }
+
 private:
     std::vector<ProviderInfo> providers_;
     std::set<std::string> installed_;
+    int stale_timeout_seconds_ = 60;
 };
 
 }  // namespace termcore

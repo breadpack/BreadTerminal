@@ -97,6 +97,7 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
     cfg.clipboard_paste_bracketed_safe = getBool(t, "clipboard_paste_bracketed_safe", cfg.clipboard_paste_bracketed_safe);
     cfg.allow_clipboard_write = getBool(t, "allow_clipboard_write", cfg.allow_clipboard_write);
 
+    cfg.word_chars = getStr(t, "word_chars", cfg.word_chars);
     cfg.clickable_urls = getBool(t, "clickable_urls", cfg.clickable_urls);
     cfg.url_color = getInt(t, "url_color", cfg.url_color);
 
@@ -113,6 +114,27 @@ void applyConfigTable(Config& cfg, const sol::table& t) {
 
     cfg.sidebar_visible = getBool(t, "sidebar_visible", cfg.sidebar_visible);
     cfg.sidebar_width = getInt(t, "sidebar_width", cfg.sidebar_width);
+
+    // Sidebar state colors
+    if (auto v = t["sidebar_color_running"]; v.valid()) cfg.sidebar_color_running = parseColor(v);
+    if (auto v = t["sidebar_color_thinking"]; v.valid()) cfg.sidebar_color_thinking = parseColor(v);
+    if (auto v = t["sidebar_color_tool_use"]; v.valid()) cfg.sidebar_color_tool_use = parseColor(v);
+    if (auto v = t["sidebar_color_waiting"]; v.valid()) cfg.sidebar_color_waiting = parseColor(v);
+    if (auto v = t["sidebar_color_error"]; v.valid()) cfg.sidebar_color_error = parseColor(v);
+    if (auto v = t["sidebar_color_idle"]; v.valid()) cfg.sidebar_color_idle = parseColor(v);
+
+    // Tab bar styling
+    cfg.tab_bar_height = getFloat(t, "tab_bar_height", cfg.tab_bar_height);
+    cfg.tab_bar_always_visible = getBool(t, "tab_bar_always_visible", cfg.tab_bar_always_visible);
+
+    // Status bar styling
+    cfg.status_bar_progress_height = getFloat(t, "status_bar_progress_height", cfg.status_bar_progress_height);
+    if (auto v = t["status_bar_progress_track_color"]; v.valid()) cfg.status_bar_progress_track_color = parseColor(v);
+
+    // Command palette styling
+    cfg.command_palette_width_percent = getFloat(t, "command_palette_width_percent", cfg.command_palette_width_percent);
+    cfg.command_palette_max_items = getInt(t, "command_palette_max_items", cfg.command_palette_max_items);
+    cfg.command_palette_backdrop_opacity = getFloat(t, "command_palette_backdrop_opacity", cfg.command_palette_backdrop_opacity);
 
     cfg.theme = getStr(t, "theme", cfg.theme);
 

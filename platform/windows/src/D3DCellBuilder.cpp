@@ -263,7 +263,7 @@ void D3DTextRenderer::Impl::buildCellBuffer(const ScreenT& screen) {
     cellInstances.reserve(rows * cols * 2);
 
     // Offset grid down when tab bar is visible
-    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float tabBarH = cellH * tabBar.height_scale;
     float gridOffsetY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
 
     // Offset grid right when sidebar is visible
@@ -1172,7 +1172,7 @@ void D3DTextRenderer::Impl::patchCursorOnly(const ScreenT& screen) {
     float cellW = metrics.cell_width;
     float cellH = metrics.cell_height;
 
-    float tabBarH = cellH * D3DTextRenderer::kTabBarHeightScale;
+    float tabBarH = cellH * tabBar.height_scale;
     float gridOffsetY = (tabBar.visible && !tabBar.tabs.empty()) ? tabBarH : 0.0f;
     float gridOffsetX = sidebar.visible ? static_cast<float>(sidebar.width) : 0.0f;
 

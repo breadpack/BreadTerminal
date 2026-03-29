@@ -113,6 +113,11 @@ std::string serializeConfigLua(const Config& config) {
     o << "    allow_clipboard_write = " << (config.allow_clipboard_write ? "true" : "false") << ",\n";
     o << "})\n\n";
 
+    // Selection
+    o << "terminal.config({\n";
+    o << "    word_chars = \"" << config.word_chars << "\",\n";
+    o << "})\n\n";
+
     // Clickable URLs
     o << "terminal.config({\n";
     o << "    clickable_urls = " << (config.clickable_urls ? "true" : "false") << ",\n";

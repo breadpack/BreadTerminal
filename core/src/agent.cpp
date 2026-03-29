@@ -1,4 +1,5 @@
 #include "termcore/agent.h"
+#include "termcore/provider_registry.h"
 #include "termcore/string_utils.h"
 
 #include <algorithm>
@@ -187,10 +188,10 @@ void AgentTracker::sweepStale() {
             }
         }
 
-        // Remove agents that have been Exited for more than 60 seconds
+        // Remove agents that have been Exited for longer than stale timeout
         if (info.state == AgentState::Exited) {
             auto elapsed = std::chrono::steady_clock::now() - info.last_activity;
-            if (elapsed > std::chrono::seconds(60)) {
+            if (elapsed > std::chrono::seconds(stale_timeout_seconds_)) {
                 it = agents_.erase(it);
                 continue;
             }
@@ -201,28 +202,43 @@ void AgentTracker::sweepStale() {
 }
 
 void AgentTracker::initDefaultStatePatterns() {
-    // Claude Code patterns
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Thinking, "Thinking...", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::ToolUse, "Tool:", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::ToolUse, "Running", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Waiting, "Do you want to", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Waiting, "Allow?", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Error, "Error:", false});
-    state_patterns_.push_back({AgentType::ClaudeCode, AgentState::Idle, "> ", false});
+    // State patterns are now loaded from providers.lua via loadStatePatternsFrom().
+    // This method is kept as a no-op for backward compatibility.
+}
 
-    // Aider patterns
-    state_patterns_.push_back({AgentType::Aider, AgentState::Thinking, "Thinking...", false});
-    state_patterns_.push_back({AgentType::Aider, AgentState::ToolUse, "Editing", false});
-    state_patterns_.push_back({AgentType::Aider, AgentState::Waiting, "Allow creation", false});
-    state_patterns_.push_back({AgentType::Aider, AgentState::Error, "Error", false});
+void AgentTracker::loadStatePatternsFrom(const ProviderRegistry& registry) {
+    state_patterns_.clear();
 
-    // Codex patterns
-    state_patterns_.push_back({AgentType::Codex, AgentState::Thinking, "thinking", false});
-    state_patterns_.push_back({AgentType::Codex, AgentState::Error, "error", false});
+    for (const auto& provider : registry.all()) {
+        // Map provider agent_type string to AgentType enum
+        AgentType agent_type = AgentType::Unknown;
+        for (const auto& pat : patterns_) {
+            if (pat.name == provider.display_name || pat.process_name == provider.id) {
+                agent_type = pat.type;
+                break;
+            }
+        }
+        // Also try matching by agent_type string
+        if (agent_type == AgentType::Unknown) {
+            if (provider.agent_type == "ClaudeCode") agent_type = AgentType::ClaudeCode;
+            else if (provider.agent_type == "Codex") agent_type = AgentType::Codex;
+            else if (provider.agent_type == "GeminiCli") agent_type = AgentType::GeminiCli;
+            else if (provider.agent_type == "Aider") agent_type = AgentType::Aider;
+            else if (provider.agent_type == "OpenCode") agent_type = AgentType::OpenCode;
+            else if (provider.agent_type == "Goose") agent_type = AgentType::Goose;
+            else if (provider.agent_type == "Amp") agent_type = AgentType::Amp;
+            else if (provider.agent_type == "Cline") agent_type = AgentType::Cline;
+            else if (provider.agent_type == "Custom") agent_type = AgentType::Custom;
+        }
 
-    // Generic patterns (apply to all agent types)
-    state_patterns_.push_back({AgentType::Unknown, AgentState::Error, "fatal error", false});
-    state_patterns_.push_back({AgentType::Unknown, AgentState::Error, "FATAL", false});
+        for (const auto& sp : provider.state_patterns) {
+            AgentState state = stringToState(sp.state);
+            state_patterns_.push_back({agent_type, state, sp.pattern, false});
+        }
+    }
+
+    // Apply stale timeout from registry
+    stale_timeout_seconds_ = registry.staleTimeout();
 }
 
 void AgentTracker::addStatePattern(const AgentStatePattern& pattern) {

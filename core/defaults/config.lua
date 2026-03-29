@@ -18,6 +18,8 @@ terminal.config({
     clipboard_paste_bracketed_safe = true,
     allow_clipboard_write = false,
 
+    word_chars = "-_.",
+
     clickable_urls = true,
     url_color = 0x89b4fa,
 

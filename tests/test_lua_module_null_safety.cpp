@@ -263,6 +263,14 @@ TEST_F(LuaModuleNullSafety, UrlModuleNoCrash) {
     // set_color_by_scheme: guarded with if(!highlight_) return
     r = engine_->loadString("terminal.url.set_color_by_scheme('ssh', '#ff6600')");
     EXPECT_TRUE(r.ok()) << engine_->lastError();
+
+    // set_terminators: guarded with if(detector_)
+    r = engine_->loadString("terminal.url.set_terminators(' \\t\\n<>\"')");
+    EXPECT_TRUE(r.ok()) << engine_->lastError();
+
+    // set_trailing_punctuation: guarded with if(detector_)
+    r = engine_->loadString("terminal.url.set_trailing_punctuation('.,:;!?')");
+    EXPECT_TRUE(r.ok()) << engine_->lastError();
 }
 
 // ---------------------------------------------------------------------------
