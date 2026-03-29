@@ -453,12 +453,15 @@ add_library(termcore STATIC ${TERMCORE_SOURCES})
 
 # SIMD: compile vt_parser_simd.cpp with AVX2 so both AVX2 and SSE2 codepaths
 # are available; runtime CPU dispatch selects the best one.
+# Only enable on x86/x64 architectures.
 if(MSVC)
     set_source_files_properties(src/vt_parser_simd.cpp
         PROPERTIES COMPILE_FLAGS "/arch:AVX2")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/vt_parser_simd.cpp
-        PROPERTIES COMPILE_FLAGS "-mavx2")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i[3-6]86")
+        set_source_files_properties(src/vt_parser_simd.cpp
+            PROPERTIES COMPILE_FLAGS "-mavx2")
+    endif()
 endif()
 
 target_include_directories(termcore

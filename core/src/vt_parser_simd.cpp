@@ -6,7 +6,7 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 #include <immintrin.h>
-#elif defined(__GNUC__) || defined(__clang__)
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
 #include <cpuid.h>
 #endif
@@ -115,7 +115,7 @@ static SimdLevel detectSimdLevel() {
         if (cpuInfo[3] & (1 << 26)) return SimdLevel::SSE2;  // EDX bit 26
     }
     return SimdLevel::Scalar;
-#elif defined(__GNUC__) || defined(__clang__)
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
     unsigned int eax, ebx, ecx, edx;
     if (__get_cpuid(0, &eax, &ebx, &ecx, &edx) && eax >= 7) {
         __cpuid_count(7, 0, eax, ebx, ecx, edx);
