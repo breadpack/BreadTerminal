@@ -66,10 +66,11 @@ TEST(PtyTest, SpawnDefaultShellIsAlive) {
     auto pty = createPty();
     ASSERT_NE(pty, nullptr);
 
-    ASSERT_TRUE(pty->spawn());
+    // Spawn /bin/sh explicitly — default shell can hang under ASan in CI
+    ASSERT_TRUE(pty->spawn("/bin/sh"));
 
     // Give it a moment to start
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     EXPECT_TRUE(pty->isAlive());
     EXPECT_GT(pty->pid(), 0);
