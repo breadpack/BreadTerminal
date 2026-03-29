@@ -69,6 +69,7 @@ typedef void(^PrefsSaveBlock)(const termcore::Config&);
                             device:(id<MTLDevice>)device;
 
 // Settings navigation helpers
+- (IBAction)openUnifiedSettings:(id)sender;
 - (void)openUnifiedSettingsAtTheme;
 - (void)openUnifiedSettingsAtFont;
 

@@ -8,6 +8,7 @@
 #import "UnifiedSettingsWindowController.h"
 
 #include "termcore/config.h"
+#include "ConfigWatcherMac.h"
 #include "termcore/lua_config.h"
 #include "termcore/theme_loader.h"
 #include "termcore/terminal_controller.h"

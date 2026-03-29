@@ -116,10 +116,7 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND XKBCOMMON_FOUND)
 
     target_compile_definitions(termcore_wayland PUBLIC TERMCORE_HAS_WAYLAND=1)
 
-    # Wayland protocol headers (xdg-shell) are typically provided by
-    # wayland-protocols; if not pre-generated, use wayland-scanner.
-
-    # ─── Generate zwp_text_input_v3 protocol glue ────────────────
+    # Wayland protocol headers generated via wayland-scanner.
     pkg_check_modules(WAYLAND_PROTOCOLS wayland-protocols)
     find_program(WAYLAND_SCANNER wayland-scanner)
 
@@ -130,6 +127,42 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_EGL_FOUND AND EGL_FOUND AND XKBCOMMON_FOUND)
             OUTPUT_VARIABLE WAYLAND_PROTOCOLS_DIR
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
+
+        # ─── Generate xdg-shell protocol glue ─────────────────────
+        set(XDG_SHELL_XML
+            "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+
+        if(EXISTS "${XDG_SHELL_XML}")
+            set(XDG_SHELL_HEADER
+                "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-client-protocol.h")
+            set(XDG_SHELL_CODE
+                "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c")
+
+            add_custom_command(
+                OUTPUT "${XDG_SHELL_HEADER}"
+                COMMAND ${WAYLAND_SCANNER} client-header
+                        "${XDG_SHELL_XML}" "${XDG_SHELL_HEADER}"
+                DEPENDS "${XDG_SHELL_XML}"
+                COMMENT "Generating xdg-shell client header"
+            )
+            add_custom_command(
+                OUTPUT "${XDG_SHELL_CODE}"
+                COMMAND ${WAYLAND_SCANNER} private-code
+                        "${XDG_SHELL_XML}" "${XDG_SHELL_CODE}"
+                DEPENDS "${XDG_SHELL_XML}"
+                COMMENT "Generating xdg-shell protocol code"
+            )
+
+            target_sources(termcore_wayland PRIVATE
+                "${XDG_SHELL_HEADER}"
+                "${XDG_SHELL_CODE}"
+            )
+            message(STATUS "Wayland xdg-shell support: enabled")
+        else()
+            message(WARNING "xdg-shell.xml not found at ${XDG_SHELL_XML}")
+        endif()
+
+        # ─── Generate zwp_text_input_v3 protocol glue ────────────────
         set(TEXT_INPUT_V3_XML
             "${WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml")
 

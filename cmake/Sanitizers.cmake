@@ -33,6 +33,11 @@ endif()
 # Print status
 if(ENABLE_ASAN)
     message(STATUS "Sanitizer: Address Sanitizer (ASan) ENABLED")
+    # MSVC ASan: apply globally so FetchContent dependencies (e.g. GTest)
+    # are also built with ASan annotations, preventing LNK1319 mismatches.
+    if(MSVC)
+        add_compile_options(/fsanitize=address)
+    endif()
 endif()
 if(ENABLE_TSAN)
     message(STATUS "Sanitizer: Thread Sanitizer (TSan) ENABLED")
