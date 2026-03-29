@@ -168,3 +168,60 @@ TEST_F(UrlDetectorTest, UrlTrailingComma) {
     ASSERT_EQ(urls.size(), 1u);
     EXPECT_EQ(urls[0].url, "https://example.com");
 }
+
+// --- Configurable terminator and trailing punctuation tests ---
+
+// 20. Default terminators match original behavior
+TEST_F(UrlDetectorTest, DefaultTerminatorsMatchOriginal) {
+    EXPECT_EQ(detector.terminators(), " \t\n\r<>\"'`");
+    EXPECT_EQ(detector.trailingPunctuation(), ".,:;!?");
+}
+
+// 21. Custom terminator stops URL parsing
+TEST_F(UrlDetectorTest, CustomTerminatorStopsUrl) {
+    // By default, pipe is not a terminator, so URL includes it
+    auto urls1 = detector.detectInLine("https://example.com/path|rest", 0);
+    ASSERT_EQ(urls1.size(), 1u);
+    EXPECT_EQ(urls1[0].url, "https://example.com/path|rest");
+
+    // Add pipe as terminator
+    detector.setTerminators(" \t\n\r<>\"'`|");
+    auto urls2 = detector.detectInLine("https://example.com/path|rest", 0);
+    ASSERT_EQ(urls2.size(), 1u);
+    EXPECT_EQ(urls2[0].url, "https://example.com/path");
+}
+
+// 22. Custom trailing punctuation strips different chars
+TEST_F(UrlDetectorTest, CustomTrailingPunctuation) {
+    // Default: comma is trailing punctuation
+    auto urls1 = detector.detectInLine("https://example.com,", 0);
+    ASSERT_EQ(urls1.size(), 1u);
+    EXPECT_EQ(urls1[0].url, "https://example.com");
+
+    // Remove comma from trailing punctuation — should keep it
+    detector.setTrailingPunctuation(".;:!?");
+    auto urls2 = detector.detectInLine("https://example.com,", 0);
+    ASSERT_EQ(urls2.size(), 1u);
+    EXPECT_EQ(urls2[0].url, "https://example.com,");
+}
+
+// 23. Empty trailing punctuation means nothing is stripped
+TEST_F(UrlDetectorTest, EmptyTrailingPunctuation) {
+    detector.setTrailingPunctuation("");
+    auto urls = detector.detectInLine("https://example.com.", 0);
+    ASSERT_EQ(urls.size(), 1u);
+    EXPECT_EQ(urls[0].url, "https://example.com.");
+}
+
+// 24. Terminators and trailing punctuation can be set independently
+TEST_F(UrlDetectorTest, IndependentTerminatorAndPunctuationConfig) {
+    detector.setTerminators(" \t\n");  // minimal terminators
+    detector.setTrailingPunctuation(".");  // only dot
+
+    // Angle brackets no longer terminate
+    auto urls = detector.detectInLine("<https://example.com/path>.", 0);
+    ASSERT_EQ(urls.size(), 1u);
+    // < is part of no-scheme start, URL starts at position of https
+    // The < is not a terminator anymore, but https:// starts after it
+    EXPECT_EQ(urls[0].url, "https://example.com/path>");
+}

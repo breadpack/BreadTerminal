@@ -136,6 +136,7 @@ set(TERMCORE_IMAGE_SOURCES
     src/kitty_graphics.cpp
     src/iterm_image.cpp
     src/image_preview.cpp
+    src/base64.cpp
 )
 
 add_library(termcore_image STATIC ${TERMCORE_IMAGE_SOURCES})
@@ -261,7 +262,15 @@ set(TERMCORE_CONFIG_CORE_SOURCES
     src/config_value_adapter.cpp
     src/settings_model.cpp
     src/ghostty_config_import.cpp
+    src/shell_detector.cpp
 )
+
+if(UNIX)
+    list(APPEND TERMCORE_CONFIG_CORE_SOURCES src/shell_detector_unix.cpp)
+endif()
+if(WIN32)
+    list(APPEND TERMCORE_CONFIG_CORE_SOURCES src/shell_detector_windows.cpp)
+endif()
 
 add_library(termcore_config_core STATIC ${TERMCORE_CONFIG_CORE_SOURCES})
 
@@ -354,7 +363,6 @@ set(TERMCORE_SOURCES
     src/config_applier.cpp
     src/profile_manager.cpp
     src/profile_dropdown.cpp
-    src/shell_detector.cpp
     src/update_checker.cpp
     src/command_palette.cpp
     src/grapheme.cpp
@@ -375,14 +383,12 @@ set(TERMCORE_SOURCES
 if(UNIX)
     list(APPEND TERMCORE_SOURCES
         src/pty_unix.cpp
-        src/shell_detector_unix.cpp
     )
 endif()
 
 if(WIN32)
     list(APPEND TERMCORE_SOURCES
         src/pty_windows.cpp
-        src/shell_detector_windows.cpp
     )
 endif()
 

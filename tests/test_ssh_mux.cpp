@@ -7,6 +7,14 @@
 
 using namespace termcore;
 
+// When built with real libssh2, channel/session tests need a live SSH server
+// which is unavailable in CI.  Skip them and only run the pure-logic tests.
+#if TERMCORE_HAS_LIBSSH2
+#define SKIP_WITHOUT_STUB() GTEST_SKIP() << "Requires stub SshMuxSession (no libssh2)"
+#else
+#define SKIP_WITHOUT_STUB() ((void)0)
+#endif
+
 // ---------------------------------------------------------------------------
 // SshMuxSession::makeSessionKey
 // ---------------------------------------------------------------------------
@@ -59,6 +67,7 @@ TEST(SshMuxSessionKey, SameConfigProducesSameKey) {
 // ---------------------------------------------------------------------------
 
 TEST(SshMuxSession, OpenChannelReturnsPositiveId) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -69,6 +78,7 @@ TEST(SshMuxSession, OpenChannelReturnsPositiveId) {
 }
 
 TEST(SshMuxSession, ChannelIdsAreUnique) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -83,6 +93,7 @@ TEST(SshMuxSession, ChannelIdsAreUnique) {
 }
 
 TEST(SshMuxSession, CloseChannelSucceeds) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -101,6 +112,7 @@ TEST(SshMuxSession, CloseNonexistentChannelReturnsFalse) {
 }
 
 TEST(SshMuxSession, ListChannelsReflectsState) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -120,6 +132,7 @@ TEST(SshMuxSession, ListChannelsReflectsState) {
 }
 
 TEST(SshMuxSession, ActiveChannelCount) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -135,6 +148,7 @@ TEST(SshMuxSession, ActiveChannelCount) {
 // ---------------------------------------------------------------------------
 
 TEST(SshMuxSession, WriteToChannelBuffers) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -153,6 +167,7 @@ TEST(SshMuxSession, WriteToInvalidChannelFails) {
 }
 
 TEST(SshMuxSession, ReadFromChannelReturnsEmpty) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -174,6 +189,7 @@ TEST(SshMuxSession, ReadFromInvalidChannelReturnsEmpty) {
 // ---------------------------------------------------------------------------
 
 TEST(SshMuxSession, TransportStateIsAuthenticatedForStub) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -182,6 +198,7 @@ TEST(SshMuxSession, TransportStateIsAuthenticatedForStub) {
 }
 
 TEST(SshMuxSession, ConnectSucceedsForStub) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -191,6 +208,7 @@ TEST(SshMuxSession, ConnectSucceedsForStub) {
 }
 
 TEST(SshMuxSession, PollIsNoOpForStub) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -200,6 +218,7 @@ TEST(SshMuxSession, PollIsNoOpForStub) {
 }
 
 TEST(SshMuxSession, LastErrorEmptyForStub) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "host";
     SshMuxSession session(cfg);
@@ -212,6 +231,7 @@ TEST(SshMuxSession, LastErrorEmptyForStub) {
 // ---------------------------------------------------------------------------
 
 TEST(SshMuxSession, MultipleChannelsShareConnection) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "shared-host";
     cfg.user = "user";
@@ -237,6 +257,7 @@ TEST(SshMuxSession, MultipleChannelsShareConnection) {
 // ---------------------------------------------------------------------------
 
 TEST(SshMuxManager, GetOrCreateReturnsSameSession) {
+    SKIP_WITHOUT_STUB();
     SshMuxManager mgr;
 
     SshConfig cfg;
@@ -270,6 +291,7 @@ TEST(SshMuxManager, DifferentHostsGetDifferentSessions) {
 }
 
 TEST(SshMuxManager, CloseSessionRemovesIt) {
+    SKIP_WITHOUT_STUB();
     SshMuxManager mgr;
 
     SshConfig cfg;
@@ -290,6 +312,7 @@ TEST(SshMuxManager, CloseNonexistentSessionReturnsFalse) {
 }
 
 TEST(SshMuxManager, ListSessionsShowsActiveSessions) {
+    SKIP_WITHOUT_STUB();
     SshMuxManager mgr;
 
     SshConfig cfg;
@@ -307,6 +330,7 @@ TEST(SshMuxManager, ListSessionsShowsActiveSessions) {
 }
 
 TEST(SshMuxManager, CleanupRemovesEmptySessions) {
+    SKIP_WITHOUT_STUB();
     SshMuxManager mgr;
 
     SshConfig cfg;
@@ -323,6 +347,7 @@ TEST(SshMuxManager, CleanupRemovesEmptySessions) {
 }
 
 TEST(SshMuxManager, CleanupKeepsActiveSessions) {
+    SKIP_WITHOUT_STUB();
     SshMuxManager mgr;
 
     SshConfig cfgA;
@@ -353,6 +378,7 @@ TEST(SshMuxManager, CleanupKeepsActiveSessions) {
 // ---------------------------------------------------------------------------
 
 TEST(MuxSshIntegration, AddAndQuerySshPane) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "remote";
     cfg.user = "user";
@@ -397,6 +423,7 @@ TEST(MuxSshIntegration, NonSshPaneReturnsFalse) {
 }
 
 TEST(MuxSshIntegration, RemoveSshPaneClears) {
+    SKIP_WITHOUT_STUB();
     SshConfig cfg;
     cfg.hostname = "remote";
     auto session = std::make_shared<SshMuxSession>(cfg);
