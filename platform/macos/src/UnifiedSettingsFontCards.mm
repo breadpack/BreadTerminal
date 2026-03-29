@@ -310,6 +310,7 @@ enum FontFilterType : NSInteger {
     __weak UnifiedSettingsFontCards* weakSelf = self;
     [[FontDownloader sharedDownloader] downloadFont:nsName
                                             fromURL:nsURL
+                                           progress:nil
                                          completion:^(BOOL success, NSError* error) {
         UnifiedSettingsFontCards* strongSelf = weakSelf;
         if (!strongSelf) return;

@@ -476,8 +476,8 @@ WaylandWindow::~WaylandWindow() {
     }
 
     // Tear down xkbcommon
-    if (state_.xkb_state) xkb_state_unref(state_.xkb_state);
-    if (state_.xkb_keymap) xkb_keymap_unref(state_.xkb_keymap);
+    if (state_.xkb_st) xkb_state_unref(state_.xkb_st);
+    if (state_.xkb_kmap) xkb_keymap_unref(state_.xkb_kmap);
     if (state_.xkb_ctx) xkb_context_unref(state_.xkb_ctx);
 
     // Tear down Wayland objects (reverse order of creation)
