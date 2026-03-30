@@ -39,51 +39,50 @@ struct WebKitWebViewBridge::Impl {
     }
 
     void connectSignals();
+
+    // Signal callbacks as static members to access private Impl
+    static void onLoadChanged(WebKitWebView* wv, WebKitLoadEvent event,
+                               gpointer userData) {
+        auto* impl = static_cast<Impl*>(userData);
+        if (!impl->eventCallback) return;
+
+        const char* uri = webkit_web_view_get_uri(wv);
+        std::string url = uri ? uri : "";
+
+        switch (event) {
+        case WEBKIT_LOAD_STARTED:
+            impl->eventCallback(WebViewEvent::NavigationStarted, url);
+            break;
+        case WEBKIT_LOAD_COMMITTED:
+            impl->eventCallback(WebViewEvent::ContentLoaded, url);
+            break;
+        case WEBKIT_LOAD_FINISHED:
+            impl->eventCallback(WebViewEvent::NavigationCompleted, url);
+            break;
+        default:
+            break;
+        }
+    }
+
+    static gboolean onLoadFailed(WebKitWebView* /*wv*/, WebKitLoadEvent /*event*/,
+                                  const gchar* /*failingUri*/, GError* error,
+                                  gpointer userData) {
+        auto* impl = static_cast<Impl*>(userData);
+        if (impl->eventCallback) {
+            std::string msg = error ? error->message : "Unknown error";
+            impl->eventCallback(WebViewEvent::NavigationFailed, msg);
+        }
+        return FALSE; // allow default error handling
+    }
+
+    static void onTitleNotify(GObject* /*object*/, GParamSpec* /*pspec*/,
+                               gpointer userData) {
+        auto* impl = static_cast<Impl*>(userData);
+        if (!impl->eventCallback) return;
+        const char* t = webkit_web_view_get_title(impl->webView);
+        impl->eventCallback(WebViewEvent::TitleChanged, t ? t : "");
+    }
 };
-
-// --- Signal callbacks (free functions for C interop) ------------------------
-
-static void onLoadChanged(WebKitWebView* wv, WebKitLoadEvent event,
-                           gpointer userData) {
-    auto* impl = static_cast<WebKitWebViewBridge::Impl*>(userData);
-    if (!impl->eventCallback) return;
-
-    const char* uri = webkit_web_view_get_uri(wv);
-    std::string url = uri ? uri : "";
-
-    switch (event) {
-    case WEBKIT_LOAD_STARTED:
-        impl->eventCallback(WebViewEvent::NavigationStarted, url);
-        break;
-    case WEBKIT_LOAD_COMMITTED:
-        impl->eventCallback(WebViewEvent::ContentLoaded, url);
-        break;
-    case WEBKIT_LOAD_FINISHED:
-        impl->eventCallback(WebViewEvent::NavigationCompleted, url);
-        break;
-    default:
-        break;
-    }
-}
-
-static gboolean onLoadFailed(WebKitWebView* /*wv*/, WebKitLoadEvent /*event*/,
-                              const gchar* failingUri, GError* error,
-                              gpointer userData) {
-    auto* impl = static_cast<WebKitWebViewBridge::Impl*>(userData);
-    if (impl->eventCallback) {
-        std::string msg = error ? error->message : "Unknown error";
-        impl->eventCallback(WebViewEvent::NavigationFailed, msg);
-    }
-    return FALSE; // allow default error handling
-}
-
-static void onTitleNotify(GObject* /*object*/, GParamSpec* /*pspec*/,
-                           gpointer userData) {
-    auto* impl = static_cast<WebKitWebViewBridge::Impl*>(userData);
-    if (!impl->eventCallback) return;
-    const char* t = webkit_web_view_get_title(impl->webView);
-    impl->eventCallback(WebViewEvent::TitleChanged, t ? t : "");
-}
 
 void WebKitWebViewBridge::Impl::connectSignals() {
     g_signal_connect(webView, "load-changed",
@@ -147,28 +146,29 @@ bool WebKitWebViewBridge::isLoading() const {
 static void jsFinished(GObject* source, GAsyncResult* result,
                        gpointer userData) {
     auto* cb = static_cast<std::function<void(const std::string&)>*>(userData);
-    WebKitJavascriptResult* jsResult =
+    GError* error = nullptr;
+    JSCValue* jsValue =
         webkit_web_view_evaluate_javascript_finish(
-            WEBKIT_WEB_VIEW(source), result, nullptr);
+            WEBKIT_WEB_VIEW(source), result, &error);
 
     std::string value;
-    if (jsResult) {
-        JSCValue* jsValue = webkit_javascript_result_get_js_value(jsResult);
-        if (jsValue && jsc_value_is_string(jsValue)) {
+    if (jsValue) {
+        if (jsc_value_is_string(jsValue)) {
             gchar* str = jsc_value_to_string(jsValue);
             if (str) {
                 value = str;
                 g_free(str);
             }
-        } else if (jsValue) {
+        } else {
             gchar* str = jsc_value_to_string(jsValue);
             if (str) {
                 value = str;
                 g_free(str);
             }
         }
-        webkit_javascript_result_unref(jsResult);
+        g_object_unref(jsValue);
     }
+    if (error) g_error_free(error);
 
     if (*cb) {
         (*cb)(value);

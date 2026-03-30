@@ -12,7 +12,10 @@ pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
 
 # --- WebKitGTK (optional) ---
 set(HAS_WEBKIT OFF)
-pkg_check_modules(WEBKIT webkit2gtk-4.1)
+pkg_check_modules(WEBKIT webkitgtk-6.0)
+if(NOT WEBKIT_FOUND)
+    pkg_check_modules(WEBKIT webkit2gtk-4.1)
+endif()
 if(NOT WEBKIT_FOUND)
     pkg_check_modules(WEBKIT webkit2gtk-4.0)
 endif()

@@ -16,14 +16,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install harfbuzz icu4c@77 lua@5.4
+          brew install harfbuzz icu4c lua@5.4
 
       - name: Configure CMake
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DICU_ROOT="$(brew --prefix icu4c@77)"
+            -DICU_ROOT="$(brew --prefix icu4c)"
 
       - name: Build
         run: cmake --build build --config Release
@@ -70,7 +70,7 @@ jobs:
             libharfbuzz-dev libicu-dev libfreetype-dev libfontconfig-dev \
             libgtk-4-dev libepoxy-dev \
             lua5.4 liblua5.4-dev \
-            libwebkit2gtk-4.1-dev
+            libwebkitgtk-6.0-dev
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
