@@ -33,12 +33,15 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Upload debug symbols to Sentry
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "Skipping Sentry upload (no auth token)"
+            exit 0
+          fi
           npx @sentry/cli debug-files upload --include-sources build/
 
       - name: Package DMG
@@ -84,12 +87,15 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Upload debug symbols to Sentry
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "Skipping Sentry upload (no auth token)"
+            exit 0
+          fi
           npx @sentry/cli debug-files upload --include-sources build/
 
       - name: Package
@@ -173,13 +179,16 @@ jobs:
         run: cd build && ctest --output-on-failure -C Release
 
       - name: Upload debug symbols to Sentry
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         shell: pwsh
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
+          if (-not $env:SENTRY_AUTH_TOKEN) {
+            Write-Host "Skipping Sentry upload (no auth token)"
+            exit 0
+          }
           npx @sentry/cli debug-files upload --include-sources build\
 
       - name: Install WiX Toolset
@@ -224,12 +233,15 @@ jobs:
           path: artifacts
 
       - name: Create Sentry release
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "Skipping Sentry release (no auth token)"
+            exit 0
+          fi
           npx @sentry/cli releases new "BreadTerminal@${GITHUB_REF_NAME#v}"
           npx @sentry/cli releases set-commits "BreadTerminal@${GITHUB_REF_NAME#v}" --auto
           npx @sentry/cli releases finalize "BreadTerminal@${GITHUB_REF_NAME#v}"
