@@ -30,7 +30,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Run tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --timeout 60
 
       - name: Upload debug symbols to Sentry
         env:
@@ -84,7 +84,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Run tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --timeout 60
 
       - name: Upload debug symbols to Sentry
         env:
@@ -176,7 +176,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Run tests
-        run: cd build && ctest --output-on-failure -C Release
+        run: cd build && ctest --output-on-failure -C Release --timeout 60
 
       - name: Upload debug symbols to Sentry
         shell: pwsh
@@ -199,6 +199,15 @@ jobs:
           mkdir package
           mkdir package\shell
           Copy-Item "build\platform\windows\Release\BreadTerminal.exe" package\
+          Copy-Item "build\tools\bread\Release\bread.exe" package\
+          Copy-Item "platform\windows\third_party\conpty\x64\conpty.dll" package\
+          Copy-Item "platform\windows\third_party\conpty\x64\OpenConsole.exe" package\
+          Copy-Item "platform\windows\resources\theme_index.json" package\
+          Copy-Item "platform\windows\resources\font_index.json" package\
+          Copy-Item "platform\windows\resources\BreadTerminal.ico" package\
+          Copy-Item "platform\windows\installer\register-wt-profile.ps1" package\
+          # Copy crashpad handler (built by Sentry SDK and copied next to BreadTerminal.exe)
+          Copy-Item "build\platform\windows\Release\crashpad_handler.exe" package\
           Copy-Item "shell\*" package\shell\ -Recurse
           # Copy vcpkg DLLs
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" package\

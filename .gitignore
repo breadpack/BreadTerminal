@@ -18,6 +18,7 @@ out/
 *.so
 *.dylib
 *.dll
+!platform/windows/third_party/conpty/x64/conpty.dll
 
 # CMake generated
 CMakeCache.txt
