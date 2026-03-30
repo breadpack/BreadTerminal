@@ -192,7 +192,10 @@ jobs:
           npx @sentry/cli debug-files upload --include-sources build\
 
       - name: Install WiX Toolset
-        run: dotnet tool install --global wix
+        run: |
+          dotnet tool install --global wix
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Util.wixext
 
       - name: Package (ZIP)
         run: |
@@ -220,6 +223,8 @@ jobs:
             -d PackageDir=package `
             -d ProductVersion=$version `
             -arch x64 `
+            -ext WixToolset.UI.wixext `
+            -ext WixToolset.Util.wixext `
             -o "BreadTerminal-${{ github.ref_name }}-windows-x64.msi"
 
       - name: Upload artifact
