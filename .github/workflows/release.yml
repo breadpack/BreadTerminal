@@ -32,6 +32,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Upload debug symbols to Sentry
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -82,6 +83,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
       - name: Upload debug symbols to Sentry
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -170,6 +172,7 @@ jobs:
         run: cd build && ctest --output-on-failure -C Release
 
       - name: Upload debug symbols to Sentry
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         shell: pwsh
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -220,6 +223,7 @@ jobs:
           path: artifacts
 
       - name: Create Sentry release
+        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
