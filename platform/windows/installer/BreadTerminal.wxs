@@ -95,6 +95,7 @@
       <ComponentGroupRef Id="EnvironmentPath" />
       <ComponentGroupRef Id="Shortcuts" />
       <ComponentGroupRef Id="InstallerScripts" />
+      <ComponentGroupRef Id="RuntimeDlls" />
     </Feature>
 
     <!-- Custom action: register Windows Terminal profile (runs after files installed) -->

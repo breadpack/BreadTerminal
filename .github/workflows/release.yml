@@ -216,10 +216,40 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" package\
           Compress-Archive -Path package\* -DestinationPath "BreadTerminal-${{ github.ref_name }}-windows-x64.zip"
 
+      - name: Generate runtime DLLs WXS fragment
+        run: |
+          # Collect DLLs in package/ that are NOT already listed in BreadTerminal.wxs
+          $excludeDlls = @("conpty.dll")  # already in main WXS
+          $dlls = Get-ChildItem package\*.dll | Where-Object { $_.Name -notin $excludeDlls }
+          $components = ""
+          $comprefs = ""
+          $idx = 0
+          foreach ($dll in $dlls) {
+            $id = "RuntimeDll_$idx"
+            $guid = [guid]::NewGuid().ToString().ToUpper()
+            $components += "      <Component Id=`"$id`" Guid=`"$guid`" Directory=`"INSTALLFOLDER`">`n"
+            $components += "        <File Source=`"`$(var.PackageDir)\$($dll.Name)`" KeyPath=`"yes`" />`n"
+            $components += "      </Component>`n"
+            $comprefs += "      <ComponentRef Id=`"$id`" />`n"
+            $idx++
+          }
+          $wxs = @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+            <Fragment>
+              <ComponentGroup Id="RuntimeDlls">
+          $components    </ComponentGroup>
+            </Fragment>
+          </Wix>
+          "@
+          $wxs | Out-File -Encoding UTF8 runtime_dlls.wxs
+          Write-Host "Generated runtime_dlls.wxs with $idx DLLs:"
+          $dlls | ForEach-Object { Write-Host "  - $($_.Name)" }
+
       - name: Package (MSI)
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          wix build platform\windows\installer\BreadTerminal.wxs `
+          wix build platform\windows\installer\BreadTerminal.wxs runtime_dlls.wxs `
             -d PackageDir=package `
             -d ProductVersion=$version `
             -arch x64 `
