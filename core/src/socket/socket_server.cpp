@@ -6,7 +6,12 @@
 #include <string>
 #include <thread>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
 #include <unistd.h>
 #endif
 
@@ -151,20 +156,17 @@ void SocketServer::clientLoop(int fd) {
 }
 
 std::string resolveSocketPath() {
-    const char* env = std::getenv("BREADTERMINAL_SOCKET");
-    if (env && env[0] != '\0') {
-        return env;
-    }
-
+    // Always generate a PID-specific path so nested BreadTerminal instances
+    // (child launched from parent's shell) each get their own socket and
+    // don't collide with the parent's BREADTERMINAL_SOCKET env var.
 #if defined(_WIN32)
-    return "\\\\.\\pipe\\breadterminal";
+    return "\\\\.\\pipe\\breadterminal-" + std::to_string(GetCurrentProcessId());
 #else
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
-    if (xdg && xdg[0] != '\0') {
-        return std::string(xdg) + "/breadterminal.sock";
-    }
-    // Fallback: per-user path to avoid world-writable /tmp
-    return "/tmp/breadterminal-" + std::to_string(getuid()) + ".sock";
+    std::string base = (xdg && xdg[0] != '\0')
+        ? std::string(xdg)
+        : "/tmp";
+    return base + "/breadterminal-" + std::to_string(getpid()) + ".sock";
 #endif
 }
 

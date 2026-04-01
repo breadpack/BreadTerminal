@@ -62,7 +62,7 @@ private:
     std::vector<std::function<void()>> pending_;
 };
 
-/// Resolve socket path from BREADTERMINAL_SOCKET env var or default.
+/// Generate a PID-specific socket path for this instance's server.
 std::string resolveSocketPath();
 
 }  // namespace termcore
