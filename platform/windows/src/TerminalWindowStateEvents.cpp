@@ -292,7 +292,19 @@ void TerminalWindowState::showNotification(const std::string& title,
     termcore::showWindowsNotification(hwnd, title, body);
 }
 
+// WM_APP + 1 is handled in TerminalWindow.cpp to call doOpenSettingsWindow()
+// outside renderLock_, preventing the message loop from stalling during heavy
+// font enumeration and GDI+ initialisation in setConfig().
 void TerminalWindowState::openSettingsWindow(const termcore::Config& config) {
+    pendingSettingsConfig_ = config;
+    PostMessageW(hwnd, WM_APP + 1, 0, 0);
+}
+
+void TerminalWindowState::doOpenSettingsWindow() {
+    if (!pendingSettingsConfig_) return;
+    termcore::Config config = std::move(*pendingSettingsConfig_);
+    pendingSettingsConfig_.reset();
+
     if (!unifiedSettings) {
         unifiedSettings = std::make_unique<termcore::UnifiedSettingsWindow>();
     }

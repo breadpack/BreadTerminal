@@ -39,6 +39,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -286,6 +287,7 @@ struct TerminalWindowState : public termcore::IPlatformHost {
                           const std::string& body) override;
     void showClipboardHistory(const std::vector<termcore::ClipboardEntry>& entries) override;
     void openSettingsWindow(const termcore::Config& config) override;
+    void doOpenSettingsWindow();
     float dpiScale() override;
     void openUrl(const std::string& url) override;
     void setMouseCursor(CursorType cursor) override;
@@ -306,6 +308,9 @@ private:
 
     // Sidebar dirty-check: skip full rebuild when agent tree hasn't changed
     uint64_t lastSidebarGeneration_ = 0;
+
+    // Deferred settings window open (avoid blocking message loop under renderLock_)
+    std::optional<termcore::Config> pendingSettingsConfig_;
 
     // Notification ring animation state per pane
     struct PaneRingState {

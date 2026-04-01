@@ -32,6 +32,9 @@ namespace {
 // Must match kNotifyCallbackMsg in TerminalWindowNotify.cpp
 constexpr UINT kNotifyCallbackMsg = WM_APP + 100;
 
+// Deferred settings window open (posted from openSettingsWindow under renderLock_)
+constexpr UINT kOpenSettingsMsg = WM_APP + 1;
+
 // Render timer removed — rendering is driven by dedicated render thread.
 // Cursor blink timer removed — render thread uses WaitForSingleObject timeout.
 
@@ -292,6 +295,10 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg,
 
         case WM_ERASEBKGND:
             return 1;
+
+        case kOpenSettingsMsg:
+            if (state) state->doOpenSettingsWindow();
+            return 0;
 
         case WM_CLOSE:
             if (state && state->controller &&
